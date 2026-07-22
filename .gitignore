@@ -11,3 +11,4 @@ release-evidence/
 **/decision-api-secret.txt
 **/*api-key*.txt
 results/backtests/*/
+HANDOFF.md
