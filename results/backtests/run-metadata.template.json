@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "run_id": "YYYYMMDD-HHMMSS-USDJPY-H1",
+  "symbol": "USDJPY",
+  "timeframe": "H1",
+  "start_date": "2020-01-01",
+  "end_date": "2025-12-31",
+  "modeling_mode": "EVERY_TICK_BASED_ON_REAL_TICKS",
+  "ea_version": "1.13",
+  "strategy_version": "trend-following-v1",
+  "config_version": "phase13-v1",
+  "parameters": {},
+  "metrics": {
+    "net_profit": null,
+    "cagr": null,
+    "max_drawdown": null,
+    "profit_factor": null,
+    "sharpe_ratio": null,
+    "win_rate": null,
+    "average_win": null,
+    "average_loss": null,
+    "expectancy": null,
+    "maximum_consecutive_losses": null,
+    "number_of_trades": null
+  },
+  "evidence_files": []
+}

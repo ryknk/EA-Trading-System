@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/v1/performance-report.schema.json",
+  "title": "PerformanceReportV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "currency", "definitions", "metrics", "by_strategy", "by_symbol"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "currency": {"const": "ACCOUNT_CURRENCY"},
+    "definitions": {"type": "object"},
+    "metrics": {
+      "type": "object",
+      "required": ["net_profit", "cagr", "max_drawdown_rate", "profit_factor", "sharpe_ratio", "win_rate", "average_win", "average_loss", "expectancy", "maximum_consecutive_losses", "number_of_trades"]
+    },
+    "by_strategy": {"type": "array"},
+    "by_symbol": {"type": "array"}
+  }
+}

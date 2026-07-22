@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/v1/trade-event-request.schema.json",
+  "title": "TradeEventRequestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "trade_candidate_id", "request_id", "ea_id", "timestamp", "event_type", "symbol", "payload"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "event_id": {"type": "string", "format": "uuid"},
+    "trade_candidate_id": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$"},
+    "request_id": {"type": "string", "maxLength": 36},
+    "ea_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "event_type": {"enum": ["CANDIDATE", "EXTERNAL_DECISION", "RISK_DECISION", "ORDER_SUBMISSION", "DEAL", "POSITION_SNAPSHOT", "TRADE_CLOSED", "ACCOUNT_SNAPSHOT", "SYSTEM_ERROR"]},
+    "symbol": {"type": "string", "pattern": "^[A-Z0-9._-]{1,32}$"},
+    "payload": {"type": "object", "maxProperties": 24}
+  }
+}

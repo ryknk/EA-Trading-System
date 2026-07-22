@@ -1,0 +1,8 @@
+{
+  "app": "python app.py",
+  "context": {
+    "environment": "dev",
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true
+  }
+}
+

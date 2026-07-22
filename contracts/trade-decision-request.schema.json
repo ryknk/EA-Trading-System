@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/v1/trade-decision-request.schema.json",
+  "title": "TradeDecisionRequestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "trade_candidate_id", "ea_id", "timestamp", "symbol", "timeframe", "direction", "strategy", "market_features", "trade_proposal"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "request_id": {"type": "string", "format": "uuid"},
+    "trade_candidate_id": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$"},
+    "ea_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "symbol": {"type": "string", "pattern": "^[A-Z0-9._-]{1,32}$"},
+    "timeframe": {"enum": ["M15", "M30", "H1", "H4", "D1"]},
+    "direction": {"enum": ["BUY", "SELL"]},
+    "strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pattern", "reason_code", "reason"],
+      "properties": {
+        "pattern": {"enum": ["BREAKOUT", "PULLBACK"]},
+        "reason_code": {"type": "string", "pattern": "^[A-Z0-9_]{1,64}$"},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 512}
+      }
+    },
+    "market_features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feature_schema_version", "observed_at", "current_price", "spread_points", "rsi", "atr", "ema50", "ema200", "ema_distance_ratio", "recent_return", "volatility", "hour", "day_of_week"],
+      "properties": {
+        "feature_schema_version": {"const": "1.0"},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "current_price": {"type": "number", "exclusiveMinimum": 0},
+        "spread_points": {"type": "number", "minimum": 0},
+        "rsi": {"type": "number", "minimum": 0, "maximum": 100},
+        "atr": {"type": "number", "exclusiveMinimum": 0},
+        "ema50": {"type": "number", "exclusiveMinimum": 0},
+        "ema200": {"type": "number", "exclusiveMinimum": 0},
+        "ema_distance_ratio": {"type": "number"},
+        "recent_return": {"type": "number"},
+        "volatility": {"type": "number", "minimum": 0},
+        "hour": {"type": "integer", "minimum": 0, "maximum": 23},
+        "day_of_week": {"type": "integer", "minimum": 0, "maximum": 6}
+      }
+    },
+    "trade_proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry_price", "stop_loss", "take_profit", "risk_reward_ratio"],
+      "properties": {
+        "entry_price": {"type": "number", "exclusiveMinimum": 0},
+        "stop_loss": {"type": "number", "exclusiveMinimum": 0},
+        "take_profit": {"type": "number", "exclusiveMinimum": 0},
+        "risk_reward_ratio": {"type": "number", "exclusiveMinimum": 0}
+      }
+    }
+  }
+}

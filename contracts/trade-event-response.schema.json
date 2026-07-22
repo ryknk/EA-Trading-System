@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/v1/trade-event-response.schema.json",
+  "title": "TradeEventResponseV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "status"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "event_id": {"type": "string", "format": "uuid"},
+    "status": {"enum": ["ACCEPTED", "DUPLICATE"]}
+  }
+}
+
