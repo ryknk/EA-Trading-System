@@ -188,7 +188,7 @@ API契約の正本は `contracts/` のJSON Schemaとする。
 
 # 7. Python実装ルール
 
-Python 3.12以上を使用する。
+Python 3.12を使用する。AWS Lambda実行環境（`infra/ea_trading_system_stack.py`）が`PYTHON_3_12`に固定されているため、ローカル開発でも3.12で統一する。
 
 * 公開関数へ型ヒントを付ける。
 * `Any` を必要最小限にする。
