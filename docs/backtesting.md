@@ -14,7 +14,9 @@
 .\tools\run-strategy-tester.ps1 -TimeoutSeconds 900
 ```
 
-結果は `results/backtests/<run-id>-USDJPY-H1/` へ保存する。メタデータは `results/backtests/run-metadata.template.json` を複製し、EA・Strategy・Config版と全入力値を記録する。Phase 13の自動試行は `account is not specified` で開始できなかったため、損益指標は `NOT VERIFIED` である。
+結果は `results/backtests/<run-id>-USDJPY-H1/` へ保存する。メタデータは `results/backtests/run-metadata.template.json` を複製し、EA・Strategy・Config版と全入力値を記録する。
+
+Phase 13の自動試行は初回`account is not specified`で開始できなかったが、2026-07-21にXMTrading-MT5（USDJPY/H1/2025年、100%リアルティック）で完走した（`results/backtests/20260721-231302-USDJPY-H1/`、総損益-95,024円・Profit Factor 0.59）。ただし2026-08-10、XMTrading-MT5はUSDJPYのreal tickデータを2022年1月分以降しか保持していないことを確認した（2020-2021指定時は「ヒストリー品質0%リアルティック」の合成データにフォールバックする）。このためブローカーをOANDA証券MT5（東京サーバー）へ切り替え、2015年以降のreal tickデータで再検証する方針を決定した。OANDA証券デモ口座開設完了後に再実行し、以後はOANDA側データを正式な系列とする（詳細は`TASKS.md` 2.1、`HANDOFF.md`）。
 
 In-Sampleは2015〜2022、Out-of-Sampleは2023〜2025を初期分割案とする。ただし実データの学習期間を確定してから凍結する。OOS結果を見て閾値や戦略値を変更した場合、その期間をOOSとして再利用しない。ML学習コードは時系列分割・gap・Walk Forwardと0.50/0.55/0.60/0.65/0.70の事前固定閾値比較を出力するが、実市場データでの評価は未実施である。
 
