@@ -21,6 +21,19 @@
 
 ## 2.1 Strategy Tester
 
+**2026-08-10決定: ブローカーをXMTrading-MT5からOANDA証券MT5（東京サーバー）へ切り替える。** 理由は、XMTrading-MT5がUSDJPYのreal tickデータを2022年1月分以降しか保持しておらず、2015年以降を対象にした検証ができないため（詳細は本節末尾の原因調査結果を参照）。OANDA証券のデモ口座開設完了後、Strategy Testerを再実行し、以後はOANDA側データを正式なIn-Sample/Out-of-Sample系列として扱う。以下のXMTrading結果は削除せず参考記録として保持するが、正式な受入基準比較・OOS・Walk Forwardの対象にはしない。
+
+* [ ] OANDA証券デモ口座の開設を完了する（ユーザー作業）
+* [ ] OANDA証券MT5（東京サーバー）端末をインストールする
+* [ ] `tools/link-mt5.ps1`のJunction先をOANDA MT5端末のデータフォルダへ向け直す（`-TerminalData`パラメータで指定）
+* [ ] OANDA側のUSDJPY Symbol仕様を確認する（Symbol名表記、Digits、Volume Min/Max/Step、Tick Size/Value、Stop Level/Freeze Level、レバレッジ=国内規制上限25倍、スワップ体系）
+* [ ] OANDA側でUSDJPYのreal tick履歴を2015年以降で取得する
+* [ ] `.\tools\run-strategy-tester.ps1`をOANDA側データで再実行する
+* [ ] 新しいレポートを`results/backtests/<run-id>-USDJPY-H1/`へ保存し、`run-metadata.json`を作成する
+* [ ] 新結果を踏まえてHANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`を更新する
+
+---
+
 `results/backtests/20260721-231302-USDJPY-H1/`に、実行済みレポート（`ets-20260721-231302-USDJPY-H1.htm`/`.png`）が存在することを2026-07-23の調査で確認した。USDJPY/H1、2025.01.01-2025.12.31、100% real ticks、Mock ALLOW（`InpTesterDecisionMode=1`, `InpTesterFixedMlProbability=0.65`）、`InpEnableTradeMutations=true`（Strategy Tester内のみ）で完走している。結果は総損益 **-95,024円**、Profit Factor **0.59**、最大Drawdown **10%（口座上限到達）**、取引数66、ロング勝率0%/ショート勝率26.67%、最大連敗9。ただしHANDOFF.md、`docs/production-readiness-report.md`、`docs/production-readiness-checklist.md`はこの結果を反映しておらず「口座未指定で未開始」のまま更新が必要（未実施）。同ディレクトリ以前の3回の試行（`20260721-220506`,`20260721-230456`,`20260721-231041`）は`tester.ini`のみでレポートが生成されておらず失敗している。
 
 * [x] Demo Broker口座へログインする（実行成功の前提として達成。ただしDemo口座かReal口座かは未確認 — Broker表示は`XMTrading-MT5`/`Tradexfin Limited`）
@@ -29,14 +42,14 @@
 * [x] `mt5/test-config/StrategyTester-USDJPY-H1.ini` を確認する
 * [x] `.\tools\run-strategy-tester.ps1 -TimeoutSeconds 900` を実行する（2026-07-21 23:13に完了）
 * [x] Strategy Testerレポートが生成されることを確認する（`.htm`/`.png`が存在）
-* [ ] TerminalログとEAログを保存する（保存有無・保存先は未確認）
-* [ ] Entry、Exit、SL、TP、Lot計算を確認する（レポート内の個別取引データはまだ精査していない）
-* [ ] Spread、Margin、OrderCheckの拒否動作を確認する
-* [ ] 実行条件とGit Commit SHAをMetadataへ記録する（`run-metadata.template.json`を複製した記録が見つからない — 未実施）
-* [ ] 結果を事前固定した受入基準と比較する（受入基準自体がまだ文書化・凍結されていない）
-* [ ] HANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`の「口座未指定で未開始」という記載を、実際の完走結果に合わせて更新する
-* [ ] 2020-2025期間で開始できなかった原因（tick履歴不足、Symbol仕様、Broker側制約等）を確認し、正式な検証対象期間を決定する
-* [ ] 今回の結果（総損益-95,024円、Profit Factor 0.59、最大DD10%到達、ロング勝率0%）を踏まえ、Strategyパラメータの見直し・再実行・期間拡大のいずれで進めるかを判断する
+* [ ] TerminalログとEAログを保存する（2026-08-09調査: `results/backtests/20260721-231302-USDJPY-H1/`には`.htm`/`.png`/`tester.ini`のみが存在し、Journal/Expertsタブのログファイルは見つからない。保存先・保存有無は依然未確認）
+* [x] Entry、Exit、SL、TP、Lot計算を確認する（2026-08-09、レポート内`注文`/`取引`テーブルを精査。132注文・66決済すべて`filled`、Entryコメント`trend-ea-v1-USDJPY-<bar time>`とExitコメント`sl <price>`/`tp <price>`が対応し、SL/TP価格とLot(0.03〜0.17、0.5%リスクに応じ変動)に矛盾なし。Commission合計0、Swap合計-10,846円、価格損益合計-84,178円で総損益-95,024円と一致することを確認。詳細は`run-metadata.json`の`metrics`を参照）
+* [ ] Spread、Margin、OrderCheckの拒否動作を確認する（2026-08-09調査: 132注文はすべて`filled`で、拒否・requoteに該当する注文はレポートに1件も現れなかった。したがって拒否動作そのものは本実行では検証できていない。EAログが残っていないため追加確認も不可）
+* [x] 実行条件とGit Commit SHAをMetadataへ記録する（`results/backtests/20260721-231302-USDJPY-H1/run-metadata.json`を作成。ただし実行時刻2026-07-21 23:13:02はリポジトリ最初のコミット651bcc5(2026-07-22 20:07:10)より前のため、対応するGit Commit SHAは存在せず記録不可＝`null`）
+* [ ] 結果を事前固定した受入基準と比較する（受入基準自体がまだ文書化・凍結されていない — ユーザー判断待ち）
+* [x] HANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`の「口座未指定で未開始」という記載を、実際の完走結果に合わせて更新する（2026-08-09実施）
+* [x] 2020-2025期間で開始できなかった原因（tick履歴不足、Symbol仕様、Broker側制約等）を確認し、正式な検証対象期間を決定する（2026-08-10確認: 過去の`account is not specified`失敗は、当時の実行スクリプトのReport出力パス形式に起因していたとみられ、現行の`tools/run-strategy-tester.ps1`では再現しない（2020.01.01-2021.12.31を指定した実行がexit=0で正常終了）。ただし本質的な制約が判明: Broker（XMTrading-MT5/Tradexfin Limited）はUSDJPYのreal tickデータを**2022年1月分以降しか保持していない**（`.../ticks/USDJPY/`に202201.tkc以降のみ存在。OHLC M1バーは2016年から存在するが、real tickはない）。2020-2021を指定して実行すると、MT5がOHLCから合成tickを自動生成し「ヒストリー品質0%リアルティック」で完走してしまう（`results/backtests/20260810-144215-USDJPY-H1/INVALID-0pct-real-ticks.md`に詳細記録、このディレクトリの結果は無効・参考専用）。**結論: 2020〜2021年を含むreal tickベースの検証は本Broker/口座では不可能。** この結論を受け、2026-08-10にOANDA証券MT5への切替とOANDA側での2015年以降real tick取得が決定した（本節冒頭を参照）。XMTrading側での期間拡大は行わない）
+* [ ] 今回の結果（総損益-95,024円、Profit Factor 0.59、最大DD10%到達、ロング勝率0%/6件、ショート勝率26.67%/60件）を踏まえ、Strategyパラメータの見直し・再実行・期間拡大のいずれで進めるかを判断する（ユーザー判断待ち。詳細は作業報告を参照）
 
 ## 2.2 `TestDecisionApiRules` の終了コード
 

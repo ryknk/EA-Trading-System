@@ -7,7 +7,7 @@
 - [x] 0 compile errors
 - [x] 0 warnings
 - [x] Unit Tests pass
-- [ ] Strategy Tester pass（Broker口座未指定のため未開始）
+- [ ] Strategy Tester pass（2026-07-21にXMTrading-MT5で完走、総損益-95,024円/PF 0.59の損失結果。受入基準未凍結のためpass/fail判定は保留。2026-08-10、XMTrading-MT5がreal tickを2022年1月分以降しか保持しないためOANDA証券MT5へ切替を決定、デモ口座開設完了後に再実行予定。詳細は`docs/production-readiness-report.md`5節）
 
 ## Risk
 
