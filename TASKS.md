@@ -105,6 +105,8 @@
 * [ ] 閾値候補を比較する
 * [ ] 取引コスト込みで評価する
 * [ ] 期間別・相場環境別の安定性を確認する
+* [x] IS/OOS/Walk Forwardの過学習疑いを自動診断する機能を実装する（2026-08-16実装、`python/analysis/overfitting.py`。`DECISIONS.md` DEC-026参照。実データでの診断実行は未実施）
+* [ ] 実際のIS/OOS/Walk Forward各期間の`performance-summary.json`で過学習疑い診断を実行する
 * [ ] production候補Model Artifactを生成する
 * [ ] Model VersionとSHA-256を記録する
 * [ ] Model Artifactと評価Reportを保管する

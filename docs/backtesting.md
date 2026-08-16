@@ -69,3 +69,23 @@ python -m python.analysis.reports `
 ```
 
 出力はバージョン付きJSONサマリー、日本語Markdown、正規化取引CSV、DD付き資産曲線CSV、月次成績CSVである。JSON契約は `contracts/performance-report.schema.json` を正とし、将来の管理画面も同じ出力を利用する。
+
+## 過学習疑い診断
+
+`python.analysis.overfitting` は、In-Sample・Out-of-Sample・Walk Forward各Foldの `performance-summary.json`（上記コマンドの出力）を比較し、過学習の疑いを診断する。過学習を断定する機能ではなく、疑いを検出する診断機能である。Final Holdout（2025-01〜2026-08）は本診断の対象に含めない。
+
+Profit Factor、Sharpe Ratio、Expectancy、Net Profitの劣化率（`(IS − 比較対象) / |IS|`）と、Max Drawdownの悪化率（`(比較対象 − IS) / max(|IS|, drawdown_relative_floor)`）をそれぞれ算出し、各指標をLOW/MODERATE/HIGH/UNKNOWN（算出不能）に区分してスコア化する。単一指標のHIGHのみではMODERATE止まりとし、複数指標が揃って劣化した場合のみHIGHへ総合判定する。Walk Forwardは各Foldを個別に比較したうえで、Foldごとのスコア平均で総合判定する。IS側またはOOS/WF側いずれかの取引数が閾値未満の場合、判定結果はLOW/MODERATE/HIGHではなく`INSUFFICIENT_DATA`とし、信頼性が低いことを明示する。
+
+閾値（劣化率・スコア・最小取引数等）はハードコードせず、`--thresholds-json`でJSONファイルから上書きできる。既定値は`OverfittingThresholds`（`python/analysis/overfitting.py`）を参照。
+
+```powershell
+$env:PYTHONPATH='.'
+python -m python.analysis.overfitting `
+  --in-sample results/backtests/<is-run>/performance-summary.json `
+  --oos results/backtests/<oos-run>/performance-summary.json `
+  --walk-forward-fold FOLD1=results/backtests/<fold1-run>/performance-summary.json `
+  --walk-forward-fold FOLD2=results/backtests/<fold2-run>/performance-summary.json `
+  --output build/overfitting-report
+```
+
+出力は `overfitting-assessment.json`（JSON契約は `contracts/overfitting-report.schema.json` を正とする）と `overfitting-report.md` である。

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/v1/overfitting-report.schema.json",
+  "title": "OverfittingAssessmentReportV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "generated_at", "classification", "reliability_warning",
+    "reasons", "thresholds", "oos", "walk_forward_folds", "walk_forward_summary"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "classification": {"enum": ["LOW", "MODERATE", "HIGH", "INSUFFICIENT_DATA"]},
+    "reliability_warning": {"type": "boolean"},
+    "reasons": {"type": "array", "items": {"type": "string"}},
+    "thresholds": {"type": "object"},
+    "oos": {"type": ["object", "null"]},
+    "walk_forward_folds": {"type": "array"},
+    "walk_forward_summary": {"type": ["object", "null"]}
+  }
+}

@@ -527,3 +527,32 @@ DEC-024のWalk Forward Fold 1（学習2016-09〜2019-12→検証2020）の学習
 * `tools/run-strategy-tester.ps1`の既定`-FromDate`も同様に変更した
 * `results/backtests/run-metadata.template.json`の`start_date`も同様に変更した
 * `docs/backtesting.md`・`TASKS.md`・`HANDOFF.md`のIn-Sample期間記載を更新した
+
+---
+
+# DEC-026: 過学習疑い診断はスコア方式の複数指標総合判定とする
+
+**状態:** 採用
+
+## 背景
+
+DEC-024/DEC-025でIS/OOS/Walk Forward期間が確定した。今後各期間でStrategy Testerを実行した際、In-Sampleだけ良好でOOS/Walk Forwardで大きく崩れる過学習を見逃さないための自動診断が必要になった。既存の`python/analysis/performance.py`は単一期間の指標算出のみで、期間間の比較機能がなかった。
+
+## 判断
+
+新規`python/analysis/overfitting.py`で、IS基準の劣化率をProfit Factor・Sharpe Ratio・Expectancy・Net Profit・Max Drawdownの5指標について算出し、各指標をLOW/MODERATE/HIGH/UNKNOWN（算出不能）へ区分した上で、severityをスコア化（LOW=0、MODERATE=1、HIGH=2）して合算する。合算スコアが閾値を超えた場合のみ総合判定をMODERATE/HIGHへ引き上げる。単一指標のHIGHのみ（スコア2点）ではMODERATE止まりとし、複数指標の劣化が揃って初めてHIGHへ到達する設計とした。
+
+IS側またはOOS/Walk Forward側いずれかの取引数が最小閾値未満の場合、算出した劣化率にかかわらず総合判定を`INSUFFICIENT_DATA`へ上書きする。Walk Forwardは各Foldを個別に比較し、Foldごとのスコア平均で総合判定する（単一Foldの外れ値だけで判定しない）。劣化率・スコア・最小取引数等の閾値はすべて`OverfittingThresholds`データクラスの既定値とし、`--thresholds-json`で上書き可能にした。Final Holdout（2025-01〜2026-08）はパラメータ調整に使わないため、本診断の入力対象から明示的に除外する。
+
+## 理由
+
+* 「単一指標だけで断定せず、複数指標から総合判定する」という要件を、閾値のみのif分岐ではなくスコア加算方式で機械的に満たすため
+* 既存の`analyze_performance()`が出力する`performance-summary.json`をそのまま入力に再利用でき、既存の指標定義（`docs/backtesting.md` Phase 10節）との重複定義を避けられる
+* 閾値のハードコード禁止（`CLAUDE.md`）に従い、実運用で受入基準が固まった後に調整できるようにする
+
+## 影響
+
+* 新規`python/analysis/overfitting.py`・`python/tests/test_overfitting.py`・`contracts/overfitting-report.schema.json`を追加した
+* `docs/backtesting.md`に使用方法を追記した
+* 実際のIS/OOS/Walk Forward各期間のStrategy Tester実行結果を用いた診断はまだ実施していない（`TASKS.md` 3.3節、実データ取得後に実施）
+* 本診断はEAの内部ロジックやRisk Managerの判断には一切影響しない。診断結果はレポート出力のみで、発注可否判定へは接続していない
