@@ -40,9 +40,11 @@
 
 **2026-08-16: Custom Symbol `USDJPY_HIST`への投入完了。** 全119ファイル・約8億8,097万tick（9月分の825万tickと合わせ累計約8億8,922万tick、2016-09〜2026-08）をパースエラー0件で投入した。Strategy Testerで2016年9月単月・2020年通年（月境界をまたぐ12か月）の両方について「ヒストリー品質100%リアルティック」を確認済み（`results/backtests/oanda-hist-validation-2016-09/`、`results/backtests/oanda-hist-validation-2020/`）。2020年通年のMock ALLOW実行では総損益-83,262円・取引数117（正式なIS/OOS期間としてはまだ採用しておらず、スポットチェック目的の参考値）。
 
-* [ ] 正式なIn-Sample/Out-of-Sample/Walk Forward期間を`USDJPY_HIST`（2016-09〜2026-08の範囲内）で確定する — ユーザー判断待ち
-* [ ] 確定した期間でStrategy Testerを正式に再実行し、`run-metadata.json`を作成する
-* [ ] 新結果を踏まえてHANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`を更新する
+* [x] 正式なIn-Sample/Out-of-Sample/Walk Forward期間を`USDJPY_HIST`（2016-09〜2026-08の範囲内）で確定する（2026-08-16確定、`DECISIONS.md` DEC-024参照。開発・In-Sample=2016-09〜2020-12、OOS/Walk Forward評価=2021-01〜2024-12、Final Holdout=2025-01〜2026-08、Walk Forwardは4年学習→1年検証のローリング5Fold。ユーザー指定の開始日2016-01は`USDJPY_HIST`の実データ開始2016-09と矛盾していたため、実際に取得済みの範囲へ補正した）
+* [x] In-Sample期間でStrategy Testerを実行し、`run-metadata.json`を作成する（2026-08-16実施。当初期間2016-09〜2020-12で実行したところ取引数0件の異常が判明し、原因調査の結果Tester開始日が`USDJPY_HIST`実データ最古日（2016-08-31）に近すぎ、D1/H4インジケーターのウォームアップに必要なバッファ（実測で9〜10か月必要）が不足していたことが判明。詳細な原因調査・二分探索の経緯は`results/backtests/20260816-180519-USDJPY-H1/ANOMALY-zero-trades.md`、期間補正は`DECISIONS.md` DEC-025を参照。開始日を**2017-09-01**へ補正した上で正式再実行し完走（`results/backtests/20260816-193344-USDJPY-H1/`）: ヒストリー品質100%リアルティック、取引数55・約定数110、総損益-65,696円、Profit Factor 0.66、最大DD 96,450円（9%）、Sharpe -3.20、期待利得-1,194.47円、ロング40件/勝率27.50%、ショート15件/勝率20.00%、最大連敗17件（-80,818円）。受入基準未凍結のため合否は未判定）
+* [ ] Walk Forward各Fold（Fold1: 学習2017-09〜2019-12/検証2020 〜 Fold5: 学習2020-01〜2023-12/検証2024、DEC-025でFold1学習開始を補正）を実行する。rule-based Strategyには学習ステップがないため、当面は各Foldの検証年についてのみ固定パラメータでStrategy Testerを実行する（学習を伴うWalk Forward評価は3.3節のML評価タスクで別途実施する）
+* [ ] Final Holdout期間（2025-01〜2026-08）は、EA・MLモデル・閾値・SL/TP等を確定し他の全ゲートが完了するまで実行しない（一度だけの評価として温存する）
+* [x] 新結果を踏まえてHANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`を更新する（2026-08-16実施）
 
 ---
 
@@ -103,6 +105,8 @@
 * [ ] 閾値候補を比較する
 * [ ] 取引コスト込みで評価する
 * [ ] 期間別・相場環境別の安定性を確認する
+* [x] IS/OOS/Walk Forwardの過学習疑いを自動診断する機能を実装する（2026-08-16実装、`python/analysis/overfitting.py`。`DECISIONS.md` DEC-026参照。実データでの診断実行は未実施）
+* [ ] 実際のIS/OOS/Walk Forward各期間の`performance-summary.json`で過学習疑い診断を実行する
 * [ ] production候補Model Artifactを生成する
 * [ ] Model VersionとSHA-256を記録する
 * [ ] Model Artifactと評価Reportを保管する

@@ -17,3 +17,11 @@ OANDA-Japan MT5 Demoサーバーのライブtickキャッシュも直近約1年�
 OANDA証券のWeb版Tickダウンロードツールから取得した2016年9月〜2026年8月のUSDJPY real tick CSVを、`USDJPY`の仕様を複製したCustom Symbol「USDJPY_HIST」へ投入する方式（`DECISIONS.md` DEC-023、`mt5/Tools/ImportOandaTicks.mq5`）で解決した。`oanda-hist-validation-2016-09/`・`oanda-hist-validation-2020/`はこの投入方式の品質検証記録であり、いずれも「ヒストリー品質100%リアルティック」を確認済み。ただし正式なIn-Sample/Out-of-Sample期間としてはまだ確定していないため、これらの損益数値をproduction release gateの証跡として扱わないこと。
 
 今後の実市場tick検証・Strategy Testerは、Symbolに`USDJPY`ではなく`USDJPY_HIST`を指定して実行する。
+
+## 2026-08-16: In-Sample/Out-of-Sample/Walk Forward期間の確定と補正
+
+`DECISIONS.md` DEC-024で当初、開発・In-Sample=2016-09〜2020-12、OOS/Walk Forward評価=2021-01〜2024-12、Final Holdout=2025-01〜2026-08を確定した。
+
+その後、2016-09開始でStrategy Testerを実行したところ、対象期間全体（26,882本のH1確定足）で取引数0件の異常が判明した（`20260816-180519-USDJPY-H1/ANOMALY-zero-trades.md`）。原因は、Tester開始日が`USDJPY_HIST`実データ最古日（2016-08-31）に近すぎ、D1/H4インジケーターのウォームアップに必要なバッファ（二分探索の結果、実測で9〜10か月必要と判明）が不足していたことだった。この結果を受け、`DECISIONS.md` DEC-025でIn-Sample開始日を**2017-09-01**へ補正した。`mt5/test-config/StrategyTester-USDJPY-H1.ini`の既定値もIn-Sample期間（`USDJPY_HIST`、2017-09-01〜2020-12-31）へ更新済み。
+
+補正後の期間でIn-Sample正式実行を完了した（`20260816-193344-USDJPY-H1/`）: ヒストリー品質100%リアルティック、取引数55、総損益-65,696円、Profit Factor 0.66、最大DD9%。受入基準は未凍結のため合否は未判定。

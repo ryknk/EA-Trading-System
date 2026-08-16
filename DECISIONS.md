@@ -439,3 +439,120 @@ OANDA証券が提供するWeb版Tickダウンロードツール（`https://www.o
 * 今後の実市場tick検証（IS/OOS、Walk Forward等）は、Broker実銘柄`USDJPY`ではなくCustom Symbol `USDJPY_HIST`を対象に実行する
 * Demo/小額実口座/Productionでの実際の発注は、引き続き実`USDJPY`銘柄・実Brokerの気配値を使用する（Custom Symbolはバックテスト専用）
 * Custom Symbolの仕様は作成時点の`USDJPY`のスナップショットであり、Broker側の仕様変更（レバレッジ、Tick Value等）を自動追従しない。将来的な仕様変更時は再作成が必要
+
+---
+
+# DEC-024: In-Sample/Out-of-Sample/Walk Forward期間を確定する
+
+**状態:** 採用
+
+## 背景
+
+DEC-023によりCustom Symbol `USDJPY_HIST`で2016年9月〜2026年8月のUSDJPY real tick履歴が利用可能になった。この範囲内で、最新期間への過学習を避けつつ、最後に完全未使用データでEAの汎化性能を確認できる期間分割が必要だった。
+
+ユーザーからは「使用可能なOANDA公式ティックデータ: 2016-01〜2026-08」として開始日2016-01の案が示されたが、実際に投入済みの`USDJPY_HIST`データは2016年9月分からしか存在しない（DEC-023、`results/backtests/oanda-hist-validation-2016-09/`で品質検証済みの最古月）。2016-01〜2016-08分のOANDA real tickは取得していない。文書と実データの矛盾のため、本決定では実際に取得済みの2016-09を開始点として採用する。
+
+## 判断
+
+* 開発・In-Sample: 2016-09〜2020-12
+* OOS / Walk Forward評価: 2021-01〜2024-12
+* Final Holdout: 2025-01〜2026-08
+
+Walk Forwardは、過去期間で学習・最適化し、その直後の未来期間で検証するローリング方式（4年学習→1年検証、5 Fold）とする。
+
+| Fold | 学習期間 | 検証期間 |
+| --- | --- | --- |
+| 1 | 2016-09〜2019-12 | 2020 |
+| 2 | 2017-01〜2020-12 | 2021 |
+| 3 | 2018-01〜2021-12 | 2022 |
+| 4 | 2019-01〜2022-12 | 2023 |
+| 5 | 2020-01〜2023-12 | 2024 |
+
+Fold 1の学習期間は実データが2016-09からしか存在しないため、2016年分は9〜12月の4か月のみとなる（他Foldは各年フル12か月）。
+
+Final Holdout（2025-01〜2026-08）は、EA・MLモデル・閾値・SL/TP等のパラメータをすべて固定した後に一度だけ評価する。開発・パラメータ調整・ML閾値調整には一切使用しない。評価結果（Profit Factor、Max Drawdown、Expectancy、Sharpe、Trade Count等）がWalk Forward結果から大きく崩れていないか確認する。
+
+## 理由
+
+* 最新期間（2025年以降）への過学習を避け、最後に完全未使用データで汎化性能を確認する必要がある
+* Walk Forwardのローリング方式により、単一固定OOS期間よりも期間依存性・安定性を確認しやすい
+* `USDJPY_HIST`の実データ開始（2016-09）に合わせて期間を補正することで、存在しないデータへの依存を避ける
+
+## 影響
+
+* `mt5/test-config/StrategyTester-USDJPY-H1.ini`の既定Symbolを`USDJPY_HIST`、既定期間をIn-Sample期間（2016-09-01〜2020-12-31）へ変更した
+* `tools/run-strategy-tester.ps1`の既定`-FromDate`/`-ToDate`も同様に変更した（誤った引数省略実行でFinal Holdout期間を消費しないための安全策）
+* 実際のIS/OOS/Walk Forward/Final Holdout各期間でのStrategy Tester実行・ML学習は別途実施する（未実施、`TASKS.md` 2.1参照）
+* Final Holdoutを一度評価した後にパラメータを変更した場合、新しいFinal Holdout期間の確保が必要になる（本Decisionの期間では代替がないため、その時点で再検討する）
+
+---
+
+# DEC-025: In-Sample開始日を2017-09-01へ補正する（DEC-024の技術的制約による修正）
+
+**状態:** 採用
+
+## 背景
+
+DEC-024で確定したIn-Sample開始日（2016-09）は`USDJPY_HIST`の実データ最古日（2016-08-31、DEC-023）にほぼ一致していた。この開始日でStrategy Testerを実行したところ、対象期間全体（2016-09〜2020-12、26,882本のH1確定足）で一度も取引が発生しない異常が判明した（`results/backtests/20260816-180519-USDJPY-H1/ANOMALY-zero-trades.md`）。
+
+原因調査の結果、Strategy Tester起動時のD1/H4インジケーター（`InpSlowEmaPeriod=200`のD1 EMA等）のウォームアップに必要な事前バッファが不足していたことが原因と確定した。テスト実行中に指標が後から回復することはなく、開始時点のバッファ量のみで成否が決まる。2026-08-16、二分探索で必要バッファ量を検証した結果は以下の通り。
+
+| 開始日 | バッファ | 結果 |
+| --- | --- | --- |
+| 2017-01-01 | 約4か月 | 失敗 |
+| 2017-04-01 | 約7か月 | 失敗 |
+| 2017-06-01 | 約9か月 | 失敗 |
+| 2017-07-01 | 約10か月 | 成功 |
+| 2018-01-01 | 約16か月 | 成功 |
+
+閾値は9〜10か月の間で確定した。
+
+## 判断
+
+DEC-024のIn-Sample開始日を、2016-09から**2017-09-01**へ補正する（確認済み閾値2017-07-01に安全マージン2か月を加算）。
+
+* 開発・In-Sample: **2017-09〜2020-12**（DEC-024の2016-09〜2020-12から補正、約3年4か月）
+* OOS / Walk Forward評価: 2021-01〜2024-12（DEC-024から変更なし）
+* Final Holdout: 2025-01〜2026-08（DEC-024から変更なし）
+
+`USDJPY_HIST`の2016-09〜2017-08分（約12か月）は、Strategy Tester実行時の事前ウォームアップバッファとしてのみ使用し、正式な評価対象からは除外する。
+
+## 注意点（未解決）
+
+DEC-024のWalk Forward Fold 1（学習2016-09〜2019-12→検証2020）の学習期間開始日も、実データ最古日に近く同様の制約を受ける可能性がある。ただしWalk Forwardの学習ステップは将来のML学習パイプライン（Python側）向けであり、rule-based Strategy（現状のCoreEA）には学習ステップが存在しないため、本Decisionでは対象外とする。ML学習パイプラインでWalk Forwardを実装する時点で、同様のバッファ制約が再現するか改めて確認する必要がある。
+
+## 影響
+
+* `mt5/test-config/StrategyTester-USDJPY-H1.ini`の既定`FromDate`を2016-09-01から2017-09-01へ変更した
+* `tools/run-strategy-tester.ps1`の既定`-FromDate`も同様に変更した
+* `results/backtests/run-metadata.template.json`の`start_date`も同様に変更した
+* `docs/backtesting.md`・`TASKS.md`・`HANDOFF.md`のIn-Sample期間記載を更新した
+
+---
+
+# DEC-026: 過学習疑い診断はスコア方式の複数指標総合判定とする
+
+**状態:** 採用
+
+## 背景
+
+DEC-024/DEC-025でIS/OOS/Walk Forward期間が確定した。今後各期間でStrategy Testerを実行した際、In-Sampleだけ良好でOOS/Walk Forwardで大きく崩れる過学習を見逃さないための自動診断が必要になった。既存の`python/analysis/performance.py`は単一期間の指標算出のみで、期間間の比較機能がなかった。
+
+## 判断
+
+新規`python/analysis/overfitting.py`で、IS基準の劣化率をProfit Factor・Sharpe Ratio・Expectancy・Net Profit・Max Drawdownの5指標について算出し、各指標をLOW/MODERATE/HIGH/UNKNOWN（算出不能）へ区分した上で、severityをスコア化（LOW=0、MODERATE=1、HIGH=2）して合算する。合算スコアが閾値を超えた場合のみ総合判定をMODERATE/HIGHへ引き上げる。単一指標のHIGHのみ（スコア2点）ではMODERATE止まりとし、複数指標の劣化が揃って初めてHIGHへ到達する設計とした。
+
+IS側またはOOS/Walk Forward側いずれかの取引数が最小閾値未満の場合、算出した劣化率にかかわらず総合判定を`INSUFFICIENT_DATA`へ上書きする。Walk Forwardは各Foldを個別に比較し、Foldごとのスコア平均で総合判定する（単一Foldの外れ値だけで判定しない）。劣化率・スコア・最小取引数等の閾値はすべて`OverfittingThresholds`データクラスの既定値とし、`--thresholds-json`で上書き可能にした。Final Holdout（2025-01〜2026-08）はパラメータ調整に使わないため、本診断の入力対象から明示的に除外する。
+
+## 理由
+
+* 「単一指標だけで断定せず、複数指標から総合判定する」という要件を、閾値のみのif分岐ではなくスコア加算方式で機械的に満たすため
+* 既存の`analyze_performance()`が出力する`performance-summary.json`をそのまま入力に再利用でき、既存の指標定義（`docs/backtesting.md` Phase 10節）との重複定義を避けられる
+* 閾値のハードコード禁止（`CLAUDE.md`）に従い、実運用で受入基準が固まった後に調整できるようにする
+
+## 影響
+
+* 新規`python/analysis/overfitting.py`・`python/tests/test_overfitting.py`・`contracts/overfitting-report.schema.json`を追加した
+* `docs/backtesting.md`に使用方法を追記した
+* 実際のIS/OOS/Walk Forward各期間のStrategy Tester実行結果を用いた診断はまだ実施していない（`TASKS.md` 3.3節、実データ取得後に実施）
+* 本診断はEAの内部ロジックやRisk Managerの判断には一切影響しない。診断結果はレポート出力のみで、発注可否判定へは接続していない

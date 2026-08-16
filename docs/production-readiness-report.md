@@ -26,7 +26,7 @@ Phase 13ではMQL5の実コンパイル、Script実行、Python/Lambda/CDK回帰
 | MQL5 Script runtime | PASS | 7/7で `TEST_SUITE_PASS` |
 | Python/Lambda/CDK unit | PASS | 78 passed |
 | CDK synth | PASS | dev stack synth完了 |
-| Strategy Tester | LOCALLY TESTED（損益結果は要判断） | 2026-07-21 23:13、USDJPY/H1/2025年、100%リアルティック、Mock ALLOWで完走。総損益-95,024円、PF 0.59、最大DD10%到達（詳細は`results/backtests/20260721-231302-USDJPY-H1/run-metadata.json`） |
+| Strategy Tester | LOCALLY TESTED（損益結果は要判断） | 2026-08-16、OANDA証券MT5・`USDJPY_HIST`・In-Sample期間（2017-09〜2020-12、DEC-025）で完走。総損益-65,696円、PF 0.66、最大DD9%（詳細は`results/backtests/20260816-193344-USDJPY-H1/run-metadata.json`）。XMTrading時代の2025年単年実行（総損益-95,024円、PF 0.59）は参考記録として保持 |
 | AWS dev integration | NOT VERIFIED | AWS認証・endpointを使用していない |
 | LLM provider実通信 | NOT VERIFIED | API key/modelを使用していない |
 | Demo/MQL5 VPS | NOT VERIFIED | 未接続 |
@@ -49,7 +49,11 @@ DailyLossの日付切替、Broker server time、永続lock、Balance更新、実
 
 2026-07-21 23:13、USDJPY/H1、2025-01-01〜2025-12-31、Every tick based on real ticks（100%リアルティック）、Mock ALLOW（`InpTesterDecisionMode=1`, `InpTesterFixedMlProbability=0.65`）、`InpEnableTradeMutations=true`（Strategy Tester内のみ、EA既定値は変更せず）で完走した。Broker表示は`XMTrading-MT5`/`Tradexfin Limited`だが、Demo口座かReal口座かは記録がなく **NOT VERIFIED**。
 
-結果: 総損益 -95,024円（総利益135,076円、総損失-230,100円）、Profit Factor 0.59、Sharpe -4.09、最大Drawdown 95,024円（残高比10%、上限到達）、取引数66（ロング6/勝率0%、ショート60/勝率26.67%）、最大連敗9（-43,130円）。手数料合計0円、スワップ合計-10,846円、価格損益合計-84,178円。全132注文が`filled`で、拒否・requoteに該当する注文は現れなかった。証跡は`results/backtests/20260721-231302-USDJPY-H1/`（`.htm`/`.png`/`tester.ini`/`run-metadata.json`）。
+結果: 総損益 -95,024円（総利益135,076円、総損失-230,100円）、Profit Factor 0.59、Sharpe -4.09、最大Drawdown 95,024円（残高比10%、上限到達）、取引数66（ロング6/勝率0%、ショート60/勝率26.67%）、最大連敗9（-43,130円）。手数料合計0円、スワップ合計-10,846円、価格損益合計-84,178円。全132注文が`filled`で、拒否・requoteに該当する注文は現れなかった。証跡は`results/backtests/20260721-231302-USDJPY-H1/`（`.htm`/`.png`/`tester.ini`/`run-metadata.json`）。この実行はXMTrading-MT5時代の参考記録であり、正式なIn-Sample/OOS/Walk Forward系列としては扱わない（本節末尾参照）。
+
+**2026-08-16、In-Sample期間の正式実行完了。** OANDA証券MT5・Custom Symbol `USDJPY_HIST`・DEC-024/DEC-025で確定した期間（2017-09-01〜2020-12-31）でStrategy Testerを実行した。当初期間（2016-09開始）ではCustom Symbolのインジケーターウォームアップバッファ不足により取引数0件の異常が発生し、原因調査（`results/backtests/20260816-180519-USDJPY-H1/ANOMALY-zero-trades.md`）を経て開始日を2017-09-01へ補正した（DEC-025）。
+
+結果: ヒストリー品質100%リアルティック、取引数55・約定数110、総損益 **-65,696円**（総利益128,620円、総損失-194,316円）、Profit Factor **0.66**、Sharpe **-3.20**、最大Drawdown 96,450円（残高比9%）、期待利得-1,194.47円、ロング40件/勝率27.50%、ショート15件/勝率20.00%、最大連敗17件（-80,818円）。証跡は`results/backtests/20260816-193344-USDJPY-H1/`（`.htm`/`.png`/`tester.ini`/`run-metadata.json`）。受入基準は未凍結のため合否は未判定。
 
 一方、以下は本実行でも **NOT VERIFIED** のまま。
 - Terminal/EAログ（Journal/Expertsタブ）が保存されておらず、Spread/Margin/OrderCheckの拒否動作は未検証（本実行では拒否が1件も発生していない）
@@ -61,7 +65,7 @@ DailyLossの日付切替、Broker server time、永続lock、Balance更新、実
 
 ## 6. Out-of-Sample結果
 
-実市場データとproduction候補モデルがないため **NOT VERIFIED**。2015〜2022をIn-Sample、2023〜2025をOOSとする案は、実データの取得期間とラベルhorizonを確認後に凍結する。OOSを閾値調整へ再利用してはならない。
+実市場データとproduction候補モデルがないため **NOT VERIFIED**。期間は2026-08-16に確定した（`DECISIONS.md` DEC-024、DEC-025で補正）: 開発・In-Sample=2017-09〜2020-12、OOS/Walk Forward評価=2021-01〜2024-12、Final Holdout=2025-01〜2026-08（EA・Model・閾値確定後に一度だけ評価）。OOSを閾値調整へ再利用してはならない。
 
 ## 7. Walk Forward結果
 
@@ -97,7 +101,7 @@ EAは長期AWS鍵を持たず、失効可能なkey IDとHMAC共有鍵ファイ�
 
 ## 13. 残存リスク
 
-1. Strategy Testerは2025年分（XMTrading-MT5）について完走したが総損益-95,024円・PF 0.59の損失結果であり、受入基準未凍結のため合否未判定。XMTrading-MT5はreal tickを2022年1月分以降しか保持していないため、OANDA証券MT5へ切り替えて再検証する方針を2026-08-10に決定した（切替未完了）。OOS、Walk Forward、Demoも未完了で、戦略とRiskの実データ挙動が不明。
+1. Strategy TesterはIn-Sample期間（2017-09〜2020-12、OANDA証券MT5・`USDJPY_HIST`、DEC-024/DEC-025）について完走したが総損益-65,696円・PF 0.66の損失結果であり、受入基準未凍結のため合否未判定。OOS、Walk Forward、Final Holdout、Demoは未完了で、戦略とRiskの実データ挙動が不明。
 2. AWS dev実通信と障害注入、Alarm通知到達が未検証。
 3. 独立した定期EA Heartbeatが未実装で、無候補時間帯の死活判定が弱い。
 4. Kill Switchはコード・純粋ルールのみで、保有position中のSL/TP/安全決済継続を端末で実証していない。

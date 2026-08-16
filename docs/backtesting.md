@@ -18,9 +18,27 @@
 
 Phase 13の自動試行は初回`account is not specified`で開始できなかったが、2026-07-21にXMTrading-MT5（USDJPY/H1/2025年、100%リアルティック）で完走した（`results/backtests/20260721-231302-USDJPY-H1/`、総損益-95,024円・Profit Factor 0.59）。ただし2026-08-10、XMTrading-MT5はUSDJPYのreal tickデータを2022年1月分以降しか保持していないことを確認した（2020-2021指定時は「ヒストリー品質0%リアルティック」の合成データにフォールバックする）。このためブローカーをOANDA証券MT5（東京サーバー）へ切り替えたが、OANDA-Japan MT5 Demoサーバーのライブtickキャッシュも直近約1年分しか保持しておらず、同様に「ヒストリー品質2%リアルティック」となることが判明した（`results/backtests/20260816-113850-USDJPY-H1/INVALID-2pct-real-ticks.md`）。
 
-2026-08-16、OANDA証券のWeb版Tickダウンロードツールから2016年9月以降のUSDJPY real tick（120か月分）を取得し、`USDJPY`の仕様を複製したCustom Symbol「USDJPY_HIST」へ`mt5/Tools/ImportOandaTicks.mq5`で投入する方式（`DECISIONS.md` DEC-023）で解決した。2016年9月単月・2020年通年の両方で「ヒストリー品質100%リアルティック」を確認済み。今後の実市場tick検証は`USDJPY_HIST`（2016-09〜2026-08の範囲）を対象に実行する。正式なIn-Sample/Out-of-Sample期間はこの範囲内で確定する（未確定、詳細は`TASKS.md` 2.1、`HANDOFF.md`）。
+2026-08-16、OANDA証券のWeb版Tickダウンロードツールから2016年9月以降のUSDJPY real tick（120か月分）を取得し、`USDJPY`の仕様を複製したCustom Symbol「USDJPY_HIST」へ`mt5/Tools/ImportOandaTicks.mq5`で投入する方式（`DECISIONS.md` DEC-023）で解決した。2016年9月単月・2020年通年の両方で「ヒストリー品質100%リアルティック」を確認済み。今後の実市場tick検証は`USDJPY_HIST`（2016-09〜2026-08の範囲）を対象に実行する。
 
-In-Sampleは2015〜2022、Out-of-Sampleは2023〜2025を初期分割案とする。ただし実データの学習期間を確定してから凍結する。OOS結果を見て閾値や戦略値を変更した場合、その期間をOOSとして再利用しない。ML学習コードは時系列分割・gap・Walk Forwardと0.50/0.55/0.60/0.65/0.70の事前固定閾値比較を出力するが、実市場データでの評価は未実施である。
+**2026-08-16確定: In-Sample/Out-of-Sample/Walk Forward期間（`DECISIONS.md` DEC-024）。**
+
+* 開発・In-Sample: **2017-09〜2020-12**（DEC-025で補正。当初案は2016-09だったが、Strategy Tester起動時のD1/H4インジケーターウォームアップに実データ最古日から約10か月のバッファが必要と判明したため、安全マージンを含めて2017-09へ補正した）
+* OOS / Walk Forward評価: 2021-01〜2024-12
+* Final Holdout: 2025-01〜2026-08（EA・MLモデル・閾値・SL/TP等をすべて固定した後に一度だけ評価する。開発・パラメータ調整・ML閾値調整には一切使用しない）
+
+**2026-08-16判明: Custom Symbolのバッファ不足による取引数0件の異常。** In-Sample期間（当初案2016-09〜2020-12）でStrategy Testerを実行したところ完走したが、全期間（26,882本のH1確定足）で`SIGNAL_ERROR code=MARKET_DATA_UNAVAILABLE`となり取引が1件も発生しなかった。原因調査の結果、Tester起動時点でD1/H4インジケーターの計算に必要な事前バッファ（実データ最古日からの経過期間）が不足していたことが判明し、テスト実行中に指標が後から回復することもないと確認した。二分探索の結果、必要バッファは実データ最古日（2016-08-31）から約9〜10か月と判明し、In-Sample開始日を2017-09-01へ補正した（DEC-025）。詳細は`results/backtests/20260816-180519-USDJPY-H1/ANOMALY-zero-trades.md`参照。
+
+Walk Forwardは、過去期間で学習・最適化し、直後の未来期間で検証するローリング方式（4年学習→1年検証、5 Fold）とする。
+
+| Fold | 学習期間 | 検証期間 |
+| --- | --- | --- |
+| 1 | 2017-09〜2019-12 | 2020 |
+| 2 | 2017-01〜2020-12 | 2021 |
+| 3 | 2018-01〜2021-12 | 2022 |
+| 4 | 2019-01〜2022-12 | 2023 |
+| 5 | 2020-01〜2023-12 | 2024 |
+
+Fold 1の学習期間開始もDEC-025に合わせて2017-09へ補正した。Fold 2以降の学習期間はrule-based Strategyの直接実行対象ではなく将来のML学習パイプライン向けであり、同様のバッファ制約が生じるかは未検証（DEC-025注意点参照）。OOS結果を見た後、同じOOS期間・Final Holdout期間へ再最適化しない。`mt5/test-config/StrategyTester-USDJPY-H1.ini`と`tools/run-strategy-tester.ps1`の既定Symbol/期間は、Final Holdoutを誤って消費しないようIn-Sample期間（`USDJPY_HIST`、2017-09-01〜2020-12-31）へ設定してある。各期間の実行は`-FromDate`/`-ToDate`を明示指定する。ML学習コードは時系列分割・gap・Walk Forwardと0.50/0.55/0.60/0.65/0.70の事前固定閾値比較を出力するが、実市場データでの評価は未実施である。
 
 ## Phase 10の共通指標定義
 
@@ -51,3 +69,23 @@ python -m python.analysis.reports `
 ```
 
 出力はバージョン付きJSONサマリー、日本語Markdown、正規化取引CSV、DD付き資産曲線CSV、月次成績CSVである。JSON契約は `contracts/performance-report.schema.json` を正とし、将来の管理画面も同じ出力を利用する。
+
+## 過学習疑い診断
+
+`python.analysis.overfitting` は、In-Sample・Out-of-Sample・Walk Forward各Foldの `performance-summary.json`（上記コマンドの出力）を比較し、過学習の疑いを診断する。過学習を断定する機能ではなく、疑いを検出する診断機能である。Final Holdout（2025-01〜2026-08）は本診断の対象に含めない。
+
+Profit Factor、Sharpe Ratio、Expectancy、Net Profitの劣化率（`(IS − 比較対象) / |IS|`）と、Max Drawdownの悪化率（`(比較対象 − IS) / max(|IS|, drawdown_relative_floor)`）をそれぞれ算出し、各指標をLOW/MODERATE/HIGH/UNKNOWN（算出不能）に区分してスコア化する。単一指標のHIGHのみではMODERATE止まりとし、複数指標が揃って劣化した場合のみHIGHへ総合判定する。Walk Forwardは各Foldを個別に比較したうえで、Foldごとのスコア平均で総合判定する。IS側またはOOS/WF側いずれかの取引数が閾値未満の場合、判定結果はLOW/MODERATE/HIGHではなく`INSUFFICIENT_DATA`とし、信頼性が低いことを明示する。
+
+閾値（劣化率・スコア・最小取引数等）はハードコードせず、`--thresholds-json`でJSONファイルから上書きできる。既定値は`OverfittingThresholds`（`python/analysis/overfitting.py`）を参照。
+
+```powershell
+$env:PYTHONPATH='.'
+python -m python.analysis.overfitting `
+  --in-sample results/backtests/<is-run>/performance-summary.json `
+  --oos results/backtests/<oos-run>/performance-summary.json `
+  --walk-forward-fold FOLD1=results/backtests/<fold1-run>/performance-summary.json `
+  --walk-forward-fold FOLD2=results/backtests/<fold2-run>/performance-summary.json `
+  --output build/overfitting-report
+```
+
+出力は `overfitting-assessment.json`（JSON契約は `contracts/overfitting-report.schema.json` を正とする）と `overfitting-report.md` である。
