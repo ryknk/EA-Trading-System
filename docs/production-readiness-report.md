@@ -33,6 +33,8 @@ Phase 13ではMQL5の実コンパイル、Script実行、Python/Lambda/CDK回帰
 
 `TestDecisionApiRules`は全AssertionとPASSマーカーを出したがTerminal process exit codeは1だった。他の6 Scriptは0。テストランナーはAssertion/PASSマーカーを正としているが、exit code差異は未解消事項として追跡する。
 
+**2026-08-16、本番運用ブローカーをOANDA証券MT5へ切り替えたことに伴い（`DECISIONS.md` DEC-023）、`tools/compile-mql5.ps1`・`tools/run-mql5-tests.ps1`等のデフォルト対象をOANDA端末へ変更し、OANDA環境で上記のCompileとScript Testを再実行した。** 結果は同一（EA＋7 Script全て0 errors/0 warnings、7/7でAssertion/PASSマーカー確認、`TestDecisionApiRules`のみ同じexit code 1）。OANDA-Japan MT5 Demoはhedging mode口座であることをTerminal Journalで確認しており、XMTrading側の口座方式（未確認のまま）とは異なる可能性があるが、少なくとも純粋ルールレベルのテストはOANDA環境でも同一結果だった。
+
 ## 3. MQL5ビルド結果
 
 `tools/link-mt5.ps1`でInclude、Experts、Testsの3 Junctionを確認した。`tools/compile-mql5.ps1`をMetaEditor build 6034で実行し、CoreEA、TestTrendFollowingRules、TestPositionSizer、TestRiskGuards、TestTradingRules、TestDecisionApiRules、TestAuditRules、TestProductionSafetyRulesが全て0 errors / 0 warningsだった。build logは `build/metaeditor/` に保存される。
