@@ -484,3 +484,46 @@ Final Holdout（2025-01〜2026-08）は、EA・MLモデル・閾値・SL/TP等�
 * `tools/run-strategy-tester.ps1`の既定`-FromDate`/`-ToDate`も同様に変更した（誤った引数省略実行でFinal Holdout期間を消費しないための安全策）
 * 実際のIS/OOS/Walk Forward/Final Holdout各期間でのStrategy Tester実行・ML学習は別途実施する（未実施、`TASKS.md` 2.1参照）
 * Final Holdoutを一度評価した後にパラメータを変更した場合、新しいFinal Holdout期間の確保が必要になる（本Decisionの期間では代替がないため、その時点で再検討する）
+
+---
+
+# DEC-025: In-Sample開始日を2017-09-01へ補正する（DEC-024の技術的制約による修正）
+
+**状態:** 採用
+
+## 背景
+
+DEC-024で確定したIn-Sample開始日（2016-09）は`USDJPY_HIST`の実データ最古日（2016-08-31、DEC-023）にほぼ一致していた。この開始日でStrategy Testerを実行したところ、対象期間全体（2016-09〜2020-12、26,882本のH1確定足）で一度も取引が発生しない異常が判明した（`results/backtests/20260816-180519-USDJPY-H1/ANOMALY-zero-trades.md`）。
+
+原因調査の結果、Strategy Tester起動時のD1/H4インジケーター（`InpSlowEmaPeriod=200`のD1 EMA等）のウォームアップに必要な事前バッファが不足していたことが原因と確定した。テスト実行中に指標が後から回復することはなく、開始時点のバッファ量のみで成否が決まる。2026-08-16、二分探索で必要バッファ量を検証した結果は以下の通り。
+
+| 開始日 | バッファ | 結果 |
+| --- | --- | --- |
+| 2017-01-01 | 約4か月 | 失敗 |
+| 2017-04-01 | 約7か月 | 失敗 |
+| 2017-06-01 | 約9か月 | 失敗 |
+| 2017-07-01 | 約10か月 | 成功 |
+| 2018-01-01 | 約16か月 | 成功 |
+
+閾値は9〜10か月の間で確定した。
+
+## 判断
+
+DEC-024のIn-Sample開始日を、2016-09から**2017-09-01**へ補正する（確認済み閾値2017-07-01に安全マージン2か月を加算）。
+
+* 開発・In-Sample: **2017-09〜2020-12**（DEC-024の2016-09〜2020-12から補正、約3年4か月）
+* OOS / Walk Forward評価: 2021-01〜2024-12（DEC-024から変更なし）
+* Final Holdout: 2025-01〜2026-08（DEC-024から変更なし）
+
+`USDJPY_HIST`の2016-09〜2017-08分（約12か月）は、Strategy Tester実行時の事前ウォームアップバッファとしてのみ使用し、正式な評価対象からは除外する。
+
+## 注意点（未解決）
+
+DEC-024のWalk Forward Fold 1（学習2016-09〜2019-12→検証2020）の学習期間開始日も、実データ最古日に近く同様の制約を受ける可能性がある。ただしWalk Forwardの学習ステップは将来のML学習パイプライン（Python側）向けであり、rule-based Strategy（現状のCoreEA）には学習ステップが存在しないため、本Decisionでは対象外とする。ML学習パイプラインでWalk Forwardを実装する時点で、同様のバッファ制約が再現するか改めて確認する必要がある。
+
+## 影響
+
+* `mt5/test-config/StrategyTester-USDJPY-H1.ini`の既定`FromDate`を2016-09-01から2017-09-01へ変更した
+* `tools/run-strategy-tester.ps1`の既定`-FromDate`も同様に変更した
+* `results/backtests/run-metadata.template.json`の`start_date`も同様に変更した
+* `docs/backtesting.md`・`TASKS.md`・`HANDOFF.md`のIn-Sample期間記載を更新した

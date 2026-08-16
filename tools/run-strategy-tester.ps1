@@ -5,7 +5,7 @@ param(
     [string]$InstallPath = "C:\Program Files\OANDA MetaTrader 5",
     [string]$TerminalData = "$env:APPDATA\MetaQuotes\Terminal\EE0304F13905552AE0B5EAEFB04866EB",
     [int]$TimeoutSeconds = 900,
-    [string]$FromDate = "2016.09.01",
+    [string]$FromDate = "2017.09.01",
     [string]$ToDate = "2020.12.31"
 )
 

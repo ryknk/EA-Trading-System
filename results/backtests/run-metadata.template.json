@@ -3,7 +3,7 @@
   "run_id": "YYYYMMDD-HHMMSS-USDJPY-H1",
   "symbol": "USDJPY_HIST",
   "timeframe": "H1",
-  "start_date": "2016-09-01",
+  "start_date": "2017-09-01",
   "end_date": "2020-12-31",
   "modeling_mode": "EVERY_TICK_BASED_ON_REAL_TICKS",
   "ea_version": "1.13",
