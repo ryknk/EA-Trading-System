@@ -405,3 +405,37 @@ OOS、Walk Forward、Demo、小額実口座、AWS、VPS、通知、Rollback等�
 今後は、独立してレビュー可能な機能・修正単位でCommitする。
 
 詳細は `CONTRIBUTING.md` を参照する。
+
+---
+
+# DEC-023: 長期バックテスト用tick履歴はCustom Symbolへ投入する
+
+**状態:** 採用
+
+## 背景
+
+2026-08、Strategy Testerの実市場real tick検証を進める過程で、接続先Broker（XMTrading-MT5、OANDA-Japan MT5 Demoの両方）のMT5デモ口座サーバーが、raw tickレベルの履歴を数年程度しか保持しないことが判明した（XMTradingは2022年1月以降、OANDAデモは直近約1年のみ）。2015年以降を対象にしたIn-Sample/Out-of-Sample検証には、これらのライブ接続先が持つtickキャッシュだけでは不十分である。
+
+OANDA証券が提供するWeb版Tickダウンロードツール（`https://www.oanda.jp/trade/web/tools/tickDownload`、要ログイン）から、2016年9月以降のUSDJPY real tick（Bid/Ask付き、MT5標準のタブ区切りCSV形式）を取得できることを確認した。
+
+## 判断
+
+取得したCSVは、実際の`USDJPY`銘柄の履歴へ直接History Center経由でインポートせず、`CustomSymbolCreate(name, path, "USDJPY")`で仕様を複製したCustom Symbol（`USDJPY_HIST`）を作成し、専用スクリプト `mt5/Tools/ImportOandaTicks.mq5` の`CustomTicksAdd()`で投入する方式を採用する。
+
+投入スクリプトは、MT5端末のStartUp設定（`[StartUp]` `Script=`）経由でCLIから無人実行できる形にし、`tools/link-mt5.ps1`に`Scripts\EaTradingSystemTools`のJunctionを追加した。
+
+## 理由
+
+* History CenterのTick Import機能はGUI操作専用（ファイル選択ダイアログ）であり、120ファイル規模の投入を自動化できない。`CustomTicksAdd()`はMQL5スクリプトから直接呼び出せるため、CLIからの無人・再現可能な実行が可能
+* `CustomSymbolCreate`の`origin_name`引数で実`USDJPY`から仕様（Digits、Volume Min/Max/Step、Tick Size/Value等）を複製できるため、Broker固有仕様を再現しつつ、実データのBid/Askをそのまま使うことでヒストリカルなスプレッドも再現できる
+* 実際の`USDJPY`銘柄の即時ライブ同期データを上書き・混在させるリスクを避けられる
+
+## 検証結果
+
+2016年9月分（825万tick）およびフル期間2016年9月〜2026年8月分（119ファイル、約8億8,097万tick、パースエラー0件）を投入し、Strategy Testerで2016年9月単月・2020年通年（月境界をまたぐ12か月連続）の両方について「ヒストリー品質100%リアルティック」を確認した（`results/backtests/oanda-hist-validation-2016-09/`、`results/backtests/oanda-hist-validation-2020/`）。
+
+## 影響
+
+* 今後の実市場tick検証（IS/OOS、Walk Forward等）は、Broker実銘柄`USDJPY`ではなくCustom Symbol `USDJPY_HIST`を対象に実行する
+* Demo/小額実口座/Productionでの実際の発注は、引き続き実`USDJPY`銘柄・実Brokerの気配値を使用する（Custom Symbolはバックテスト専用）
+* Custom Symbolの仕様は作成時点の`USDJPY`のスナップショットであり、Broker側の仕様変更（レバレッジ、Tick Value等）を自動追従しない。将来的な仕様変更時は再作成が必要

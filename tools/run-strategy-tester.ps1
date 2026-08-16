@@ -1,6 +1,9 @@
+# 既定ではOANDA証券MT5端末を対象とする（2026-08-16以降の本番運用Broker、DECISIONS.md DEC-023）。
+# XMTrading-MT5（C:\Program Files\MetaTrader 5、Terminal Data: D0E8209F77C8CF37AD8BF550E51FF075）は
+# 参考用として残しており、対象にする場合は-InstallPath/-TerminalDataを明示指定すること。
 param(
-    [string]$InstallPath = "C:\Program Files\MetaTrader 5",
-    [string]$TerminalData = "$env:APPDATA\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075",
+    [string]$InstallPath = "C:\Program Files\OANDA MetaTrader 5",
+    [string]$TerminalData = "$env:APPDATA\MetaQuotes\Terminal\EE0304F13905552AE0B5EAEFB04866EB",
     [int]$TimeoutSeconds = 900,
     [string]$FromDate = "2020.01.01",
     [string]$ToDate = "2025.12.31"

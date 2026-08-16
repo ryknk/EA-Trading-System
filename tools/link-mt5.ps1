@@ -1,5 +1,8 @@
+# 既定ではOANDA証券MT5端末を対象とする（2026-08-16以降の本番運用Broker、DECISIONS.md DEC-023）。
+# XMTrading-MT5（Terminal Data: D0E8209F77C8CF37AD8BF550E51FF075）は参考用として残しており、
+# 対象にする場合は-TerminalDataを明示指定すること。
 param(
-    [string]$TerminalData = "$env:APPDATA\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075"
+    [string]$TerminalData = "$env:APPDATA\MetaQuotes\Terminal\EE0304F13905552AE0B5EAEFB04866EB"
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,7 +17,8 @@ if (-not (Test-Path -LiteralPath $mql5)) {
 $links = @(
     @{ Path = Join-Path $mql5 "Include\EaTradingSystem"; Target = Join-Path $repoMt5 "Include" },
     @{ Path = Join-Path $mql5 "Experts\EaTradingSystem"; Target = Join-Path $repoMt5 "Experts" },
-    @{ Path = Join-Path $mql5 "Scripts\EaTradingSystemTests"; Target = Join-Path $repoMt5 "Tests" }
+    @{ Path = Join-Path $mql5 "Scripts\EaTradingSystemTests"; Target = Join-Path $repoMt5 "Tests" },
+    @{ Path = Join-Path $mql5 "Scripts\EaTradingSystemTools"; Target = Join-Path $repoMt5 "Tools" }
 )
 
 foreach ($link in $links) {

@@ -27,9 +27,21 @@
 * [ ] OANDA証券MT5（東京サーバー）端末をインストールする
 * [ ] `tools/link-mt5.ps1`のJunction先をOANDA MT5端末のデータフォルダへ向け直す（`-TerminalData`パラメータで指定）
 * [ ] OANDA側のUSDJPY Symbol仕様を確認する（Symbol名表記、Digits、Volume Min/Max/Step、Tick Size/Value、Stop Level/Freeze Level、レバレッジ=国内規制上限25倍、スワップ体系）
-* [ ] OANDA側でUSDJPYのreal tick履歴を2015年以降で取得する
-* [ ] `.\tools\run-strategy-tester.ps1`をOANDA側データで再実行する
-* [ ] 新しいレポートを`results/backtests/<run-id>-USDJPY-H1/`へ保存し、`run-metadata.json`を作成する
+* [x] OANDA側でUSDJPYのreal tick履歴を2015年以降で取得する（2026-08-16試行、**失敗**）
+* [x] `.\tools\run-strategy-tester.ps1`をOANDA側データで再実行する（2026-08-16、2015.01.01-2025.12.31指定で完走、exit=0）
+* [x] 新しいレポートを`results/backtests/<run-id>-USDJPY-H1/`へ保存する（`results/backtests/20260816-113850-USDJPY-H1/`）
+* [ ] 新結果を踏まえてHANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`を更新する
+
+**2026-08-16重大な判明事項: OANDA証券でもreal tickの深い履歴は取得できなかった。** 実行は完走したが「ヒストリー品質2%リアルティック」となり、ほぼ全期間が合成tickだった。OANDA-Japan MT5 Demoサーバーの`.../ticks/USDJPY/`を確認したところ、real tickの`.tkc`ファイルは2025-09〜2026-08の約1年分（一部欠落あり）しか存在せず、2015〜2024年分は皆無だった。詳細は`results/backtests/20260816-113850-USDJPY-H1/INVALID-2pct-real-ticks.md`。
+
+比較: XMTrading-MT5は2022-01以降（約4.5年分）のreal tickを保持していたのに対し、OANDA-Japan MT5 Demoは2025-09以降（約1年分）しか保持していない。**ブローカー切替はreal tick履歴の深さを改善するどころか悪化させた。** これはブローカー固有の問題ではなく、MT5デモ口座サーバー一般がraw tickレベルの長期履歴を保持しない構造的制約である可能性が高い（Real口座や有償tickデータベンダーでの挙動は未確認）。
+
+* [x] 2015年以降のreal tick取得という当初目標をどう扱うか判断する（**2026-08-16解決**: OANDA証券のWeb版Tickダウンロードツールから2016年9月以降のUSDJPY real tick CSV（120か月分、圧縮4.0GB）を取得。MT5デモ口座サーバーのライブtickキャッシュとは別に、Custom Symbol `USDJPY_HIST`（`USDJPY`の仕様を複製）へ`mt5/Tools/ImportOandaTicks.mq5`経由で投入する方式を確立した。詳細は`DECISIONS.md` DEC-023を参照）
+
+**2026-08-16: Custom Symbol `USDJPY_HIST`への投入完了。** 全119ファイル・約8億8,097万tick（9月分の825万tickと合わせ累計約8億8,922万tick、2016-09〜2026-08）をパースエラー0件で投入した。Strategy Testerで2016年9月単月・2020年通年（月境界をまたぐ12か月）の両方について「ヒストリー品質100%リアルティック」を確認済み（`results/backtests/oanda-hist-validation-2016-09/`、`results/backtests/oanda-hist-validation-2020/`）。2020年通年のMock ALLOW実行では総損益-83,262円・取引数117（正式なIS/OOS期間としてはまだ採用しておらず、スポットチェック目的の参考値）。
+
+* [ ] 正式なIn-Sample/Out-of-Sample/Walk Forward期間を`USDJPY_HIST`（2016-09〜2026-08の範囲内）で確定する — ユーザー判断待ち
+* [ ] 確定した期間でStrategy Testerを正式に再実行し、`run-metadata.json`を作成する
 * [ ] 新結果を踏まえてHANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`を更新する
 
 ---
@@ -52,6 +64,8 @@
 * [ ] 今回の結果（総損益-95,024円、Profit Factor 0.59、最大DD10%到達、ロング勝率0%/6件、ショート勝率26.67%/60件）を踏まえ、Strategyパラメータの見直し・再実行・期間拡大のいずれで進めるかを判断する（ユーザー判断待ち。詳細は作業報告を参照）
 
 ## 2.2 `TestDecisionApiRules` の終了コード
+
+**2026-08-16追記**: 本番運用ブローカーをOANDA証券MT5へ切り替え（`DECISIONS.md` DEC-023）、`tools/compile-mql5.ps1`・`tools/run-mql5-tests.ps1`・`tools/run-strategy-tester.ps1`・`tools/release-gate.ps1`・`tools/link-mt5.ps1`のデフォルト対象をOANDA端末へ変更した上で、Compile・7 Script Testを再実行した。結果はXMTrading環境と同一（全PASS、`TestDecisionApiRules`のみexit code 1）。この事象はBroker固有ではなく、Script/Runner/Terminal設定側の問題であることが裏付けられた。
 
 * [ ] `TEST_SUITE_PASS` にもかかわらずProcess Exit Code 1となる状態を再現する
 * [ ] MT5 Terminal側の終了理由を確認する
