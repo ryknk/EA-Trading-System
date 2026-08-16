@@ -17,3 +17,7 @@ OANDA-Japan MT5 Demoサーバーのライブtickキャッシュも直近約1年�
 OANDA証券のWeb版Tickダウンロードツールから取得した2016年9月〜2026年8月のUSDJPY real tick CSVを、`USDJPY`の仕様を複製したCustom Symbol「USDJPY_HIST」へ投入する方式（`DECISIONS.md` DEC-023、`mt5/Tools/ImportOandaTicks.mq5`）で解決した。`oanda-hist-validation-2016-09/`・`oanda-hist-validation-2020/`はこの投入方式の品質検証記録であり、いずれも「ヒストリー品質100%リアルティック」を確認済み。ただし正式なIn-Sample/Out-of-Sample期間としてはまだ確定していないため、これらの損益数値をproduction release gateの証跡として扱わないこと。
 
 今後の実市場tick検証・Strategy Testerは、Symbolに`USDJPY`ではなく`USDJPY_HIST`を指定して実行する。
+
+## 2026-08-16: In-Sample/Out-of-Sample/Walk Forward期間の確定
+
+`DECISIONS.md` DEC-024で以下を確定した。開発・In-Sample=2016-09〜2020-12、OOS/Walk Forward評価=2021-01〜2024-12、Final Holdout=2025-01〜2026-08（ユーザー指定の起点2016-01は実データ開始2016-09と矛盾していたため補正）。Walk Forwardは4年学習→1年検証のローリング5Foldとする（詳細は`docs/backtesting.md`）。Final Holdoutは全ゲート完了後に一度だけ評価し、開発・パラメータ調整には使用しない。`mt5/test-config/StrategyTester-USDJPY-H1.ini`の既定値をIn-Sample期間（`USDJPY_HIST`、2016-09-01〜2020-12-31）へ変更済み。

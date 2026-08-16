@@ -61,7 +61,7 @@ DailyLossの日付切替、Broker server time、永続lock、Balance更新、実
 
 ## 6. Out-of-Sample結果
 
-実市場データとproduction候補モデルがないため **NOT VERIFIED**。2015〜2022をIn-Sample、2023〜2025をOOSとする案は、実データの取得期間とラベルhorizonを確認後に凍結する。OOSを閾値調整へ再利用してはならない。
+実市場データとproduction候補モデルがないため **NOT VERIFIED**。期間は2026-08-16に確定した（`DECISIONS.md` DEC-024）: 開発・In-Sample=2016-09〜2020-12、OOS/Walk Forward評価=2021-01〜2024-12、Final Holdout=2025-01〜2026-08（EA・Model・閾値確定後に一度だけ評価）。OOSを閾値調整へ再利用してはならない。
 
 ## 7. Walk Forward結果
 
@@ -97,7 +97,7 @@ EAは長期AWS鍵を持たず、失効可能なkey IDとHMAC共有鍵ファイ�
 
 ## 13. 残存リスク
 
-1. Strategy Testerは2025年分（XMTrading-MT5）について完走したが総損益-95,024円・PF 0.59の損失結果であり、受入基準未凍結のため合否未判定。XMTrading-MT5はreal tickを2022年1月分以降しか保持していないため、OANDA証券MT5へ切り替えて再検証する方針を2026-08-10に決定した（切替未完了）。OOS、Walk Forward、Demoも未完了で、戦略とRiskの実データ挙動が不明。
+1. Strategy Testerは2025年分（XMTrading-MT5）について完走したが総損益-95,024円・PF 0.59の損失結果であり、受入基準未凍結のため合否未判定。本番運用ブローカーはOANDA証券MT5へ切替済み（2026-08-16、`DECISIONS.md` DEC-023）。real tick長期履歴はCustom Symbol `USDJPY_HIST`で確保し、In-Sample/OOS/Walk Forward/Final Holdout期間も確定した（DEC-024）が、各期間でのStrategy Tester正式実行はまだ未実施。OOS、Walk Forward、Demoも未完了で、戦略とRiskの実データ挙動が不明。
 2. AWS dev実通信と障害注入、Alarm通知到達が未検証。
 3. 独立した定期EA Heartbeatが未実装で、無候補時間帯の死活判定が弱い。
 4. Kill Switchはコード・純粋ルールのみで、保有position中のSL/TP/安全決済継続を端末で実証していない。

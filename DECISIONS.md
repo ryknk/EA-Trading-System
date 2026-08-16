@@ -439,3 +439,48 @@ OANDA証券が提供するWeb版Tickダウンロードツール（`https://www.o
 * 今後の実市場tick検証（IS/OOS、Walk Forward等）は、Broker実銘柄`USDJPY`ではなくCustom Symbol `USDJPY_HIST`を対象に実行する
 * Demo/小額実口座/Productionでの実際の発注は、引き続き実`USDJPY`銘柄・実Brokerの気配値を使用する（Custom Symbolはバックテスト専用）
 * Custom Symbolの仕様は作成時点の`USDJPY`のスナップショットであり、Broker側の仕様変更（レバレッジ、Tick Value等）を自動追従しない。将来的な仕様変更時は再作成が必要
+
+---
+
+# DEC-024: In-Sample/Out-of-Sample/Walk Forward期間を確定する
+
+**状態:** 採用
+
+## 背景
+
+DEC-023によりCustom Symbol `USDJPY_HIST`で2016年9月〜2026年8月のUSDJPY real tick履歴が利用可能になった。この範囲内で、最新期間への過学習を避けつつ、最後に完全未使用データでEAの汎化性能を確認できる期間分割が必要だった。
+
+ユーザーからは「使用可能なOANDA公式ティックデータ: 2016-01〜2026-08」として開始日2016-01の案が示されたが、実際に投入済みの`USDJPY_HIST`データは2016年9月分からしか存在しない（DEC-023、`results/backtests/oanda-hist-validation-2016-09/`で品質検証済みの最古月）。2016-01〜2016-08分のOANDA real tickは取得していない。文書と実データの矛盾のため、本決定では実際に取得済みの2016-09を開始点として採用する。
+
+## 判断
+
+* 開発・In-Sample: 2016-09〜2020-12
+* OOS / Walk Forward評価: 2021-01〜2024-12
+* Final Holdout: 2025-01〜2026-08
+
+Walk Forwardは、過去期間で学習・最適化し、その直後の未来期間で検証するローリング方式（4年学習→1年検証、5 Fold）とする。
+
+| Fold | 学習期間 | 検証期間 |
+| --- | --- | --- |
+| 1 | 2016-09〜2019-12 | 2020 |
+| 2 | 2017-01〜2020-12 | 2021 |
+| 3 | 2018-01〜2021-12 | 2022 |
+| 4 | 2019-01〜2022-12 | 2023 |
+| 5 | 2020-01〜2023-12 | 2024 |
+
+Fold 1の学習期間は実データが2016-09からしか存在しないため、2016年分は9〜12月の4か月のみとなる（他Foldは各年フル12か月）。
+
+Final Holdout（2025-01〜2026-08）は、EA・MLモデル・閾値・SL/TP等のパラメータをすべて固定した後に一度だけ評価する。開発・パラメータ調整・ML閾値調整には一切使用しない。評価結果（Profit Factor、Max Drawdown、Expectancy、Sharpe、Trade Count等）がWalk Forward結果から大きく崩れていないか確認する。
+
+## 理由
+
+* 最新期間（2025年以降）への過学習を避け、最後に完全未使用データで汎化性能を確認する必要がある
+* Walk Forwardのローリング方式により、単一固定OOS期間よりも期間依存性・安定性を確認しやすい
+* `USDJPY_HIST`の実データ開始（2016-09）に合わせて期間を補正することで、存在しないデータへの依存を避ける
+
+## 影響
+
+* `mt5/test-config/StrategyTester-USDJPY-H1.ini`の既定Symbolを`USDJPY_HIST`、既定期間をIn-Sample期間（2016-09-01〜2020-12-31）へ変更した
+* `tools/run-strategy-tester.ps1`の既定`-FromDate`/`-ToDate`も同様に変更した（誤った引数省略実行でFinal Holdout期間を消費しないための安全策）
+* 実際のIS/OOS/Walk Forward/Final Holdout各期間でのStrategy Tester実行・ML学習は別途実施する（未実施、`TASKS.md` 2.1参照）
+* Final Holdoutを一度評価した後にパラメータを変更した場合、新しいFinal Holdout期間の確保が必要になる（本Decisionの期間では代替がないため、その時点で再検討する）
