@@ -312,6 +312,8 @@ public:
       candidate_payload+="\"atr\":"+JNumber(result.atr)+",";
       candidate_payload+="\"adx\":"+JNumber(result.adx)+",";
       candidate_payload+="\"spread_points\":"+JNumber(candidate_spread_points)+",";
+      candidate_payload+="\"market_regime_trend\":"+JString(MarketRegimeTrendToString(result.market_regime_trend))+",";
+      candidate_payload+="\"market_regime_volatility\":"+JString(MarketRegimeVolatilityToString(result.market_regime_volatility))+",";
       candidate_payload+="\"hour\":"+IntegerToString(result.hour)+",";
       candidate_payload+="\"day_of_week\":"+IntegerToString(result.day_of_week)+",";
       candidate_payload+="\"reason_code\":"+JString(result.reason_code)+",";

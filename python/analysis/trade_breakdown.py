@@ -1,11 +1,15 @@
-"""バックテスト結果を条件別（方向・時間帯・曜日・ATR/ADX帯・保有時間・MFE/MAE等）に集計する分析モジュール。
+"""バックテスト結果を条件別（方向・時間帯・曜日・ATR/ADX帯・保有時間・MFE/MAE・市場レジーム等）に
+集計する分析モジュール。
 
 監査JSONL（CANDIDATE, RISK_DECISION, TRADE_CLOSED, TRADE_ANALYTICS）から1トレードごとの
-文脈情報（エントリー時ATR/ADX/Spread、R換算損益、MFE、MAE、保有時間、曜日、Session）を
+文脈情報（エントリー時ATR/ADX/Spread/市場レジーム、R換算損益、MFE、MAE、保有時間、曜日、Session）を
 再構成し、分類ごとの成績（Trades, Win Rate, Profit Factor, Expectancy, Net Profit,
 平均利益・平均損失）を出力する。ここでは分析結果に基づく自動的な閾値変更は一切行わない。
 
-市場レジーム分類は、既存コードに実装がないため本モジュールでも新規実装しない（未対応）。
+市場レジーム（market_regime_trend: TrendUp/TrendDown/Range、market_regime_volatility:
+HighVolatility/NormalVolatility/LowVolatility）は、EA側（CMarketRegimeClassifier）が
+Entry時点の確定足データのみで判定した結果をCANDIDATEイベントのpayloadへ記録したものを
+そのまま集計する。本モジュールは判定ロジックを持たず、EA側の判定結果を再構成するのみ。
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 BREAKDOWN_COLUMNS = [
     "direction", "session", "weekday", "atr_band", "adx_band",
     "hold_time_band", "mfe_band", "mae_band",
+    "market_regime_trend", "market_regime_volatility",
 ]
 
 
@@ -62,8 +67,13 @@ def _extract_candidate_context(records: list[dict[str, Any]]) -> pd.DataFrame:
             "entry_atr": payload.get("atr"),
             "entry_adx": payload.get("adx"),
             "entry_spread_points": payload.get("spread_points"),
+            "market_regime_trend": payload.get("market_regime_trend"),
+            "market_regime_volatility": payload.get("market_regime_volatility"),
         })
-    return pd.DataFrame(rows, columns=["trade_candidate_id", "entry_atr", "entry_adx", "entry_spread_points"])
+    return pd.DataFrame(rows, columns=[
+        "trade_candidate_id", "entry_atr", "entry_adx", "entry_spread_points",
+        "market_regime_trend", "market_regime_volatility",
+    ])
 
 
 def _extract_risk_context(records: list[dict[str, Any]]) -> pd.DataFrame:
@@ -122,6 +132,7 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
         "hold_time_hours", "weekday", "session", "r_multiple", "mfe_r", "mae_r",
         "reached_unrealized_profit_before_loss",
         "atr_band", "adx_band", "hold_time_band", "mfe_band", "mae_band",
+        "market_regime_trend", "market_regime_volatility",
     ]
     if trades.empty:
         for column in context_columns:
@@ -205,7 +216,6 @@ def _markdown(breakdowns: dict[str, list[dict[str, Any]]], reversal: dict[str, A
     lines.append("")
     for name, rows in breakdowns.items():
         lines += [f"## {name}別", "", "```json", json.dumps(rows, ensure_ascii=False, indent=2), "```", ""]
-    lines.append("市場レジーム別分類は、既存の判定ロジックが存在しないため本レポートでは未対応です。")
     return "\n".join(lines)
 
 
@@ -229,7 +239,8 @@ def write_report(
             "mfe_band": "MFE（最大含み益、口座通貨、手数料除く）の実データ分位点による帯",
             "mae_band": "MAE（最大含み損、口座通貨、手数料除く）の実データ分位点による帯",
             "r_multiple": "net_pnl / risk_budget（RISK_DECISIONで承認されたリスク額）",
-            "market_regime": "既存の判定ロジックが未実装のため本レポートでは未対応",
+            "market_regime_trend": "EA側CMarketRegimeClassifierによるEntry時点のトレンド判定（TrendUp/TrendDown/Range、判定不能時はUnknown）",
+            "market_regime_volatility": "EA側CMarketRegimeClassifierによるEntry時点のボラティリティ判定（HighVolatility/NormalVolatility/LowVolatility、判定不能時はUnknown）",
         },
         "reversal_from_profit": reversal,
         "breakdowns": breakdowns,

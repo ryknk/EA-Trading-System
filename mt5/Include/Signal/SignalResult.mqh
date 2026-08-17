@@ -1,6 +1,8 @@
 #ifndef EA_TRADING_SYSTEM_SIGNAL_RESULT_MQH
 #define EA_TRADING_SYSTEM_SIGNAL_RESULT_MQH
 
+#include <EaTradingSystem/Filter/MarketRegimeClassifier.mqh>
+
 enum ESignalStatus
   {
    SIGNAL_STATUS_NONE=0,
@@ -45,6 +47,8 @@ struct SSignalResult
    double             volatility;
    int                hour;
    int                day_of_week;
+   EMarketRegimeTrend       market_regime_trend;
+   EMarketRegimeVolatility  market_regime_volatility;
    string             reason_code;
    string             reason;
   };
@@ -55,6 +59,8 @@ void ResetSignalResult(SSignalResult &result)
    result.status=SIGNAL_STATUS_NONE;
    result.direction=SIGNAL_DIRECTION_NONE;
    result.entry_pattern=ENTRY_PATTERN_NONE;
+   result.market_regime_trend=MARKET_REGIME_TREND_UNKNOWN;
+   result.market_regime_volatility=MARKET_REGIME_VOLATILITY_UNKNOWN;
    result.reason_code="NO_SIGNAL";
   }
 

@@ -3,6 +3,7 @@
 
 #include <EaTradingSystem/Strategy/IStrategy.mqh>
 #include <EaTradingSystem/Strategy/TrendFollowingRules.mqh>
+#include <EaTradingSystem/Filter/MarketRegimeClassifier.mqh>
 
 class CTrendFollowingStrategy : public IStrategy
   {
@@ -36,6 +37,25 @@ private:
          return false;
       bar=rates[0];
       return bar.time>0 && bar.close>0.0;
+     }
+
+   // レジーム判定専用のATRベースライン（過去N本の単純平均）。既存のATR Indicatorハンドルを再利用し、
+   // 新規Indicatorは作成しない。確定足（shift>=1）のみを参照し、look-ahead biasを発生させない。
+   bool ReadAtrBaseline(const int shift,const int period,double &average)
+     {
+      if(period<2) return false;
+      double values[];
+      if(CopyBuffer(m_h1_atr_handle,0,shift,period,values)!=period)
+         return false;
+      double sum=0.0;
+      for(int index=0; index<period; index++)
+        {
+         if(!MathIsValidNumber(values[index]))
+            return false;
+         sum+=values[index];
+        }
+      average=sum/period;
+      return true;
      }
 
    bool ReadBreakoutRange(double &previous_high,double &previous_low)
@@ -171,6 +191,20 @@ public:
       TimeToStruct(entry_bar.time,signal_time);
       result.hour=signal_time.hour;
       result.day_of_week=signal_time.day_of_week;
+
+      // 市場レジーム判定（分析専用）。既存のADX/ATR/EMA(H1)ハンドルを再利用し、確定足データのみで判定する。
+      // この結果はログ記録のみに使用し、以降のEntry判定・売買制御には一切使用しない。
+      double atr_baseline_average;
+      const bool atr_baseline_ok=ReadAtrBaseline(1,m_config.regime_atr_baseline_period,atr_baseline_average);
+      double ma_slope_reference;
+      const bool ma_slope_ok=ReadIndicator(m_h1_fast_handle,1+m_config.regime_ma_slope_lookback,ma_slope_reference);
+      result.market_regime_trend=ma_slope_ok ?
+         CMarketRegimeClassifier::ClassifyTrend(adx,h1_fast,ma_slope_reference,m_config.regime_trend_adx_min) :
+         MARKET_REGIME_TREND_UNKNOWN;
+      result.market_regime_volatility=atr_baseline_ok ?
+         CMarketRegimeClassifier::ClassifyVolatility(atr,atr_baseline_average,m_config.regime_high_volatility_ratio,
+                                                       m_config.regime_low_volatility_ratio) :
+         MARKET_REGIME_VOLATILITY_UNKNOWN;
 
       const ESignalDirection direction=CTrendFollowingRules::TrendDirection(d1_close,d1_slow,h4_fast,h4_slow);
       if(direction==SIGNAL_DIRECTION_NONE)

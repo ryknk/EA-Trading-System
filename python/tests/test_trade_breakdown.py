@@ -21,19 +21,24 @@ def audit_event(event_type: str, candidate: str, timestamp: str, payload: dict) 
     }
 
 
-# 5トレード: 方向・曜日・Session・ATR/ADX・保有時間・MFE/MAEをそれぞれ変化させ、
+# 5トレード: 方向・曜日・Session・ATR/ADX・保有時間・MFE/MAE・市場レジームをそれぞれ変化させ、
 # 分類集計とMFE反転（含み益からの反転）診断の両方を検証する。
 TRADES = [
     dict(id="c1", direction="BUY", open="2025-01-06T02:00:00Z", close="2025-01-06T03:00:00Z",
-         pnl=100.0, atr=0.05, adx=15.0, spread=10.0, mfe=120.0, mae=-30.0),
+         pnl=100.0, atr=0.05, adx=15.0, spread=10.0, mfe=120.0, mae=-30.0,
+         regime_trend="Range", regime_volatility="LowVolatility"),
     dict(id="c2", direction="SELL", open="2025-01-07T10:00:00Z", close="2025-01-07T13:00:00Z",
-         pnl=-50.0, atr=0.08, adx=18.0, spread=12.0, mfe=80.0, mae=-60.0),
+         pnl=-50.0, atr=0.08, adx=18.0, spread=12.0, mfe=80.0, mae=-60.0,
+         regime_trend="TrendDown", regime_volatility="NormalVolatility"),
     dict(id="c3", direction="BUY", open="2025-01-08T15:00:00Z", close="2025-01-08T20:00:00Z",
-         pnl=-100.0, atr=0.10, adx=22.0, spread=9.0, mfe=-20.0, mae=-110.0),
+         pnl=-100.0, atr=0.10, adx=22.0, spread=9.0, mfe=-20.0, mae=-110.0,
+         regime_trend="TrendUp", regime_volatility="NormalVolatility"),
     dict(id="c4", direction="SELL", open="2025-01-09T19:00:00Z", close="2025-01-10T02:00:00Z",
-         pnl=200.0, atr=0.12, adx=25.0, spread=11.0, mfe=210.0, mae=-40.0),
+         pnl=200.0, atr=0.12, adx=25.0, spread=11.0, mfe=210.0, mae=-40.0,
+         regime_trend="TrendDown", regime_volatility="HighVolatility"),
     dict(id="c5", direction="BUY", open="2025-01-10T23:00:00Z", close="2025-01-11T08:00:00Z",
-         pnl=-30.0, atr=0.15, adx=30.0, spread=13.0, mfe=10.0, mae=-35.0),
+         pnl=-30.0, atr=0.15, adx=30.0, spread=13.0, mfe=10.0, mae=-35.0,
+         regime_trend="TrendUp", regime_volatility="HighVolatility"),
 ]
 
 
@@ -44,6 +49,8 @@ def write_audit_file(directory: Path) -> Path:
             "direction": trade["direction"], "pattern": "BREAKOUT", "entry_price": 145.0,
             "stop_loss": 144.0, "take_profit": 147.0, "risk_reward_ratio": 2.0,
             "atr": trade["atr"], "adx": trade["adx"], "spread_points": trade["spread"],
+            "market_regime_trend": trade["regime_trend"],
+            "market_regime_volatility": trade["regime_volatility"],
             "hour": 0, "day_of_week": 0,
             "reason_code": "TREND_BREAKOUT", "reason": "Aligned.",
         }))
@@ -88,6 +95,10 @@ class TradeBreakdownTests(unittest.TestCase):
         self.assertAlmostEqual(-0.05, by_id.loc["c2", "r_multiple"])
         for column in ("atr_band", "adx_band", "hold_time_band", "mfe_band", "mae_band"):
             self.assertFalse(trades[column].isna().any(), f"{column} should be populated")
+        self.assertEqual("Range", by_id.loc["c1", "market_regime_trend"])
+        self.assertEqual("LowVolatility", by_id.loc["c1", "market_regime_volatility"])
+        self.assertEqual("TrendUp", by_id.loc["c3", "market_regime_trend"])
+        self.assertEqual("HighVolatility", by_id.loc["c5", "market_regime_volatility"])
 
     def test_reversal_from_profit_counts_losses_that_had_unrealized_gain(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -107,6 +118,21 @@ class TradeBreakdownTests(unittest.TestCase):
         rows = {row["direction"]: row for row in breakdown_by(trades, "direction")}
         self.assertEqual(3, rows["BUY"]["number_of_trades"])
         self.assertEqual(2, rows["SELL"]["number_of_trades"])
+
+    def test_breakdown_by_market_regime_splits_trend_and_volatility(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_audit_file(Path(directory))
+            trades = build_trade_context([path])
+        trend_rows = {row["market_regime_trend"]: row for row in breakdown_by(trades, "market_regime_trend")}
+        self.assertEqual(1, trend_rows["Range"]["number_of_trades"])
+        self.assertEqual(2, trend_rows["TrendDown"]["number_of_trades"])
+        self.assertEqual(2, trend_rows["TrendUp"]["number_of_trades"])
+        volatility_rows = {
+            row["market_regime_volatility"]: row for row in breakdown_by(trades, "market_regime_volatility")
+        }
+        self.assertEqual(1, volatility_rows["LowVolatility"]["number_of_trades"])
+        self.assertEqual(2, volatility_rows["NormalVolatility"]["number_of_trades"])
+        self.assertEqual(2, volatility_rows["HighVolatility"]["number_of_trades"])
 
     def test_write_report_produces_schema_compatible_json(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

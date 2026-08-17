@@ -29,6 +29,13 @@ EA設定は用途別に管理し、dev、staging・デモ、productionで設定�
 | `InpStopAtrMultiple` | 2 | SLのATR倍率 |
 | `InpRiskRewardRatio` | 2 | TP/SL比 |
 | `InpEnableBreakout` / `InpEnablePullback` | true / true | entry pattern有効化 |
+| `InpRegimeTrendAdxMin` | 20 | 市場レジーム判定用のADX下限。下回るとRange判定（Entry判定のADXフィルタとは独立、分析専用） |
+| `InpRegimeAtrBaselinePeriod` | 50 | ボラティリティ判定用ATRベースライン（単純平均）の算出本数 |
+| `InpRegimeHighVolatilityRatio` | 1.3 | ATR/ベースライン比がこの値以上でHighVolatility判定 |
+| `InpRegimeLowVolatilityRatio` | 0.7 | ATR/ベースライン比がこの値以下でLowVolatility判定 |
+| `InpRegimeMaSlopeLookback` | 5 | トレンド方向判定用、H1 EMA(Fast)の参照本数（現在値と何本前を比較するか） |
+
+市場レジーム判定（`InpRegime*`）は分析・監査ログ専用であり、Entry判定・発注・既存ポジション管理には一切影響しない（判定と売買制御の分離）。詳細は`docs/backtesting.md`「条件別分析」を参照。
 
 固定値を最適化結果だけで変更しない。変更前にOOS期間と受入基準を固定し、Walk Forwardとデモで再検証する。
 
