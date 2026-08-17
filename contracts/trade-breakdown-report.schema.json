@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/v1/trade-breakdown-report.schema.json",
+  "title": "TradeBreakdownReportV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "currency", "definitions", "reversal_from_profit", "breakdowns"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "currency": {"const": "ACCOUNT_CURRENCY"},
+    "definitions": {"type": "object"},
+    "reversal_from_profit": {"type": "object"},
+    "breakdowns": {"type": "object"}
+  }
+}

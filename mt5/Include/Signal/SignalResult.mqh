@@ -37,6 +37,7 @@ struct SSignalResult
    double             risk_reward_ratio;
    double             rsi;
    double             atr;
+   double             adx;
    double             ema_fast;
    double             ema_slow;
    double             ema_distance_ratio;

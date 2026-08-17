@@ -158,6 +158,7 @@ public:
       result.signal_bar_time=entry_bar.time;
       result.rsi=rsi;
       result.atr=atr;
+      result.adx=adx;
       result.ema_fast=h4_fast;
       result.ema_slow=h4_slow;
       result.ema_distance_ratio=(h4_slow!=0.0 ? (h4_fast-h4_slow)/h4_slow : 0.0);

@@ -89,3 +89,18 @@ python -m python.analysis.overfitting `
 ```
 
 出力は `overfitting-assessment.json`（JSON契約は `contracts/overfitting-report.schema.json` を正とする）と `overfitting-report.md` である。
+
+## 条件別分析（Entry/Exit改善根拠の把握）
+
+`python.analysis.trade_breakdown` は、Phase 9監査JSONL（`CANDIDATE`・`RISK_DECISION`・`TRADE_CLOSED`・`TRADE_ANALYTICS`イベント）から1トレードごとの文脈情報を再構成し、条件別（Buy/Sell、曜日、Session、ATR帯、ADX帯、保有時間帯、MFE帯、MAE帯）にTrades・Win Rate・Profit Factor・Expectancy・Net Profit・平均利益・平均損失を集計する。エントリー条件自体の改善かExit条件の改善か、特定方向・時間帯・相場環境による偏りがあるか、負けトレードが一度含み益になってからSLに到達しているかを判断する材料を提供するための分析専用機能であり、閾値の自動変更は行わない。市場レジーム分類は既存の判定ロジックがないため未対応（分析結果には含まれない）。
+
+`InpAuditFileEnabled=true`（既定値）でStrategy Testerを実行すると、`EaTradingSystem\Audit\audit-YYYYMMDD.jsonl` にCANDIDATE（エントリー時ATR・ADX・Spread・時刻を含む）、RISK_DECISION（承認リスク額）、TRADE_CLOSED、TRADE_ANALYTICS（MFE・MAE）が記録される。`tools/run-strategy-tester.ps1` は実行後にこれらのJSONLを検出できた場合、自動的に `results/backtests/<run-id>-USDJPY-H1/audit/` へ複製する（見つからない場合はベストエフォートで警告を出すのみで、Strategy Tester自体の成功判定には影響しない）。
+
+```powershell
+$env:PYTHONPATH='.'
+python -m python.analysis.trade_breakdown `
+  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-20200101.jsonl `
+  --output build/trade-breakdown-report
+```
+
+出力は `trade-breakdown-report.json`（JSON契約は `contracts/trade-breakdown-report.schema.json` を正とする）、`trade-breakdown-report.md`、および条件別列（`entry_atr`・`entry_adx`・`entry_spread_points`・`risk_budget`・`mfe`・`mae`・`r_multiple`・`hold_time_hours`・`weekday`・`session`・`atr_band`・`adx_band`・`hold_time_band`・`mfe_band`・`mae_band`）を付加した `trades-with-context.csv` である。ATR帯・ADX帯・保有時間帯・MFE帯・MAE帯は実データの分位点（三分位）から算出し、固定のしきい値をハードコードしない。Session区分（Tokyo/London/London_NewYork_Overlap/NewYork）はUTC時刻に基づく概算区分であり、DSTは考慮しない簡略化である。R換算損益（`r_multiple`）は該当候補が承認された `RISK_DECISION` の `risk_budget`（発注時点のリスク許容額）に対する比率で、EA側での追加ロジックなしにPython側で算出する。

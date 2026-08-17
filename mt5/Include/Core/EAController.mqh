@@ -11,6 +11,7 @@
 #include <EaTradingSystem/External/MockDecisionProvider.mqh>
 #include <EaTradingSystem/External/TelemetryApiClient.mqh>
 #include <EaTradingSystem/Logging/TradeLogger.mqh>
+#include <EaTradingSystem/Logging/TradeAnalyticsTracker.mqh>
 
 class CEAController
   {
@@ -25,6 +26,7 @@ private:
    CMockDecisionProvider       m_mock_decision_provider;
    CTelemetryApiClient         m_telemetry_client;
    CTradeLogger                m_trade_logger;
+   CTradeAnalyticsTracker      m_analytics_tracker;
    bool                        m_initialized;
    datetime                    m_last_risk_error_log;
    string                      m_last_risk_lock_code;
@@ -165,6 +167,7 @@ public:
       string telemetry_error;
       if(!m_telemetry_client.Initialize(m_config,telemetry_error))
          PrintFormat("TELEMETRY_INIT_FAILED code=%s trading_impact=none",telemetry_error);
+      m_analytics_tracker.Initialize(m_config.magic_number);
       if(!m_strategy.Initialize(m_config,error))
          return false;
       if(!m_signal_engine.Initialize(GetPointer(m_strategy),m_config.symbol,m_config.entry_timeframe,error))
@@ -230,6 +233,8 @@ public:
             m_last_position_error_log=position_now;
            }
         }
+      // 分析専用のMFE/MAE追跡。既存ポジション管理の判断・発注には一切影響しない。
+      m_analytics_tracker.Update();
 
       string risk_lock_code,risk_monitor_error;
       if(!m_risk_manager.Monitor(risk_lock_code,risk_monitor_error))
@@ -289,6 +294,14 @@ public:
                   DoubleToString(result.entry_price,digits),DoubleToString(result.stop_loss,digits),
                   DoubleToString(result.take_profit,digits),
                   result.reason_code,result.reason);
+      // 分析用の市場コンテキスト（ATR・ADX・スプレッド・曜日）。売買判断には使用しない。
+      MqlTick candidate_tick;
+      double candidate_spread_points=0.0;
+      if(SymbolInfoTick(result.symbol,candidate_tick))
+        {
+         const double candidate_point=SymbolInfoDouble(result.symbol,SYMBOL_POINT);
+         if(candidate_point>0.0) candidate_spread_points=(candidate_tick.ask-candidate_tick.bid)/candidate_point;
+        }
       string candidate_payload="{";
       candidate_payload+="\"direction\":"+JString(SignalDirectionToString(result.direction))+",";
       candidate_payload+="\"pattern\":"+JString(EntryPatternToString(result.entry_pattern))+",";
@@ -296,6 +309,11 @@ public:
       candidate_payload+="\"stop_loss\":"+JNumber(result.stop_loss)+",";
       candidate_payload+="\"take_profit\":"+JNumber(result.take_profit)+",";
       candidate_payload+="\"risk_reward_ratio\":"+JNumber(result.risk_reward_ratio)+",";
+      candidate_payload+="\"atr\":"+JNumber(result.atr)+",";
+      candidate_payload+="\"adx\":"+JNumber(result.adx)+",";
+      candidate_payload+="\"spread_points\":"+JNumber(candidate_spread_points)+",";
+      candidate_payload+="\"hour\":"+IntegerToString(result.hour)+",";
+      candidate_payload+="\"day_of_week\":"+IntegerToString(result.day_of_week)+",";
       candidate_payload+="\"reason_code\":"+JString(result.reason_code)+",";
       candidate_payload+="\"reason\":"+JString(result.reason)+"}";
       Audit("CANDIDATE",result.trade_candidate_id,"",result.symbol,candidate_payload,false);
@@ -457,6 +475,16 @@ public:
             closed_payload+="\"commission\":"+JNumber(total_commission)+",";
             closed_payload+="\"swap\":"+JNumber(total_swap)+"}";
             Audit("TRADE_CLOSED",candidate_id,"",symbol,closed_payload,true);
+
+            double analytics_mfe=0.0,analytics_mae=0.0;
+            if(m_analytics_tracker.Finalize(transaction.position,analytics_mfe,analytics_mae))
+              {
+               string analytics_payload="{";
+               analytics_payload+="\"position_ticket\":"+JString(StringFormat("%I64u",transaction.position))+",";
+               analytics_payload+="\"mfe\":"+JNumber(analytics_mfe)+",";
+               analytics_payload+="\"mae\":"+JNumber(analytics_mae)+"}";
+               Audit("TRADE_ANALYTICS",candidate_id,"",symbol,analytics_payload,true);
+              }
            }
         }
      }

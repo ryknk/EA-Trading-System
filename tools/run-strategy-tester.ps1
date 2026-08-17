@@ -43,4 +43,25 @@ if (-not $reports) { throw "Strategy Testerは終了しましたがreportが生�
 foreach ($generated in $reports) {
     Copy-Item -LiteralPath $generated.FullName -Destination (Join-Path $resultDir $generated.Name) -Force
 }
+
+# InpAuditFileEnabled=trueの場合、EaTradingSystem\Audit配下に監査JSONLが出力される（Tester Agentのサンドボックス配下を含む）。
+# 分析（python.analysis.trade_breakdown等）用に、生成されていればresult配下へ複製する。ベストエフォートであり、
+# 見つからなくてもStrategy Tester自体の成功判定には影響させない。
+$auditFiles = foreach ($searchRoot in $searchRoots) {
+    if (Test-Path -LiteralPath $searchRoot) {
+        Get-ChildItem -LiteralPath $searchRoot -Recurse -File -Filter "audit-*.jsonl" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\EaTradingSystem\\Audit\\' }
+    }
+}
+if ($auditFiles) {
+    $auditDir = Join-Path $resultDir "audit"
+    New-Item -ItemType Directory -Path $auditDir -Force | Out-Null
+    foreach ($generated in $auditFiles) {
+        Copy-Item -LiteralPath $generated.FullName -Destination (Join-Path $auditDir $generated.Name) -Force
+    }
+    Write-Host "STRATEGY_TESTER_AUDIT_COPIED count=$($auditFiles.Count) dir=$auditDir"
+} else {
+    Write-Host "STRATEGY_TESTER_AUDIT_NOT_FOUND note=InpAuditFileEnabledの設定を確認してください"
+}
+
 Write-Host "STRATEGY_TESTER_COMPLETED exit=$($process.ExitCode) result=$resultDir"
