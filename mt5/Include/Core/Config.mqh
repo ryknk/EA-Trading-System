@@ -44,6 +44,13 @@ struct SEaConfig
    bool              strategy_enabled;
    bool              enable_trade_mutations;
    bool              close_unprotected_positions;
+   bool              enable_breakeven_stop;
+   double            breakeven_trigger_r_multiple;
+   bool              enable_signal_invalidation_exit;
+   bool              signal_exit_check_trend;
+   bool              signal_exit_check_h1_adx;
+   bool              signal_exit_check_h4_adx;
+   double            signal_exit_partial_close_fraction;
    bool              decision_api_enabled;
    string            decision_api_url;
    string            decision_api_key_id;
@@ -106,6 +113,13 @@ void SetDefaultConfig(SEaConfig &config)
    config.strategy_enabled          = true;
    config.enable_trade_mutations    = false;
    config.close_unprotected_positions = true;
+   config.enable_breakeven_stop     = true;
+   config.breakeven_trigger_r_multiple = 1.0;
+   config.enable_signal_invalidation_exit = true;
+   config.signal_exit_check_trend   = true;
+   config.signal_exit_check_h1_adx  = true;
+   config.signal_exit_check_h4_adx  = true;
+   config.signal_exit_partial_close_fraction = 0.5;
    config.decision_api_enabled       = false;
    config.decision_api_url           = "";
    config.decision_api_key_id        = "";
@@ -176,6 +190,14 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_DRAWDOWN_RATE"; return false; }
    if(config.max_open_positions<1 || config.max_spread_points<=0.0)
      { error="INVALID_EXPOSURE_OR_SPREAD_LIMIT"; return false; }
+   if(config.enable_breakeven_stop && config.breakeven_trigger_r_multiple<=0.0)
+     { error="INVALID_BREAKEVEN_TRIGGER"; return false; }
+   if(config.enable_signal_invalidation_exit &&
+      !config.signal_exit_check_trend && !config.signal_exit_check_h1_adx && !config.signal_exit_check_h4_adx)
+     { error="NO_SIGNAL_EXIT_CONDITION_ENABLED"; return false; }
+   if(config.signal_exit_check_h1_adx &&
+      (config.signal_exit_partial_close_fraction<=0.0 || config.signal_exit_partial_close_fraction>=1.0))
+     { error="INVALID_SIGNAL_EXIT_PARTIAL_FRACTION"; return false; }
    if(config.minimum_free_margin_rate<0.0 || config.minimum_free_margin_rate>=1.0 || config.max_deviation_points<0)
      { error="INVALID_MARGIN_OR_DEVIATION_LIMIT"; return false; }
    if(config.magic_number==0)

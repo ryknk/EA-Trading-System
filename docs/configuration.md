@@ -55,6 +55,13 @@ EA設定は用途別に管理し、dev、staging・デモ、productionで設定�
 | `InpStrategyEnabled` | true | falseでStrategyの新規候補処理を停止。既存ポジション監視は継続 |
 | `InpEnableTradeMutations` | false | 発注・決済変更の主安全フラグ |
 | `InpCloseUnprotectedPositions` | true | 保護SLなしの所有positionを緊急決済対象にする |
+| `InpEnableBreakevenStop` | true | 建値ストップ移動の有効化（2026-08-17追加、詳細はTASKS.md参照） |
+| `InpBreakevenTriggerR` | 1.0 | 含み益が「建値〜当初SL距離（初期リスク）」の何倍に達したら建値へSLを引き上げるか（2026-08-17追加）。`InpEnableTradeMutations=false`では発動しない。0.5/0.75/1.25/1.5/2.0とのスイープ比較で1.0が純損益・PF・Sharpe・期待利得・最大連敗のすべてで最良またはタイの結果を確認済み（詳細はTASKS.md参照）。部分利確（1R/1.5Rトリガー）・ATRトレーリングストップ（1.0Rトリガー・2.0×ATR幅）をいずれも試したが建値ストップ単体を上回らなかったため撤回済み |
+| `InpEnableSignalInvalidationExit` | true | シグナル失効による早期Exitの有効化（2026-08-17追加、詳細はTASKS.md参照）。エントリー根拠（D1/H4トレンド一致・H1/H4 ADX）が保有中に消失したら決済する。RSI・エントリーパターンは再チェックしない。`InpEnableTradeMutations=false`では発動しない |
+| `InpSignalExitCheckTrend` | true | シグナル失効判定にD1/H4トレンド反転チェックを含めるか（2026-08-17追加）。反転時は完全決済（`SIGNAL_EXIT_FULL`） |
+| `InpSignalExitCheckH1Adx` | true | シグナル失効判定にH1 ADX閾値チェックを含めるか（2026-08-17追加）。H1 ADXはエントリー足の指標で変化が速くノイズの可能性があるため、閾値未満でも完全決済ではなく`InpSignalExitPartialCloseFraction`割合の一部利確（`SIGNAL_EXIT_PARTIAL`）に留める（2026-08-17調整） |
+| `InpSignalExitCheckH4Adx` | true | シグナル失効判定にH4 ADX閾値チェックを含めるか（2026-08-17追加）。H4 ADXは上位足の指標でより決定的な失効とみなし完全決済（`SIGNAL_EXIT_FULL`）とする。3条件（Trend+H1 ADX+H4 ADX）すべてを無効化する組み合わせは`INVALID`扱い |
+| `InpSignalExitPartialCloseFraction` | 0.5 | H1 ADX弱体化による一部利確でクローズする現在volumeの割合（2026-08-17追加）。決済量・残存量のいずれかがVolume Min未満になる場合は一部利確を見送る。`InpSignalExitCheckH1Adx=true`の場合のみ検証（0より大きく1未満） |
 
 `InpEnableTradeMutations` は最後に有効化する。Risk Manager、Decision API、LLMがALLOWでも、この値がfalseなら新規発注しない。本番ゲート未達の状態でtrueにしてはならない。
 

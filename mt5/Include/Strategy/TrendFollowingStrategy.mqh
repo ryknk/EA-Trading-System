@@ -5,6 +5,16 @@
 #include <EaTradingSystem/Strategy/TrendFollowingRules.mqh>
 #include <EaTradingSystem/Filter/MarketRegimeClassifier.mqh>
 
+// 保有中ポジションに対するシグナル失効Exitの要否と強度。
+// H1（エントリー足）ADXの弱体化は一時的なノイズの可能性があるため一部利確に留め、
+// トレンド反転・H4（上位足）ADXの弱体化はより決定的な失効とみなし完全決済する。
+enum ESignalExitAction
+  {
+   SIGNAL_EXIT_NONE=0,
+   SIGNAL_EXIT_PARTIAL=1,
+   SIGNAL_EXIT_FULL=2
+  };
+
 class CTrendFollowingStrategy : public IStrategy
   {
 private:
@@ -263,6 +273,41 @@ public:
       result.reason_code=(breakout ? "TREND_BREAKOUT" : "TREND_PULLBACK");
       result.reason=StringFormat("D1/H4 aligned; H1 %s; RSI=%.2f; ATR=%.8f.",EntryPatternToString(result.entry_pattern),rsi,atr);
       return true;
+     }
+
+   // 保有中ポジションのエントリー根拠再検証専用（Evaluateとは別系統）。RSI・ATR下限・
+   // エントリーパターン（ブレイクアウト/プルバック）は再チェックせず、トレンド方向とADX
+   // （トレンド強度）という「保有継続の前提」が消えたかどうかのみを判定する。
+   // H1 ADXの弱体化は一部利確（SIGNAL_EXIT_PARTIAL）、トレンド反転・H4 ADXの弱体化は
+   // 完全決済（SIGNAL_EXIT_FULL）とする。signal_exit_check_*で個々の条件をon/offできる。
+   // データ取得不能時はfalse-safe（SIGNAL_EXIT_NONE=保有継続）とし、既存の保護SL/TPに委ねる
+   // （不確かなデータで新規に決済アクションを起こさない）。
+   ESignalExitAction EvaluateSignalExit(const ESignalDirection position_direction,string &reason_code)
+     {
+      reason_code="";
+      if(!m_initialized)
+        { reason_code="STRATEGY_NOT_INITIALIZED"; return SIGNAL_EXIT_NONE; }
+      double d1_slow,h4_fast,h4_slow,adx,h4_adx;
+      const double d1_close=iClose(m_config.symbol,m_config.trend_timeframe,1);
+      if(d1_close<=0.0 ||
+         !ReadIndicator(m_d1_slow_handle,1,d1_slow) ||
+         !ReadIndicator(m_h4_fast_handle,1,h4_fast) ||
+         !ReadIndicator(m_h4_slow_handle,1,h4_slow) ||
+         !ReadIndicator(m_h1_adx_handle,1,adx) ||
+         !ReadIndicator(m_h4_adx_handle,1,h4_adx))
+        { reason_code="MARKET_DATA_UNAVAILABLE"; return SIGNAL_EXIT_NONE; }
+
+      if(m_config.signal_exit_check_trend)
+        {
+         const ESignalDirection current_direction=CTrendFollowingRules::TrendDirection(d1_close,d1_slow,h4_fast,h4_slow);
+         if(current_direction!=position_direction)
+           { reason_code="TREND_REVERSED"; return SIGNAL_EXIT_FULL; }
+        }
+      if(m_config.signal_exit_check_h4_adx && h4_adx<m_config.minimum_confirmation_adx)
+        { reason_code="CONFIRMATION_ADX_TOO_LOW"; return SIGNAL_EXIT_FULL; }
+      if(m_config.signal_exit_check_h1_adx && adx<m_config.minimum_adx)
+        { reason_code="ADX_TOO_LOW"; return SIGNAL_EXIT_PARTIAL; }
+      return SIGNAL_EXIT_NONE;
      }
   };
 

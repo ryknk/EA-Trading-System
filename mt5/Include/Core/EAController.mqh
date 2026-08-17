@@ -205,6 +205,40 @@ private:
         }
      }
 
+   // 保有ポジションのエントリー根拠（トレンド/ADX）を再検証し、消失していれば早期決済する。
+   // PositionManagerはメカニズム（決済実行）のみを持ち、判断（Strategy参照）はここで行う
+   // （Strategyから直接発注処理を呼び出さない、という責務境界を維持するため）。
+   void EvaluateSignalInvalidationExits(void)
+     {
+      if(!m_config.enable_signal_invalidation_exit || !m_config.enable_trade_mutations)
+         return;
+      const int total=PositionsTotal();
+      for(int index=0; index<total; index++)
+        {
+         const ulong ticket=PositionGetTicket(index);
+         if(ticket==0) continue;
+         if(!CPositionProtectionRules::IsManagedPosition(PositionGetInteger(POSITION_MAGIC),m_config.magic_number))
+            continue;
+         const ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         const ESignalDirection direction=(type==POSITION_TYPE_BUY ? SIGNAL_DIRECTION_BUY : SIGNAL_DIRECTION_SELL);
+         string reason_code;
+         const ESignalExitAction action=m_strategy.EvaluateSignalExit(direction,reason_code);
+         if(action==SIGNAL_EXIT_FULL)
+           {
+            string close_error;
+            if(!m_position_manager.CloseOnSignalInvalidation(ticket,reason_code,close_error))
+               PrintFormat("SIGNAL_EXIT_FAILED position=%I64u code=%s",ticket,close_error);
+           }
+         else if(action==SIGNAL_EXIT_PARTIAL)
+           {
+            string partial_error;
+            if(!m_position_manager.ClosePartialOnSignalWeakening(ticket,m_config.signal_exit_partial_close_fraction,
+                                                                  reason_code,partial_error))
+               PrintFormat("SIGNAL_PARTIAL_EXIT_FAILED position=%I64u code=%s",ticket,partial_error);
+           }
+        }
+     }
+
    void AuditDailySnapshots(void)
      {
       const datetime now=TimeGMT();
@@ -336,6 +370,9 @@ public:
       m_analytics_tracker.Update();
       // 分析専用。前Tickで決済検知しキューへ積んだポジションの履歴を確定させる。
       ProcessPendingClosedPositions();
+      // 既存ポジション管理の一部。エントリー根拠（トレンド/ADX）が消失した保有ポジションを
+      // 満期(SL/TP)を待たず早期決済する。新規候補評価より先に行う。
+      EvaluateSignalInvalidationExits();
 
       string risk_lock_code,risk_monitor_error;
       if(!m_risk_manager.Monitor(risk_lock_code,risk_monitor_error))
@@ -523,7 +560,10 @@ public:
       // このデタッチ自身の価格・volume・entry種別は、SL/TP等の自動決済デタッチではDEAL_ADD通知の時点で
       // HistoryDealGetXxx(transaction.deal,...)がまだ確定していないことがある（Strategy Testerで確認済み）。
       // MqlTradeTransaction構造体が直接持つ価格・volumeと、ライブのポジション残存有無で代替する。
-      // 本EAはInpMaxOpenPositions=1・部分決済ロジックなしのため、IN/OUTの二値判定で十分（反転・分割決済は想定しない）。
+      // 反転（ドテン）は想定しないため、ライブのポジション残存有無によるIN/OUTの二値判定で十分。
+      // 部分決済（PositionManager::ClosePartial）のデタッチもここではINと分類されるが（決済後も
+      // ポジションが残存するため）、TRADE_CLOSED側のclosed_volume/pnlはポジションの全デタッチを
+      // 合算するため、最終的な決済集計への影響はない（このDEALイベント自体の表示上の簡略化に留まる）。
       const bool position_still_open=PositionSelectByTicket(transaction.position);
       const ENUM_DEAL_ENTRY entry=(position_still_open ? DEAL_ENTRY_IN : DEAL_ENTRY_OUT);
       // pnl（損益）はHistory側の値に依存するため、自動決済デタッチでは0で記録される場合がある既知の制約。
