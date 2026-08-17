@@ -20,6 +20,9 @@ struct SEaConfig
    double            rsi_sell_min;
    double            rsi_sell_max;
    double            minimum_atr_points;
+   int               adx_period;
+   double            minimum_adx;
+   double            minimum_confirmation_adx;
    double            stop_atr_multiple;
    double            risk_reward_ratio;
    bool              enable_breakout;
@@ -68,12 +71,15 @@ void SetDefaultConfig(SEaConfig &config)
    config.atr_period                = 14;
    config.breakout_lookback         = 20;
    config.breakout_buffer_points    = 0.0;
-   config.pullback_atr_tolerance    = 0.25;
+   config.pullback_atr_tolerance    = 0.15;
    config.rsi_buy_min               = 50.0;
    config.rsi_buy_max               = 75.0;
    config.rsi_sell_min              = 25.0;
    config.rsi_sell_max              = 50.0;
    config.minimum_atr_points        = 10.0;
+   config.adx_period                = 14;
+   config.minimum_adx               = 20.0;
+   config.minimum_confirmation_adx  = 20.0;
    config.stop_atr_multiple         = 2.0;
    config.risk_reward_ratio         = 2.0;
    config.enable_breakout           = true;
@@ -140,6 +146,9 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_SELL_RSI_RANGE"; return false; }
    if(config.minimum_atr_points<0.0 || config.stop_atr_multiple<=0.0 || config.risk_reward_ratio<=0.0)
      { error="INVALID_RISK_GEOMETRY"; return false; }
+   if(config.adx_period<2 || config.minimum_adx<0.0 || config.minimum_adx>100.0 ||
+      config.minimum_confirmation_adx<0.0 || config.minimum_confirmation_adx>100.0)
+     { error="INVALID_TREND_STRENGTH_FILTER"; return false; }
    if(!config.enable_breakout && !config.enable_pullback)
      { error="NO_ENTRY_PATTERN_ENABLED"; return false; }
    if(config.risk_per_trade_rate<=0.0 || config.risk_per_trade_rate>0.05)

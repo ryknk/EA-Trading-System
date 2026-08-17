@@ -46,19 +46,24 @@ public:
      }
 
    static bool IsPullback(const ESignalDirection direction,
-                          const double open_price,
-                          const double high_price,
-                          const double low_price,
-                          const double close_price,
-                          const double fast_ema,
+                          const double entry_open,
+                          const double entry_high,
+                          const double entry_low,
+                          const double entry_close,
+                          const double entry_fast_ema,
+                          const double touch_high,
+                          const double touch_low,
+                          const double touch_fast_ema,
                           const double atr,
                           const double atr_tolerance)
      {
       const double tolerance=atr*atr_tolerance;
       if(direction==SIGNAL_DIRECTION_BUY)
-         return low_price<=fast_ema+tolerance && close_price>fast_ema && close_price>open_price;
+         return touch_low<=touch_fast_ema+tolerance &&
+                entry_close>entry_fast_ema && entry_close>entry_open && entry_close>touch_high;
       if(direction==SIGNAL_DIRECTION_SELL)
-         return high_price>=fast_ema-tolerance && close_price<fast_ema && close_price<open_price;
+         return touch_high>=touch_fast_ema-tolerance &&
+                entry_close<entry_fast_ema && entry_close<entry_open && entry_close<touch_low;
       return false;
      }
   };

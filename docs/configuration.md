@@ -18,11 +18,14 @@ EA設定は用途別に管理し、dev、staging・デモ、productionで設定�
 | `InpFastEmaPeriod` / `InpSlowEmaPeriod` | 50 / 200 | EMA期間 |
 | `InpRsiPeriod` / `InpAtrPeriod` | 14 / 14 | RSI・ATR期間 |
 | `InpBreakoutLookback` | 20 | ブレイクアウト参照本数 |
-| `InpBreakoutBufferPoints` | 0 | ブレイク閾値へのbuffer |
-| `InpPullbackAtrTolerance` | 0.25 | 押し目のATR許容幅 |
-| `InpRsiBuyMin` / `InpRsiBuyMax` | 50 / 75 | BUY RSI範囲 |
-| `InpRsiSellMin` / `InpRsiSellMax` | 25 / 50 | SELL RSI範囲 |
+| `InpBreakoutBufferPoints` | 0 | ブレイク閾値へのbuffer（2026-08-17、効果不十分のため0へ差し戻し、詳細はTASKS.md参照） |
+| `InpPullbackAtrTolerance` | 0.15 | 押し目のATR許容幅（2026-08-17、誤発注抑制のため0.25→0.15へ縮小。押し目判定も1本足からタッチ足(shift2)＋確認足(shift1)の2本足確認へ変更。確認足のEMA近接制約・タッチ足の逆行性制約はいずれも効果不十分のため撤回済み、詳細はTASKS.md参照） |
+| `InpRsiBuyMin` / `InpRsiBuyMax` | 50 / 75 | BUY RSI範囲（2026-08-17、55への引き上げは逆効果と判明したため50へ差し戻し、詳細はTASKS.md参照） |
+| `InpRsiSellMin` / `InpRsiSellMax` | 25 / 50 | SELL RSI範囲（2026-08-17、45への引き下げは逆効果と判明したため50へ差し戻し、詳細はTASKS.md参照） |
 | `InpMinimumAtrPoints` | 10 | 最低volatility |
+| `InpAdxPeriod` | 14 | ADX（トレンド強度）期間（2026-08-17追加、詳細はTASKS.md参照） |
+| `InpMinimumAdx` | 20 | H1 ADXの最低閾値。下回るとトレンド強度不足として候補を棄却（2026-08-17追加。25への引き上げは逆効果と判明したため20へ差し戻し、`results/backtests/20260817-104528-USDJPY-H1/`が現時点の最良状態、詳細はTASKS.md参照） |
+| `InpMinimumConfirmationAdx` | 20 | H4（`InpConfirmationTimeframe`）ADXの最低閾値。H1 ADXフィルタに加えた多段フィルタとして、下回るとトレンド強度不足として候補を棄却（2026-08-17追加、詳細はTASKS.md参照） |
 | `InpStopAtrMultiple` | 2 | SLのATR倍率 |
 | `InpRiskRewardRatio` | 2 | TP/SL比 |
 | `InpEnableBreakout` / `InpEnablePullback` | true / true | entry pattern有効化 |
