@@ -4,10 +4,13 @@ import unittest
 import uuid
 from pathlib import Path
 
+import pandas as pd
+
 from python.analysis.trade_breakdown import (
     BREAKDOWN_COLUMNS,
     breakdown_by,
     build_trade_context,
+    giveback_summary,
     reversal_from_profit_summary,
     write_report,
 )
@@ -21,24 +24,24 @@ def audit_event(event_type: str, candidate: str, timestamp: str, payload: dict) 
     }
 
 
-# 5トレード: 方向・曜日・Session・ATR/ADX・保有時間・MFE/MAE・市場レジームをそれぞれ変化させ、
-# 分類集計とMFE反転（含み益からの反転）診断の両方を検証する。
+# 5トレード: 方向・曜日・Session・ATR/ADX・保有時間・MFE/MAE・市場レジーム・決済理由をそれぞれ変化させ、
+# 分類集計とMFE反転（含み益からの反転）・Giveback診断の両方を検証する。
 TRADES = [
     dict(id="c1", direction="BUY", open="2025-01-06T02:00:00Z", close="2025-01-06T03:00:00Z",
          pnl=100.0, atr=0.05, adx=15.0, spread=10.0, mfe=120.0, mae=-30.0,
-         regime_trend="Range", regime_volatility="LowVolatility"),
+         regime_trend="Range", regime_volatility="LowVolatility", close_reason="TP"),
     dict(id="c2", direction="SELL", open="2025-01-07T10:00:00Z", close="2025-01-07T13:00:00Z",
          pnl=-50.0, atr=0.08, adx=18.0, spread=12.0, mfe=80.0, mae=-60.0,
-         regime_trend="TrendDown", regime_volatility="NormalVolatility"),
+         regime_trend="TrendDown", regime_volatility="NormalVolatility", close_reason="SL"),
     dict(id="c3", direction="BUY", open="2025-01-08T15:00:00Z", close="2025-01-08T20:00:00Z",
          pnl=-100.0, atr=0.10, adx=22.0, spread=9.0, mfe=-20.0, mae=-110.0,
-         regime_trend="TrendUp", regime_volatility="NormalVolatility"),
+         regime_trend="TrendUp", regime_volatility="NormalVolatility", close_reason="SL"),
     dict(id="c4", direction="SELL", open="2025-01-09T19:00:00Z", close="2025-01-10T02:00:00Z",
          pnl=200.0, atr=0.12, adx=25.0, spread=11.0, mfe=210.0, mae=-40.0,
-         regime_trend="TrendDown", regime_volatility="HighVolatility"),
+         regime_trend="TrendDown", regime_volatility="HighVolatility", close_reason="TP"),
     dict(id="c5", direction="BUY", open="2025-01-10T23:00:00Z", close="2025-01-11T08:00:00Z",
          pnl=-30.0, atr=0.15, adx=30.0, spread=13.0, mfe=10.0, mae=-35.0,
-         regime_trend="TrendUp", regime_volatility="HighVolatility"),
+         regime_trend="TrendUp", regime_volatility="HighVolatility", close_reason="EXPERT"),
 ]
 
 
@@ -63,7 +66,7 @@ def write_audit_file(directory: Path) -> Path:
             "position_ticket": str(1000 + index), "direction": trade["direction"],
             "open_time": trade["open"], "close_time": trade["close"],
             "volume": 0.1, "open_price": 145.0, "close_price": 145.5,
-            "pnl": trade["pnl"], "commission": -10.0, "swap": 0.0,
+            "close_reason": trade["close_reason"], "pnl": trade["pnl"], "commission": -10.0, "swap": 0.0,
         }))
         records.append(audit_event("TRADE_ANALYTICS", trade["id"], trade["close"], {
             "position_ticket": str(1000 + index), "mfe": trade["mfe"], "mae": trade["mae"],
@@ -99,6 +102,18 @@ class TradeBreakdownTests(unittest.TestCase):
         self.assertEqual("LowVolatility", by_id.loc["c1", "market_regime_volatility"])
         self.assertEqual("TrendUp", by_id.loc["c3", "market_regime_trend"])
         self.assertEqual("HighVolatility", by_id.loc["c5", "market_regime_volatility"])
+        self.assertEqual("TP", by_id.loc["c1", "close_reason"])
+        self.assertEqual("SL", by_id.loc["c2", "close_reason"])
+        self.assertEqual("EXPERT", by_id.loc["c5", "close_reason"])
+        self.assertEqual("Mon", by_id.loc["c1", "close_weekday"])
+        self.assertEqual("Tokyo", by_id.loc["c1", "close_session"])
+        self.assertEqual("Tue", by_id.loc["c2", "close_weekday"])
+        self.assertEqual("London_NewYork_Overlap", by_id.loc["c2", "close_session"])
+        self.assertEqual("Fri", by_id.loc["c4", "close_weekday"])
+        self.assertEqual("Tokyo", by_id.loc["c4", "close_session"])
+        self.assertAlmostEqual(1 / 6, by_id.loc["c1", "giveback_ratio"])
+        self.assertAlmostEqual(1.625, by_id.loc["c2", "giveback_ratio"])
+        self.assertTrue(pd.isna(by_id.loc["c3", "giveback_ratio"]), "mfe<=0 trades should have no giveback ratio")
 
     def test_reversal_from_profit_counts_losses_that_had_unrealized_gain(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -133,6 +148,26 @@ class TradeBreakdownTests(unittest.TestCase):
         self.assertEqual(1, volatility_rows["LowVolatility"]["number_of_trades"])
         self.assertEqual(2, volatility_rows["NormalVolatility"]["number_of_trades"])
         self.assertEqual(2, volatility_rows["HighVolatility"]["number_of_trades"])
+
+    def test_breakdown_by_close_reason_splits_exit_triggers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_audit_file(Path(directory))
+            trades = build_trade_context([path])
+        rows = {row["close_reason"]: row for row in breakdown_by(trades, "close_reason")}
+        self.assertEqual(2, rows["TP"]["number_of_trades"])
+        self.assertEqual(2, rows["SL"]["number_of_trades"])
+        self.assertEqual(1, rows["EXPERT"]["number_of_trades"])
+
+    def test_giveback_summary_computes_ratio_and_full_reversal_share(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_audit_file(Path(directory))
+            trades = build_trade_context([path])
+        summary = giveback_summary(trades)
+        self.assertEqual(4, summary["trades_with_unrealized_profit"])
+        self.assertAlmostEqual(1.4598214285714286, summary["average_giveback_ratio"])
+        self.assertAlmostEqual(0.8958333333333334, summary["median_giveback_ratio"])
+        self.assertEqual(2, summary["trades_that_fully_reversed_to_breakeven_or_loss"])
+        self.assertAlmostEqual(0.5, summary["share_that_fully_reversed"])
 
     def test_write_report_produces_schema_compatible_json(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

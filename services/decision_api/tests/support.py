@@ -140,7 +140,7 @@ def trade_event(event_type: str = "RISK_DECISION") -> dict:
             "position_ticket": "789", "direction": "BUY",
             "open_time": "2025-06-15T15:06:40Z", "close_time": "2025-06-16T02:00:00Z",
             "volume": 0.1, "open_price": 145.21, "close_price": 146.00,
-            "pnl": 7900.0, "commission": -100.0, "swap": -20.0,
+            "close_reason": "TP", "pnl": 7900.0, "commission": -100.0, "swap": -20.0,
         },
         "ACCOUNT_SNAPSHOT": {
             "balance": 1000000.0, "equity": 1000100.0, "margin": 10000.0,

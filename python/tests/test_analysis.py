@@ -147,7 +147,7 @@ class AuditInputTests(unittest.TestCase):
                 "position_ticket": "123", "direction": "BUY",
                 "open_time": "2025-01-01T00:00:00Z", "close_time": "2025-01-02T00:00:00Z",
                 "volume": 0.1, "open_price": 145.0, "close_price": 146.0,
-                "pnl": 90.0, "commission": -10.0, "swap": 0.0,
+                "close_reason": "TP", "pnl": 90.0, "commission": -10.0, "swap": 0.0,
             }),
         ]
         with tempfile.TemporaryDirectory() as directory:
@@ -169,7 +169,7 @@ class AuditInputTests(unittest.TestCase):
             "position_ticket": "321", "direction": "BUY",
             "open_time": "2025-01-01T00:00:00Z", "close_time": "2025-01-02T00:00:00Z",
             "volume": 0.1, "open_price": 145.0, "close_price": 146.0,
-            "pnl": 100.0, "commission": 0.0, "swap": 0.0,
+            "close_reason": "TP", "pnl": 100.0, "commission": 0.0, "swap": 0.0,
         })
         with tempfile.TemporaryDirectory() as directory:
             first = Path(directory) / "audit-20250101.jsonl"

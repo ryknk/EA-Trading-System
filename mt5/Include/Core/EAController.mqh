@@ -106,6 +106,22 @@ private:
       return "UNKNOWN";
      }
 
+   // 決済トリガー種別。SL/TPは注文設定どおりの自動決済、EXPERTはEA発注（Emergency Close等）による決済。
+   string DealReasonName(const ENUM_DEAL_REASON reason)
+     {
+      if(reason==DEAL_REASON_SL) return "SL";
+      if(reason==DEAL_REASON_TP) return "TP";
+      if(reason==DEAL_REASON_SO) return "SO";
+      if(reason==DEAL_REASON_EXPERT) return "EXPERT";
+      if(reason==DEAL_REASON_CLIENT) return "CLIENT";
+      if(reason==DEAL_REASON_MOBILE) return "MOBILE";
+      if(reason==DEAL_REASON_WEB) return "WEB";
+      if(reason==DEAL_REASON_ROLLOVER) return "ROLLOVER";
+      if(reason==DEAL_REASON_VMARGIN) return "VMARGIN";
+      if(reason==DEAL_REASON_SPLIT) return "SPLIT";
+      return "UNKNOWN";
+     }
+
    void AuditDailySnapshots(void)
      {
       const datetime now=TimeGMT();
@@ -440,6 +456,7 @@ public:
          datetime open_time=0,close_time=0;
          double open_price=0.0,close_price=0.0,closed_volume=0.0,total_pnl=0.0,total_commission=0.0,total_swap=0.0;
          string direction="BUY";
+         string close_reason="UNKNOWN";
          const int total=HistoryDealsTotal();
          for(int index=0; index<total; index++)
            {
@@ -457,6 +474,7 @@ public:
                close_time=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
                close_price=HistoryDealGetDouble(deal,DEAL_PRICE);
                closed_volume+=HistoryDealGetDouble(deal,DEAL_VOLUME);
+               close_reason=DealReasonName((ENUM_DEAL_REASON)HistoryDealGetInteger(deal,DEAL_REASON));
               }
             total_pnl+=HistoryDealGetDouble(deal,DEAL_PROFIT)+HistoryDealGetDouble(deal,DEAL_COMMISSION)+
                        HistoryDealGetDouble(deal,DEAL_SWAP)+HistoryDealGetDouble(deal,DEAL_FEE);
@@ -473,6 +491,7 @@ public:
             closed_payload+="\"volume\":"+JNumber(closed_volume)+",";
             closed_payload+="\"open_price\":"+JNumber(open_price)+",";
             closed_payload+="\"close_price\":"+JNumber(close_price)+",";
+            closed_payload+="\"close_reason\":"+JString(close_reason)+",";
             closed_payload+="\"pnl\":"+JNumber(total_pnl)+",";
             closed_payload+="\"commission\":"+JNumber(total_commission)+",";
             closed_payload+="\"swap\":"+JNumber(total_swap)+"}";

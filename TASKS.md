@@ -97,11 +97,18 @@
 
 **2026-08-16追記**: 本番運用ブローカーをOANDA証券MT5へ切り替え（`DECISIONS.md` DEC-023）、`tools/compile-mql5.ps1`・`tools/run-mql5-tests.ps1`・`tools/run-strategy-tester.ps1`・`tools/release-gate.ps1`・`tools/link-mt5.ps1`のデフォルト対象をOANDA端末へ変更した上で、Compile・7 Script Testを再実行した。結果はXMTrading環境と同一（全PASS、`TestDecisionApiRules`のみexit code 1）。この事象はBroker固有ではなく、Script/Runner/Terminal設定側の問題であることが裏付けられた。
 
+**2026-08-17追記**: 市場レジーム判定ロジック追加に伴う新規`TestMarketRegimeClassifier`でも同じ事象（`TEST_SUITE_PASS`・全アサーションPASSだがTerminal Exit Code 1）を確認した。特定のテスト内容に依存しない再現性が高まり、Script/Runner/Terminal設定側の問題であるという既存の推定をさらに裏付ける。
+
 * [ ] `TEST_SUITE_PASS` にもかかわらずProcess Exit Code 1となる状態を再現する
 * [ ] MT5 Terminal側の終了理由を確認する
 * [ ] Script、Runner、Terminal設定のどこに原因があるか特定する
 * [ ] テスト結果判定方法が誤検知しないことを確認する
 * [ ] 修正後に全MQL5 Script Testを再実行する
+
+## 2.3 条件別分析（Entry/Exit）機能
+
+* [x] `python.analysis.trade_breakdown`によるEntry側の条件別分析（方向・時間帯・曜日・ATR/ADX帯・保有時間・MFE/MAE・市場レジーム別のTrades/Win Rate/PF/Expectancy/Net Profit集計）を実装する（本セッション以前に実装済み。詳細は`docs/backtesting.md`「条件別分析」節を参照）
+* [x] Exit（決済）側の分析を追加する（2026-08-17実施。ユーザー依頼「エントリーではなくExitを分析する方法」への対応。(1) `mt5/Include/Core/EAController.mqh`の`TRADE_CLOSED`ペイロードへMT5 `DEAL_REASON`を`close_reason`として追加記録（`DealReasonName()`ヘルパー新設、`SL`/`TP`/`SO`/`EXPERT`/`CLIENT`等）。(2) `python/analysis/reports.py`の`TRADE_CLOSED`必須フィールド検証へ`close_reason`を追加。(3) `python/analysis/trade_breakdown.py`へ`close_reason`・決済時刻基準の`close_weekday`/`close_session`（既存のEntry基準`weekday`/`session`とは別集計）・Giveback比率`giveback_ratio`=`(mfe-net_pnl)/mfe`とその分位帯`giveback_band`を追加し、`BREAKDOWN_COLUMNS`へ組み込んだ。あわせて`giveback_summary()`（平均/中央値Giveback比率、完全反転割合）を新設しレポートへ追加。(4) Telemetry API契約（`services/decision_api/src/decision_api/event_validation.py`の`PAYLOAD_FIELDS["TRADE_CLOSED"]`/`SAFE_TEXT_FIELDS`）が同じ`TRADE_CLOSED`ペイロードを検証するため未更新だと新フィールドが拒否されることが判明し、あわせて更新（`contracts/trade-event-request.schema.json`は`payload`をゆるい`object`型として定義しているため契約ファイル自体の変更は不要）。`python/tests/test_analysis.py`・`python/tests/test_trade_breakdown.py`・`services/decision_api/tests/support.py`のfixtureを更新し新規テストケースを追加。MQL5コンパイル（9ターゲット）・7 Script Test全PASS、Python側`python/tests`・`services/decision_api/tests`合計92件全PASS確認済み。現時点のEAにはトレーリングストップ・時間切れ決済のロジックがないため、`close_reason`は実質的にSL到達／TP到達／保護SLなしのEmergency close（`EXPERT`）の3種類のみとなる。未コミットの作業ツリー差分のため、commitはユーザー指示があるまで保留する）
 
 ---
 

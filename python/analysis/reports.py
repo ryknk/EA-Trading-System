@@ -86,7 +86,7 @@ def _audit_inputs(records: list[dict[str, Any]]) -> AnalysisInputs:
         if record["event_type"] == "TRADE_CLOSED":
             required = {
                 "position_ticket", "direction", "open_time", "close_time", "volume",
-                "open_price", "close_price", "pnl", "commission", "swap",
+                "open_price", "close_price", "close_reason", "pnl", "commission", "swap",
             }
             if set(payload) != required:
                 raise ValueError("TRADE_CLOSED payload fields do not match Phase 9")
