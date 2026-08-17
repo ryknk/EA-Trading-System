@@ -11,6 +11,8 @@
     "currency": {"const": "ACCOUNT_CURRENCY"},
     "definitions": {"type": "object"},
     "reversal_from_profit": {"type": "object"},
+    "giveback_from_peak_profit": {"type": "object"},
+    "time_stop": {"type": "object"},
     "breakdowns": {"type": "object"}
   }
 }

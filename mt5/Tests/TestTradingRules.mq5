@@ -75,6 +75,27 @@ void OnStart(void)
    AssertTrue(!CBreakevenStopRules::ShouldMoveToBreakeven(POSITION_TYPE_BUY,150.00,0.0,151.00,151.02,1.0),
               "missing stop loss never fires");
 
+   AssertTrue(CTimeStopRules::HasExceededMaxHoldingBars(20,20),"time stop fires at exactly max holding bars");
+   AssertTrue(CTimeStopRules::HasExceededMaxHoldingBars(21,20),"time stop fires beyond max holding bars");
+   AssertTrue(!CTimeStopRules::HasExceededMaxHoldingBars(19,20),"time stop does not fire before max holding bars");
+   AssertTrue(!CTimeStopRules::HasExceededMaxHoldingBars(20,0),"zero max holding bars never fires");
+   AssertTrue(!CTimeStopRules::HasExceededMaxHoldingBars(20,-1),"negative max holding bars never fires");
+
+   AssertTrue(CTimeStopRules::HasReachedMinMfeR(POSITION_TYPE_BUY,150.00,149.00,150.50,0.5),
+              "buy reaches exactly 0.5R peak favorable excursion");
+   AssertTrue(!CTimeStopRules::HasReachedMinMfeR(POSITION_TYPE_BUY,150.00,149.00,150.49,0.5),
+              "buy below 0.5R peak favorable excursion does not reach threshold");
+   AssertTrue(CTimeStopRules::HasReachedMinMfeR(POSITION_TYPE_SELL,150.00,151.00,149.50,0.5),
+              "sell reaches exactly 0.5R peak favorable excursion");
+   AssertTrue(!CTimeStopRules::HasReachedMinMfeR(POSITION_TYPE_SELL,150.00,151.00,149.51,0.5),
+              "sell below 0.5R peak favorable excursion does not reach threshold");
+   AssertTrue(!CTimeStopRules::HasReachedMinMfeR(POSITION_TYPE_BUY,150.00,149.00,150.50,0.0),
+              "zero min r multiple never reaches threshold");
+   AssertTrue(!CTimeStopRules::HasReachedMinMfeR(POSITION_TYPE_BUY,150.00,0.0,150.50,0.5),
+              "missing initial stop loss never reaches threshold");
+   AssertTrue(!CTimeStopRules::HasReachedMinMfeR(POSITION_TYPE_BUY,150.00,150.00,150.50,0.5),
+              "zero risk distance never reaches threshold");
+
    if(g_failures==0) Print("TEST_SUITE_PASS TestTradingRules");
    else PrintFormat("TEST_SUITE_FAIL TestTradingRules failures=%d",g_failures);
   }

@@ -1,7 +1,7 @@
 """バックテスト結果を条件別（方向・時間帯・曜日・ATR/ADX帯・保有時間・MFE/MAE・市場レジーム・
-決済トリガー・Giveback等）に集計する分析モジュール。
+決済トリガー・Giveback・Time Stop等）に集計する分析モジュール。
 
-監査JSONL（CANDIDATE, RISK_DECISION, TRADE_CLOSED, TRADE_ANALYTICS）から1トレードごとの
+監査JSONL（CANDIDATE, RISK_DECISION, TRADE_CLOSED, TRADE_ANALYTICS, TIME_STOP_EXIT）から1トレードごとの
 文脈情報（エントリー時ATR/ADX/Spread/市場レジーム、決済トリガー（close_reason）、
 R換算損益、MFE、MAE、保有時間、Entry/Exit時点の曜日・Session、Giveback比率）を
 再構成し、分類ごとの成績（Trades, Win Rate, Profit Factor, Expectancy, Net Profit,
@@ -15,6 +15,12 @@ MFE到達後に決済までへ手放した利益の割合）は、エントリ�
 HighVolatility/NormalVolatility/LowVolatility）は、EA側（CMarketRegimeClassifier）が
 Entry時点の確定足データのみで判定した結果をCANDIDATEイベントのpayloadへ記録したものを
 そのまま集計する。本モジュールは判定ロジックを持たず、EA側の判定結果を再構成するのみ。
+
+Time Stop（時間切れ決済）が発動したトレードはTIME_STOP_EXITイベント（EA側CEAController::
+EvaluateTimeStopExitsが送出）のreason_codeで識別する。同イベントが存在しないトレードは
+time_stop_triggered=Falseとなる。close_reasonはMT5のDEAL_REASONをそのまま文字列化した
+ものであり、EA発注による決済（Emergency Close・シグナル失効Exit・Time Stop等）はすべて
+"EXPERT"として一括りになるため、Time Stopの識別にはTIME_STOP_EXITイベントを別途用いる。
 """
 
 from __future__ import annotations
@@ -47,6 +53,7 @@ BREAKDOWN_COLUMNS = [
     "hold_time_band", "mfe_band", "mae_band",
     "market_regime_trend", "market_regime_volatility",
     "close_reason", "close_session", "close_weekday", "giveback_band",
+    "time_stop_reason_code",
 ]
 
 
@@ -114,6 +121,21 @@ def _extract_analytics_context(records: list[dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["trade_candidate_id", "mfe", "mae"])
 
 
+def _extract_time_stop_context(records: list[dict[str, Any]]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        if record.get("event_type") != "TIME_STOP_EXIT":
+            continue
+        candidate_id = record.get("trade_candidate_id")
+        payload = record.get("payload")
+        if not isinstance(candidate_id, str) or candidate_id in seen or not isinstance(payload, dict):
+            continue
+        seen.add(candidate_id)
+        rows.append({"trade_candidate_id": candidate_id, "time_stop_reason_code": payload.get("reason_code")})
+    return pd.DataFrame(rows, columns=["trade_candidate_id", "time_stop_reason_code"])
+
+
 def _extract_closed_context(records: list[dict[str, Any]]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -155,6 +177,7 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
         "atr_band", "adx_band", "hold_time_band", "mfe_band", "mae_band",
         "market_regime_trend", "market_regime_volatility",
         "close_reason", "close_weekday", "close_session", "giveback_ratio", "giveback_band",
+        "time_stop_reason_code", "time_stop_triggered",
     ]
     if trades.empty:
         for column in context_columns:
@@ -170,6 +193,7 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
     enriched = enriched.merge(_extract_risk_context(records), on="trade_candidate_id", how="left")
     enriched = enriched.merge(_extract_analytics_context(records), on="trade_candidate_id", how="left")
     enriched = enriched.merge(_extract_closed_context(records), on="trade_candidate_id", how="left")
+    enriched = enriched.merge(_extract_time_stop_context(records), on="trade_candidate_id", how="left")
     for column in ("entry_atr", "entry_adx", "entry_spread_points", "risk_budget", "mfe", "mae"):
         enriched[column] = pd.to_numeric(enriched[column], errors="coerce")
 
@@ -190,6 +214,8 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
     # 一度到達したMFE（含み益ピーク）のうち、決済までに手放した割合。1.0以上は損益ゼロ以下まで完全反転したことを示す。
     mfe = enriched["mfe"]
     enriched["giveback_ratio"] = ((mfe - enriched["net_pnl"]) / mfe).where(mfe > 0.0)
+
+    enriched["time_stop_triggered"] = enriched["time_stop_reason_code"].notna()
 
     enriched["atr_band"] = _quantile_band(enriched["entry_atr"], "ATR")
     enriched["adx_band"] = _quantile_band(enriched["entry_adx"], "ADX")
@@ -245,10 +271,21 @@ def giveback_summary(trades: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+def time_stop_summary(trades: pd.DataFrame) -> dict[str, Any]:
+    """Time Stop（時間切れ決済）で決済されたトレードの件数・損益を要約する。
+    InpEnableTimeStop=true/falseそれぞれのバックテスト結果を本関数で比較することを想定している
+    （false側はtrades_closed_by_time_stopが常に0になる）。
+    """
+    triggered = trades[trades["time_stop_triggered"]]
+    summary = aggregate_trade_group(triggered["net_pnl"])
+    return {"trades_closed_by_time_stop": summary.pop("number_of_trades"), **summary}
+
+
 def _markdown(
     breakdowns: dict[str, list[dict[str, Any]]],
     reversal: dict[str, Any],
     giveback: dict[str, Any],
+    time_stop: dict[str, Any],
 ) -> str:
     lines = [
         "# トレード条件別分析レポート", "",
@@ -278,6 +315,16 @@ def _markdown(
         + ("算出不能" if share_full_reversal is None else f"{share_full_reversal:.2%}")
     )
     lines.append("")
+    lines += [
+        "## Time Stop（時間切れ決済）", "",
+        f"- Time Stopによる決済件数: {time_stop['trades_closed_by_time_stop']}",
+        f"- 純損益: {time_stop['net_profit']:.2f}",
+    ]
+    time_stop_pf = time_stop["profit_factor"]
+    lines.append(f"- プロフィットファクター: {'算出不能' if time_stop_pf is None else f'{time_stop_pf:.4f}'}")
+    lines.append(f"- 勝率: {time_stop['win_rate']:.2%}" if time_stop["trades_closed_by_time_stop"] else "- 勝率: 算出不能")
+    lines.append(f"- 期待値: {time_stop['expectancy']:.2f}")
+    lines.append("")
     for name, rows in breakdowns.items():
         lines += [f"## {name}別", "", "```json", json.dumps(rows, ensure_ascii=False, indent=2), "```", ""]
     return "\n".join(lines)
@@ -292,6 +339,7 @@ def write_report(
     breakdowns = {column: breakdown_by(trades, column) for column in BREAKDOWN_COLUMNS}
     reversal = reversal_from_profit_summary(trades)
     giveback = giveback_summary(trades)
+    time_stop = time_stop_summary(trades)
     report = {
         "schema_version": "1.0",
         "generated_at": (generated_at or datetime.now(UTC)).isoformat().replace("+00:00", "Z"),
@@ -311,9 +359,12 @@ def write_report(
             "close_weekday": "決済時刻の曜日（UTC基準）",
             "giveback_ratio": "(mfe - net_pnl) / mfe。MFE到達後、決済までに手放した利益の割合。1.0以上は損益ゼロ以下まで完全反転したことを示す。MFE<=0のトレードはNaN",
             "giveback_band": "giveback_ratioの実データ分位点による帯",
+            "time_stop_reason_code": "Time Stop（時間切れ決済）で決済された場合の理由コード（MAX_HOLDING_BARS/MAX_HOLDING_BARS_MIN_MFE_NOT_REACHED）。Time Stop以外の決済ではNaN",
+            "time_stop_triggered": "time_stop_reason_codeがNaNでないトレードはTrue。InpEnableTimeStop=falseのバックテストでは常にFalse",
         },
         "reversal_from_profit": reversal,
         "giveback_from_peak_profit": giveback,
+        "time_stop": time_stop,
         "breakdowns": breakdowns,
     }
     paths = {
@@ -324,7 +375,7 @@ def write_report(
     paths["json"].write_text(
         json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8",
     )
-    paths["markdown"].write_text(_markdown(breakdowns, reversal, giveback), encoding="utf-8")
+    paths["markdown"].write_text(_markdown(breakdowns, reversal, giveback, time_stop), encoding="utf-8")
     trades.to_csv(paths["trades"], index=False)
     return paths
 

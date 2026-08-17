@@ -113,7 +113,11 @@ public:
       request.tp=signal.take_profit;
       request.deviation=m_config.max_deviation_points;
       request.type_filling=FillingMode(signal.symbol);
-      request.comment=StringSubstr(signal.trade_candidate_id,0,31);
+      // trade_candidate_idは"{ea_id}-{symbol}-{unix_time}"形式でMQL5のDeal Comment上限(31文字)を
+      // 超えることが多く、そのまま格納すると末尾が切り捨てられCANDIDATE/RISK_DECISION監査ログとの
+      // 相関IDが一致しなくなる（EAController::CandidateForPositionでの復元に失敗する）。
+      // ea_id・symbolはPosition側から既知のため、一意性を持つentry_bar時刻のみを格納する。
+      request.comment=IntegerToString((long)signal.signal_bar_time);
       order_result.requested_price=request.price;
 
       ResetLastError();

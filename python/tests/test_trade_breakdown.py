@@ -12,6 +12,7 @@ from python.analysis.trade_breakdown import (
     build_trade_context,
     giveback_summary,
     reversal_from_profit_summary,
+    time_stop_summary,
     write_report,
 )
 
@@ -41,7 +42,8 @@ TRADES = [
          regime_trend="TrendDown", regime_volatility="HighVolatility", close_reason="TP"),
     dict(id="c5", direction="BUY", open="2025-01-10T23:00:00Z", close="2025-01-11T08:00:00Z",
          pnl=-30.0, atr=0.15, adx=30.0, spread=13.0, mfe=10.0, mae=-35.0,
-         regime_trend="TrendUp", regime_volatility="HighVolatility", close_reason="EXPERT"),
+         regime_trend="TrendUp", regime_volatility="HighVolatility", close_reason="EXPERT",
+         time_stop_reason_code="MAX_HOLDING_BARS"),
 ]
 
 
@@ -71,6 +73,12 @@ def write_audit_file(directory: Path) -> Path:
         records.append(audit_event("TRADE_ANALYTICS", trade["id"], trade["close"], {
             "position_ticket": str(1000 + index), "mfe": trade["mfe"], "mae": trade["mae"],
         }))
+        time_stop_reason_code = trade.get("time_stop_reason_code")
+        if time_stop_reason_code is not None:
+            records.append(audit_event("TIME_STOP_EXIT", trade["id"], trade["close"], {
+                "position_ticket": str(1000 + index), "reason_code": time_stop_reason_code,
+                "elapsed_bars": 20, "mfe_r_multiple": 0.1,
+            }))
     path = directory / "audit-20250106.jsonl"
     path.write_text("\n".join(json.dumps(row) for row in records), encoding="utf-8")
     return path
@@ -169,6 +177,26 @@ class TradeBreakdownTests(unittest.TestCase):
         self.assertEqual(2, summary["trades_that_fully_reversed_to_breakeven_or_loss"])
         self.assertAlmostEqual(0.5, summary["share_that_fully_reversed"])
 
+    def test_build_trade_context_flags_time_stop_triggered_trades(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_audit_file(Path(directory))
+            trades = build_trade_context([path])
+        by_id = trades.set_index("trade_candidate_id")
+        self.assertEqual("MAX_HOLDING_BARS", by_id.loc["c5", "time_stop_reason_code"])
+        self.assertTrue(bool(by_id.loc["c5", "time_stop_triggered"]))
+        for candidate_id in ("c1", "c2", "c3", "c4"):
+            self.assertFalse(bool(by_id.loc[candidate_id, "time_stop_triggered"]))
+            self.assertTrue(pd.isna(by_id.loc[candidate_id, "time_stop_reason_code"]))
+
+    def test_time_stop_summary_counts_trades_and_pnl(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_audit_file(Path(directory))
+            trades = build_trade_context([path])
+        summary = time_stop_summary(trades)
+        self.assertEqual(1, summary["trades_closed_by_time_stop"])
+        self.assertAlmostEqual(-30.0, summary["net_profit"])
+        self.assertAlmostEqual(0.0, summary["win_rate"])
+
     def test_write_report_produces_schema_compatible_json(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -180,6 +208,7 @@ class TradeBreakdownTests(unittest.TestCase):
             self.assertEqual("ACCOUNT_CURRENCY", report["currency"])
             self.assertEqual(set(BREAKDOWN_COLUMNS), set(report["breakdowns"].keys()))
             self.assertIn("reversal_from_profit", report)
+            self.assertEqual(1, report["time_stop"]["trades_closed_by_time_stop"])
             self.assertTrue(paths["markdown"].exists())
             self.assertTrue(paths["trades"].exists())
 

@@ -50,6 +50,10 @@ struct SEaConfig
    bool              signal_exit_check_trend;
    bool              signal_exit_check_h1_adx;
    bool              signal_exit_check_h4_adx;
+   bool              enable_time_stop;
+   int               max_holding_bars;
+   bool              time_stop_require_min_mfe;
+   double            time_stop_min_mfe_r_multiple;
    bool              decision_api_enabled;
    string            decision_api_url;
    string            decision_api_key_id;
@@ -118,6 +122,10 @@ void SetDefaultConfig(SEaConfig &config)
    config.signal_exit_check_trend   = true;
    config.signal_exit_check_h1_adx  = true;
    config.signal_exit_check_h4_adx  = true;
+   config.enable_time_stop          = true;
+   config.max_holding_bars          = 20;
+   config.time_stop_require_min_mfe = false;
+   config.time_stop_min_mfe_r_multiple = 0.5;
    config.decision_api_enabled       = false;
    config.decision_api_url           = "";
    config.decision_api_key_id        = "";
@@ -193,6 +201,10 @@ bool ValidateConfig(const SEaConfig &config,string &error)
    if(config.enable_signal_invalidation_exit &&
       !config.signal_exit_check_trend && !config.signal_exit_check_h1_adx && !config.signal_exit_check_h4_adx)
      { error="NO_SIGNAL_EXIT_CONDITION_ENABLED"; return false; }
+   if(config.enable_time_stop && config.max_holding_bars<1)
+     { error="INVALID_TIME_STOP_MAX_HOLDING_BARS"; return false; }
+   if(config.enable_time_stop && config.time_stop_require_min_mfe && config.time_stop_min_mfe_r_multiple<=0.0)
+     { error="INVALID_TIME_STOP_MIN_MFE"; return false; }
    if(config.minimum_free_margin_rate<0.0 || config.minimum_free_margin_rate>=1.0 || config.max_deviation_points<0)
      { error="INVALID_MARGIN_OR_DEVIATION_LIMIT"; return false; }
    if(config.magic_number==0)

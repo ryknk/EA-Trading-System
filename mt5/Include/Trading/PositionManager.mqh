@@ -54,6 +54,100 @@ public:
      }
   };
 
+class CTimeStopRules
+  {
+public:
+   // 経過本数（entry_timeframeの確定足換算）が上限に達したかを判定する。max_holding_barsが0以下なら常にfalse。
+   static bool HasExceededMaxHoldingBars(const int elapsed_closed_bars,const int max_holding_bars)
+     {
+      return max_holding_bars>0 && elapsed_closed_bars>=max_holding_bars;
+     }
+
+   // 保有中に追跡した含み益ピーク（peak_favorable_price）が「建値〜当初SL距離（初期リスク）」の
+   // min_r_multiple倍に到達しているかを判定する。CBreakevenStopRules::ShouldMoveToBreakevenと
+   // 同じ距離計算だが、現在値ではなく保有中の最高値/最安値（ピーク）を用いる点が異なる。
+   // initial_stop_lossは建値ストップ等によるSL変更の影響を受けない、エントリー時点のSLを渡すこと。
+   static bool HasReachedMinMfeR(const ENUM_POSITION_TYPE type,const double open_price,
+                                 const double initial_stop_loss,const double peak_favorable_price,
+                                 const double min_r_multiple)
+     {
+      if(min_r_multiple<=0.0 || initial_stop_loss<=0.0 || open_price<=0.0)
+         return false;
+      double risk_distance,favorable_distance;
+      if(type==POSITION_TYPE_BUY)
+        {
+         risk_distance=open_price-initial_stop_loss;
+         favorable_distance=peak_favorable_price-open_price;
+        }
+      else if(type==POSITION_TYPE_SELL)
+        {
+         risk_distance=initial_stop_loss-open_price;
+         favorable_distance=open_price-peak_favorable_price;
+        }
+      else
+         return false;
+      if(risk_distance<=0.0)
+         return false;
+      return favorable_distance>=risk_distance*min_r_multiple;
+     }
+  };
+
+// Time Stop判定専用のピーク含み益（価格ベース）追跡。CTradeAnalyticsTracker（分析専用・売買判断に不使用）
+// とは別系統で、こちらはTime Stop決済の可否という売買判断に直接使用する。当初SL（initial_stop_loss）は
+// 初回検知時に固定し、以降のSL変更（建値ストップ等）で判定基準がぶれないようにする。
+class CTimeStopTracker
+  {
+private:
+   struct SState
+     {
+      ulong  ticket;
+      double initial_stop_loss;
+      double peak_favorable_price;
+     };
+   SState m_states[];
+
+   int Find(const ulong ticket)
+     {
+      for(int index=0; index<ArraySize(m_states); index++)
+         if(m_states[index].ticket==ticket) return index;
+      return -1;
+     }
+
+public:
+   // 現在値でピークを更新し（初回検知時は当初SL・現在値で初期化）、判定に必要な値を返す。
+   void Update(const ulong ticket,const ENUM_POSITION_TYPE type,const double current_stop_loss,
+               const double current_price,double &initial_stop_loss,double &peak_favorable_price)
+     {
+      int slot=Find(ticket);
+      if(slot<0)
+        {
+         slot=ArraySize(m_states);
+         ArrayResize(m_states,slot+1);
+         m_states[slot].ticket=ticket;
+         m_states[slot].initial_stop_loss=current_stop_loss;
+         m_states[slot].peak_favorable_price=current_price;
+        }
+      else
+        {
+         if(type==POSITION_TYPE_BUY && current_price>m_states[slot].peak_favorable_price)
+            m_states[slot].peak_favorable_price=current_price;
+         if(type==POSITION_TYPE_SELL && current_price<m_states[slot].peak_favorable_price)
+            m_states[slot].peak_favorable_price=current_price;
+        }
+      initial_stop_loss=m_states[slot].initial_stop_loss;
+      peak_favorable_price=m_states[slot].peak_favorable_price;
+     }
+
+   void Remove(const ulong ticket)
+     {
+      const int slot=Find(ticket);
+      if(slot<0) return;
+      const int last=ArraySize(m_states)-1;
+      m_states[slot]=m_states[last];
+      ArrayResize(m_states,last);
+     }
+  };
+
 class CPositionManager
   {
 private:
@@ -62,6 +156,8 @@ private:
    string    m_emergency_key_prefix;
    string    m_signal_exit_key_prefix;
    ulong     m_signal_exit_attempt_ticket;
+   string    m_time_stop_key_prefix;
+   ulong     m_time_stop_attempt_ticket;
    bool      m_initialized;
 
    ENUM_ORDER_TYPE_FILLING FillingMode(const string symbol)
@@ -154,6 +250,8 @@ public:
       m_emergency_attempt_ticket=0;
       m_emergency_key_prefix="";
       m_signal_exit_attempt_ticket=0;
+      m_time_stop_key_prefix="";
+      m_time_stop_attempt_ticket=0;
       m_initialized=false;
      }
 
@@ -168,8 +266,12 @@ public:
       m_signal_exit_key_prefix="ETS.POS.SIGNALEXIT."+identity+"."+StringFormat("%I64u",m_config.magic_number)+".";
       if(StringLen(m_signal_exit_key_prefix)+20>63)
         { error="POSITION_STATE_KEY_TOO_LONG"; return false; }
+      m_time_stop_key_prefix="ETS.POS.TIMESTOP."+identity+"."+StringFormat("%I64u",m_config.magic_number)+".";
+      if(StringLen(m_time_stop_key_prefix)+20>63)
+        { error="POSITION_STATE_KEY_TOO_LONG"; return false; }
       m_emergency_attempt_ticket=0;
       m_signal_exit_attempt_ticket=0;
+      m_time_stop_attempt_ticket=0;
       m_initialized=true;
       return true;
      }
@@ -274,6 +376,58 @@ public:
       if(!OrderSend(request,result) || !COrderValidationRules::AcceptedRetcode(result.retcode))
         { error=StringFormat("SIGNAL_EXIT_FAILED retcode=%u comment=%s",result.retcode,result.comment); return false; }
       PrintFormat("SIGNAL_EXIT_SUBMITTED position=%I64u order=%I64u deal=%I64u retcode=%u reason=%s",
+                  ticket,result.order,result.deal,result.retcode,reason_code);
+      return true;
+     }
+
+   // Time Stop（保有時間超過）による決済専用のメカニズム。判断（経過バー数・MFE到達判定）はEAController側で
+   // 行い、ここは決済実行のみを担う（CloseOnSignalInvalidationと同じ責務境界・冪等性の考え方）。
+   bool CloseOnTimeStop(const ulong ticket,const string reason_code,string &error)
+     {
+      error="";
+      const string attempt_key=m_time_stop_key_prefix+StringFormat("%I64u",ticket);
+      if(ticket==m_time_stop_attempt_ticket || GlobalVariableCheck(attempt_key))
+        { error="TIME_STOP_ALREADY_ATTEMPTED"; return false; }
+      if(!PositionSelectByTicket(ticket))
+        { error="POSITION_SELECT_FAILED"; return false; }
+      const string symbol=PositionGetString(POSITION_SYMBOL);
+      const double volume=PositionGetDouble(POSITION_VOLUME);
+      const ENUM_POSITION_TYPE position_type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      MqlTick tick;
+      if(volume<=0.0 || !SymbolInfoTick(symbol,tick))
+        { error="POSITION_CLOSE_DATA_UNAVAILABLE"; return false; }
+
+      MqlTradeRequest request;
+      MqlTradeCheckResult check;
+      MqlTradeResult result;
+      ZeroMemory(request);
+      ZeroMemory(check);
+      ZeroMemory(result);
+      request.action=TRADE_ACTION_DEAL;
+      request.magic=m_config.magic_number;
+      request.position=ticket;
+      request.symbol=symbol;
+      request.volume=volume;
+      request.type=(position_type==POSITION_TYPE_BUY ? ORDER_TYPE_SELL : ORDER_TYPE_BUY);
+      request.price=(position_type==POSITION_TYPE_BUY ? tick.bid : tick.ask);
+      request.deviation=m_config.max_deviation_points;
+      request.type_filling=FillingMode(symbol);
+      request.comment=StringSubstr("TIMESTOP_"+reason_code,0,31);
+
+      ResetLastError();
+      const bool check_ok=OrderCheck(request,check);
+      if(!COrderCheckRules::IsAccepted(check_ok,check.retcode))
+        { error=StringFormat("TIME_STOP_ORDER_CHECK_FAILED retcode=%u comment=%s",check.retcode,check.comment); return false; }
+      // Persist before sending. An ambiguous failure is never retried automatically
+      // (matches EmergencyClose/CloseOnSignalInvalidation's idempotency convention).
+      ResetLastError();
+      if(GlobalVariableSet(attempt_key,1.0)==0 && GetLastError()!=0)
+        { error="TIME_STOP_IDEMPOTENCY_PERSIST_FAILED"; return false; }
+      GlobalVariablesFlush();
+      m_time_stop_attempt_ticket=ticket;
+      if(!OrderSend(request,result) || !COrderValidationRules::AcceptedRetcode(result.retcode))
+        { error=StringFormat("TIME_STOP_CLOSE_FAILED retcode=%u comment=%s",result.retcode,result.comment); return false; }
+      PrintFormat("TIME_STOP_EXIT_SUBMITTED position=%I64u order=%I64u deal=%I64u retcode=%u reason=%s",
                   ticket,result.order,result.deal,result.retcode,reason_code);
       return true;
      }

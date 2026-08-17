@@ -32,6 +32,7 @@ private:
    CRiskManager                m_risk_manager;
    COrderManager               m_order_manager;
    CPositionManager            m_position_manager;
+   CTimeStopTracker            m_time_stop_tracker;
    CDecisionApiClient          m_decision_client;
    CMockDecisionProvider       m_mock_decision_provider;
    CTelemetryApiClient         m_telemetry_client;
@@ -101,8 +102,13 @@ private:
          if(deal==0) continue;
          const ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
          if(entry!=DEAL_ENTRY_IN && entry!=DEAL_ENTRY_INOUT) continue;
+         // Deal CommentはOrderManager::Submitがentry_bar時刻のみを格納する（trade_candidate_id
+         // 全体はMQL5のComment上限31文字を超えるため）。CANDIDATE/RISK_DECISION監査ログと同じ
+         // "{ea_id}-{symbol}-{unix_time}"形式へ復元する。
          const string comment=HistoryDealGetString(deal,DEAL_COMMENT);
-         if(CTradeLogRules::SafeCorrelationId(comment)) return comment;
+         if(!CTradeLogRules::SafeCorrelationId(comment) || StringLen(comment)<1) continue;
+         const string candidate_id=StringFormat("%s-%s-%s",m_config.ea_id,symbol,comment);
+         if(CTradeLogRules::SafeCorrelationId(candidate_id)) return candidate_id;
         }
       return "unlinked";
      }
@@ -228,6 +234,71 @@ private:
             if(!m_position_manager.CloseOnSignalInvalidation(ticket,reason_code,close_error))
                PrintFormat("SIGNAL_EXIT_FAILED position=%I64u code=%s",ticket,close_error);
            }
+        }
+     }
+
+   // Entry後、entry_timeframe換算で何本の確定足が経過したかを返す（look-ahead biasを避けるため、
+   // 当日の未確定足は本数へ含めない）。Bars(symbol,timeframe,open_time,TimeCurrent())は境界を含むため-1する。
+   int ElapsedClosedBars(const string symbol,const ENUM_TIMEFRAMES timeframe,const datetime open_time)
+     {
+      const int bars=Bars(symbol,timeframe,open_time,TimeCurrent());
+      return bars>0 ? bars-1 : 0;
+     }
+
+   // 保有ポジションの経過バー数（entry_timeframe換算）が上限へ達したら、必要に応じて最低MFE到達判定を経て
+   // 決済する。判断（経過バー数・MFE）はここで行い、メカニズム（決済実行）はPositionManagerへ委ねる
+   // （EvaluateSignalInvalidationExitsと同じ責務境界）。
+   void EvaluateTimeStopExits(void)
+     {
+      if(!m_config.enable_time_stop || !m_config.enable_trade_mutations)
+         return;
+      const int total=PositionsTotal();
+      for(int index=0; index<total; index++)
+        {
+         const ulong ticket=PositionGetTicket(index);
+         if(ticket==0) continue;
+         if(!CPositionProtectionRules::IsManagedPosition(PositionGetInteger(POSITION_MAGIC),m_config.magic_number))
+            continue;
+         const double stop_loss=PositionGetDouble(POSITION_SL);
+         if(stop_loss<=0.0) continue; // 保護SL未確定のpositionはPositionManager::Monitorの緊急決済側の責務
+         const string symbol=PositionGetString(POSITION_SYMBOL);
+         const ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         const double open_price=PositionGetDouble(POSITION_PRICE_OPEN);
+         const datetime open_time=(datetime)PositionGetInteger(POSITION_TIME);
+         const ulong position_identifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+         MqlTick tick;
+         if(!SymbolInfoTick(symbol,tick)) continue;
+         const double current_price=(type==POSITION_TYPE_BUY ? tick.bid : tick.ask);
+
+         double initial_stop_loss,peak_favorable_price;
+         m_time_stop_tracker.Update(ticket,type,stop_loss,current_price,initial_stop_loss,peak_favorable_price);
+
+         const int elapsed_bars=ElapsedClosedBars(symbol,m_config.entry_timeframe,open_time);
+         if(!CTimeStopRules::HasExceededMaxHoldingBars(elapsed_bars,m_config.max_holding_bars))
+            continue;
+         if(m_config.time_stop_require_min_mfe &&
+            CTimeStopRules::HasReachedMinMfeR(type,open_price,initial_stop_loss,peak_favorable_price,
+                                              m_config.time_stop_min_mfe_r_multiple))
+            continue; // 十分なMFEに到達済み。通常のSL/TP/建値ストップへ委ねる
+
+         const string reason_code=(m_config.time_stop_require_min_mfe ?
+            "MAX_HOLDING_BARS_MIN_MFE_NOT_REACHED" : "MAX_HOLDING_BARS");
+         string close_error;
+         if(!m_position_manager.CloseOnTimeStop(ticket,reason_code,close_error))
+           { PrintFormat("TIME_STOP_EXIT_FAILED position=%I64u code=%s",ticket,close_error); continue; }
+         m_time_stop_tracker.Remove(ticket);
+
+         const double risk_distance=(type==POSITION_TYPE_BUY ? open_price-initial_stop_loss : initial_stop_loss-open_price);
+         const double favorable_distance=(type==POSITION_TYPE_BUY ? peak_favorable_price-open_price : open_price-peak_favorable_price);
+         const double mfe_r_multiple=(risk_distance>0.0 ? favorable_distance/risk_distance : 0.0);
+         const string candidate_id=CandidateForPosition(position_identifier,symbol);
+         string payload="{";
+         payload+="\"position_ticket\":"+JString(StringFormat("%I64u",ticket))+",";
+         payload+="\"reason_code\":"+JString(reason_code)+",";
+         payload+="\"elapsed_bars\":"+IntegerToString(elapsed_bars)+",";
+         payload+="\"mfe_r_multiple\":"+JNumber(mfe_r_multiple)+"}";
+         // ローカル監査のみ。Time Stop識別は分析専用の新規イベントであり、既存TRADE_CLOSEDの契約は変更しない。
+         Audit("TIME_STOP_EXIT",candidate_id,"",symbol,payload,false);
         }
      }
 
@@ -365,6 +436,9 @@ public:
       // 既存ポジション管理の一部。エントリー根拠（トレンド/ADX）が消失した保有ポジションを
       // 満期(SL/TP)を待たず早期決済する。新規候補評価より先に行う。
       EvaluateSignalInvalidationExits();
+      // 既存ポジション管理の一部。Entry後の経過バー数が上限を超えたポジションを、シグナルの
+      // 有効期限切れとみなし早期決済する（必要に応じ最低MFE到達判定を伴う）。
+      EvaluateTimeStopExits();
 
       string risk_lock_code,risk_monitor_error;
       if(!m_risk_manager.Monitor(risk_lock_code,risk_monitor_error))
