@@ -52,7 +52,6 @@ input bool            InpEnableSignalInvalidationExit=true;
 input bool            InpSignalExitCheckTrend=true;
 input bool            InpSignalExitCheckH1Adx=true;
 input bool            InpSignalExitCheckH4Adx=true;
-input double          InpSignalExitPartialCloseFraction=0.5;
 input bool            InpDecisionApiEnabled=false;
 input string          InpDecisionApiUrl="";
 input string          InpDecisionApiKeyId="";
@@ -124,7 +123,6 @@ int OnInit(void)
    config.signal_exit_check_trend=InpSignalExitCheckTrend;
    config.signal_exit_check_h1_adx=InpSignalExitCheckH1Adx;
    config.signal_exit_check_h4_adx=InpSignalExitCheckH4Adx;
-   config.signal_exit_partial_close_fraction=InpSignalExitPartialCloseFraction;
    config.decision_api_enabled=InpDecisionApiEnabled;
    config.decision_api_url=InpDecisionApiUrl;
    config.decision_api_key_id=InpDecisionApiKeyId;

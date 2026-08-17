@@ -102,6 +102,32 @@
 
   **評価: Trend+H1 ADXのみへ絞り込むと、3条件版よりPF(0.87→0.89)・Sharpe(-1.22→-1.00)・純損益(-50,214→-44,039円)のすべてが改善し、これまでの全Exit側施策の中で最良のPF・Sharpeを記録した**。EXPERT（早期Exit）件数は84件と3条件版（86件）とほぼ変わらず早期Exit自体の質は維持されたまま、TP到達件数が28→31件へ増加し、TP到達トレードの平均利益も9,611→9,678円へさらに改善した。これは、H4 ADXチェックがH1 ADXチェックと重複する情報（同じ趣旨のトレンド強度指標で相関が高い、エントリー側のADXスイープでも確認済みの知見）に基づき、本来ならTPへ到達していたはずのトレードの一部を不要に早期終了させていたことを示唆する。**Trend+H4 ADXのみ**の結果は対照的で、EXPERT件数がわずか17件（H4 ADX＝4時間足は変化が緩やかで早期Exitの発動機会自体が乏しい）にとどまり、真のトレード数も120件と3水準中最少。純損益の絶対額は-40,483円と最良だが、これは主にトレード数自体が少ないこと（絶対的な母数減少）による面が大きく、Sharpe(-1.35)は3水準中最悪。**結論: Trend+H1 ADXのみを新たな最良状態として採用することを推奨する**。ただしPFは0.89とまだ1未満で、収益性基準には引き続き未達。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する。ini設定はTrend+H1 ADXのみへ更新済み）
 * [x] シグナル失効Exitの設計をH1 ADXとH4 ADX/Trendで差別化する（H1 ADX弱体化＝一部利確50%、Trend反転/H4 ADX弱体化＝完全決済）よう調整し、同一IS期間で再実行する（2026-08-17実施。`mt5/Include/Strategy/TrendFollowingStrategy.mqh`へ`ESignalExitAction` enum（NONE/PARTIAL/FULL）を新設し`IsTrendStillValid()`を`EvaluateSignalExit()`へ改名（戻り値bool→enum）。H1 ADX弱体化は`SIGNAL_EXIT_PARTIAL`、Trend反転・H4 ADX弱体化は`SIGNAL_EXIT_FULL`を返す。`mt5/Include/Trading/PositionManager.mqh`へ`CSignalExitVolumeRules`（Volume Step/Min考慮の決済量算出）・`ClosePartialOnSignalWeakening()`（一部利確の実行メカニズム、`CloseOnSignalInvalidation`とは独立したGlobalVariable名前空間でべき等性を担保）を新設。`mt5/Include/Core/EAController.mqh`の`EvaluateSignalInvalidationExits()`を`ESignalExitAction`に応じて完全決済/一部利確を振り分けるよう変更。`mt5/Include/Core/Config.mqh`・`mt5/Experts/CoreEA.mq5`へ`InpSignalExitPartialCloseFraction`（既定0.5）を追加。MQL5コンパイル（9ターゲット）・7 Script Test全PASS確認済み）。結果は`results/backtests/20260817-212453-USDJPY-H1/`: MT5レポートの取引数226件・約定数393件は一部利確による分割カウントのため、`trade_breakdown`でposition単位に再集計すると真のトレード数167件。純損益-51,376円、Profit Factor 0.86、Sharpe -1.26、最大連敗10件（-28,238円）。**評価: 効果は逆効果**。直前の最良状態（Trend+H1 ADXのみ・全条件完全決済、PF0.89・Sharpe-1.00・純損益-44,039円）と比較し、純損益(-7,337円悪化)・PF(-0.03)・Sharpe(-0.26)のいずれも悪化した。close_reason別では、TP到達件数は31→33件へわずかに増加したが、TP到達トレードの平均利益は9,678→8,454円へ低下しており、部分利確でTP到達前に一部利益を早期確定してしまう効果（過去に試した「部分利確@1.0R」と同種のTP希薄化）が再発している。真のトレード数も167件（H1のみ完全決済版の208件より少ない）で、一部利確では1回のイベントで口座資金の半分しか解放されないため資金回転が鈍った可能性がある。**H1 ADXを一部利確、Trend/H4 ADXを完全決済とするハイブリッド設計は、H1 ADXも含め全条件を完全決済とする現行の最良状態（Trend+H1 ADXのみ、`20260817-204940-USDJPY-H1/`）に劣り、推奨しない**。次の一手候補: (a) 一部利確を撤回しTrend+H1 ADXのみ・全条件完全決済へ差し戻す（推奨）、(b) 一部利確の割合を縮小（例: 25%）して再試行する、(c) 別のレバーへ切り替える。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
+* [x] SL/TPの算出方式を確認したうえで、SLのATR倍率(`InpStopAtrMultiple`)とTP/SL比(`InpRiskRewardRatio`)をスイープし、同一IS期間で再実行する（2026-08-17実施。**前提確認**: エントリー時のSL/TPは初期実装（Initial commit）の時点から`stop_distance=atr*InpStopAtrMultiple`（SL）/`stop_distance*InpRiskRewardRatio`（TP）というATRベースの計算式であり、固定pips方式は存在しなかった。ユーザーへ確認のうえ、既存パラメータ値自体のスイープとして実施。**前段の撤回**: 直前の一部利確ハイブリッド設計（`20260817-212453-USDJPY-H1/`、「推奨しない」と結論済み）を、`mt5/Include/Strategy/TrendFollowingStrategy.mqh`の`ESignalExitAction` enum・`EvaluateSignalExit()`を削除し`IsTrendStillValid()`（bool返却）へ復元、`mt5/Include/Trading/PositionManager.mqh`から`CSignalExitVolumeRules`・`ClosePartialOnSignalWeakening()`を削除、`mt5/Include/Core/EAController.mqh`・`Config.mqh`・`CoreEA.mq5`から関連コードを除去する形で完全に差し戻した。差し戻し後の確認実行（`results/backtests/20260817-214400-USDJPY-H1/`）は既知の最良状態`20260817-204940-USDJPY-H1`（純損益-44,039円・PF0.89・Sharpe-1.00・取引数208）とすべての指標が完全一致し、退行がないことを確認済み。MQL5コンパイル（9ターゲット）・7 Script Test全PASS確認済み。
+
+  この最良状態（Trend+H1 ADXのみ・全条件完全決済、建値ストップ・シグナル失効Exit有効）を固定した上で、`InpStopAtrMultiple`（RR=2.0固定）と`InpRiskRewardRatio`（StopAtrMultiple=2.0固定）を独立にスイープした。
+
+  | InpStopAtrMultiple | 純損益 | PF | Sharpe | 期待利得 | 取引数 |
+  |---|---:|---:|---:|---:|---:|
+  | 1.0 | -88,827円 | 0.72 | -5.00 | -734.11円 | 121 |
+  | 1.25 | -67,214円 | 0.83 | -2.61 | -417.48円 | 161 |
+  | **1.5** | **-33,483円** | **0.91** | -1.21 | -213.27円 | 157 |
+  | 1.75 | -55,736円 | 0.88 | -1.30 | -264.15円 | 211 |
+  | 2.0（基準・現行値） | -44,039円 | 0.89 | **-1.00** | **-211.73円** | 208 |
+  | 2.5 | -60,194円 | 0.84 | -1.39 | -300.97円 | 200 |
+  | 3.0 | -65,878円 | 0.79 | -1.69 | -359.99円 | 183 |
+
+  | InpRiskRewardRatio | 純損益 | PF | Sharpe | 期待利得 | 取引数 |
+  |---|---:|---:|---:|---:|---:|
+  | 1.5 | -59,301円 | 0.88 | -1.40 | -252.34円 | 235 |
+  | 2.0（基準・現行値） | **-44,039円** | **0.89** | -1.00 | -211.73円 | 208 |
+  | 2.5 | -51,984円 | 0.87 | -1.14 | -265.22円 | 196 |
+  | 3.0 | -44,293円 | 0.88 | **-0.97** | -236.86円 | 187 |
+
+  各run: `results/backtests/20260817-214808/215752/215151/215943/215340/215538-USDJPY-H1/`（StopAtrMultiple軸）、`results/backtests/20260817-220201/220357/220556-USDJPY-H1/`（RiskRewardRatio軸）。
+
+  **RiskRewardRatioは滑らかで安定**: RR=2.0が純損益・PFで最良、RR=3.0がSharpeでわずかに上回るが僅差であり、隣接水準間で単調に近い変化を示す（エントリー側の過去のRRスイープでも2.0付近が山の頂点と確認済み）。**現行のRR=2.0を維持することを推奨する**。
+
+  **StopAtrMultipleは非単調でギザギザしている**: StopAtrMultiple=1.5が純損益・PFで唯一現行値(2.0)を上回るが、その両隣（1.25は-67,214円・PF0.83、1.75は-55,736円・PF0.88）はいずれも現行値より悪化しており、滑らかな山を形成していない。`trade_breakdown`で1.5と2.0(基準)のclose_reason内訳を比較すると、EXPERT（シグナル失効Exit）件数が84件→33件へ大きく減少する一方、SL件数(93→92)・TP件数(31→32)・TP平均利益(9,678→9,931円)はほぼ変わらず、純損益改善の大半はEXPERT決済の減少（早期Exitが発動する前にSL/TPへ先に到達するケースが増えた）で説明できる。`InpMaxOpenPositions=1`の単一ポジション制約下ではSL距離の微小な変更が個々の決済タイミングを通じて以降のトレード系列全体を分岐させるため（経路依存性）、この1.5での改善が構造的に頑健な効果なのか、本IS期間固有の偶然の系列一致なのかをIS内の指標だけでは判別できない。**総合評価: RR=2.0は現行値の維持を推奨。StopAtrMultipleの1.5は魅力的だが、隣接水準での非単調な挙動は本IS期間への過学習リスクを示唆するため、DEC-024/025のIS/OOS分離方針に基づき、IS単体の結果だけで現行値(2.0)から1.5へ変更することは推奨しない**。次の一手候補: (a) 現行値(StopAtrMultiple=2.0, RiskRewardRatio=2.0)を維持し次のレバーへ進む（推奨）、(b) StopAtrMultiple=1.5をWalk Forward評価の対象候補として記録しておき、Walk Forward各Foldで頑健性を確認する、(c) 別のレバーへ切り替える。ini設定はStopAtrMultiple=2.0・RiskRewardRatio=2.0（現行値）へ復元済み。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
 * [ ] Walk Forward各Fold（Fold1: 学習2017-09〜2019-12/検証2020 〜 Fold5: 学習2020-01〜2023-12/検証2024、DEC-025でFold1学習開始を補正）を実行する。rule-based Strategyには学習ステップがないため、当面は各Foldの検証年についてのみ固定パラメータでStrategy Testerを実行する（学習を伴うWalk Forward評価は3.3節のML評価タスクで別途実施する）
 * [ ] Final Holdout期間（2025-01〜2026-08）は、EA・MLモデル・閾値・SL/TP等を確定し他の全ゲートが完了するまで実行しない（一度だけの評価として温存する）
 * [x] 新結果を踏まえてHANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`を更新する（2026-08-16実施）

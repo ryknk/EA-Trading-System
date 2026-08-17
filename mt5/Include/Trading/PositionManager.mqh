@@ -54,27 +54,6 @@ public:
      }
   };
 
-class CSignalExitVolumeRules
-  {
-public:
-   // 一部利確の決済量算出。Volume Stepの倍数へ切り下げ、決済量・残存量のいずれかがVolume Min未満に
-   // なる場合は分割不可（0を返す＝一部利確を見送り、そのまま保有を継続する）とする。
-   // 最小Lot未満を無条件で引き上げることはしない。
-   static double ClosableVolume(const double current_volume,const double close_fraction,
-                                const double volume_step,const double volume_min)
-     {
-      if(current_volume<=0.0 || close_fraction<=0.0 || close_fraction>=1.0 || volume_step<=0.0)
-         return 0.0;
-      const double raw=current_volume*close_fraction;
-      const double steps=MathFloor(raw/volume_step);
-      const double close_volume=NormalizeDouble(steps*volume_step,8);
-      const double remaining=NormalizeDouble(current_volume-close_volume,8);
-      if(close_volume<volume_min || remaining<volume_min)
-         return 0.0;
-      return close_volume;
-     }
-  };
-
 class CPositionManager
   {
 private:
@@ -83,7 +62,6 @@ private:
    string    m_emergency_key_prefix;
    string    m_signal_exit_key_prefix;
    ulong     m_signal_exit_attempt_ticket;
-   string    m_signal_partial_key_prefix;
    bool      m_initialized;
 
    ENUM_ORDER_TYPE_FILLING FillingMode(const string symbol)
@@ -189,9 +167,6 @@ public:
         { error="POSITION_STATE_KEY_TOO_LONG"; return false; }
       m_signal_exit_key_prefix="ETS.POS.SIGNALEXIT."+identity+"."+StringFormat("%I64u",m_config.magic_number)+".";
       if(StringLen(m_signal_exit_key_prefix)+20>63)
-        { error="POSITION_STATE_KEY_TOO_LONG"; return false; }
-      m_signal_partial_key_prefix="ETS.POS.SIGNALPARTIAL."+identity+"."+StringFormat("%I64u",m_config.magic_number)+".";
-      if(StringLen(m_signal_partial_key_prefix)+20>63)
         { error="POSITION_STATE_KEY_TOO_LONG"; return false; }
       m_emergency_attempt_ticket=0;
       m_signal_exit_attempt_ticket=0;
@@ -300,63 +275,6 @@ public:
         { error=StringFormat("SIGNAL_EXIT_FAILED retcode=%u comment=%s",result.retcode,result.comment); return false; }
       PrintFormat("SIGNAL_EXIT_SUBMITTED position=%I64u order=%I64u deal=%I64u retcode=%u reason=%s",
                   ticket,result.order,result.deal,result.retcode,reason_code);
-      return true;
-     }
-
-   // エントリー根拠の一部（H1 ADX）が弱体化した保有ポジションを、現在volumeのclose_fraction割合だけ
-   // 一部利確する（残りは保有継続、満期(SL/TP)を待たず一部だけ確定）。
-   // CloseOnSignalInvalidation（完全決済）とは別の独立したGlobalVariable名前空間でべき等性を担保する
-   // （一度弱体化を検知して一部利確したら、同一ポジションに対して再度は行わない）。
-   bool ClosePartialOnSignalWeakening(const ulong ticket,const double close_fraction,
-                                      const string reason_code,string &error)
-     {
-      error="";
-      const string attempt_key=m_signal_partial_key_prefix+StringFormat("%I64u",ticket);
-      if(GlobalVariableCheck(attempt_key))
-        { error="SIGNAL_PARTIAL_EXIT_ALREADY_ATTEMPTED"; return false; }
-      if(!PositionSelectByTicket(ticket))
-        { error="POSITION_SELECT_FAILED"; return false; }
-      const string symbol=PositionGetString(POSITION_SYMBOL);
-      const ENUM_POSITION_TYPE position_type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-      const double volume_step=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
-      const double volume_min=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
-      const double close_volume=CSignalExitVolumeRules::ClosableVolume(
-         PositionGetDouble(POSITION_VOLUME),close_fraction,volume_step,volume_min);
-      MqlTick tick;
-      if(close_volume<=0.0 || !SymbolInfoTick(symbol,tick))
-        { error="POSITION_CLOSE_DATA_UNAVAILABLE"; return false; }
-
-      MqlTradeRequest request;
-      MqlTradeCheckResult check;
-      MqlTradeResult result;
-      ZeroMemory(request);
-      ZeroMemory(check);
-      ZeroMemory(result);
-      request.action=TRADE_ACTION_DEAL;
-      request.magic=m_config.magic_number;
-      request.position=ticket;
-      request.symbol=symbol;
-      request.volume=close_volume;
-      request.type=(position_type==POSITION_TYPE_BUY ? ORDER_TYPE_SELL : ORDER_TYPE_BUY);
-      request.price=(position_type==POSITION_TYPE_BUY ? tick.bid : tick.ask);
-      request.deviation=m_config.max_deviation_points;
-      request.type_filling=FillingMode(symbol);
-      request.comment=StringSubstr("SIGPART_"+reason_code,0,31);
-
-      ResetLastError();
-      const bool check_ok=OrderCheck(request,check);
-      if(!COrderCheckRules::IsAccepted(check_ok,check.retcode))
-        { error=StringFormat("SIGNAL_PARTIAL_EXIT_ORDER_CHECK_FAILED retcode=%u comment=%s",check.retcode,check.comment); return false; }
-      // Persist before sending. An ambiguous failure is never retried automatically
-      // (matches EmergencyClose's idempotency convention).
-      ResetLastError();
-      if(GlobalVariableSet(attempt_key,1.0)==0 && GetLastError()!=0)
-        { error="SIGNAL_PARTIAL_EXIT_IDEMPOTENCY_PERSIST_FAILED"; return false; }
-      GlobalVariablesFlush();
-      if(!OrderSend(request,result) || !COrderValidationRules::AcceptedRetcode(result.retcode))
-        { error=StringFormat("SIGNAL_PARTIAL_EXIT_FAILED retcode=%u comment=%s",result.retcode,result.comment); return false; }
-      PrintFormat("SIGNAL_PARTIAL_EXIT_SUBMITTED position=%I64u order=%I64u deal=%I64u retcode=%u volume=%.8f reason=%s",
-                  ticket,result.order,result.deal,result.retcode,close_volume,reason_code);
       return true;
      }
 

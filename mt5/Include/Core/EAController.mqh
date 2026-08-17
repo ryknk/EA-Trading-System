@@ -222,19 +222,11 @@ private:
          const ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
          const ESignalDirection direction=(type==POSITION_TYPE_BUY ? SIGNAL_DIRECTION_BUY : SIGNAL_DIRECTION_SELL);
          string reason_code;
-         const ESignalExitAction action=m_strategy.EvaluateSignalExit(direction,reason_code);
-         if(action==SIGNAL_EXIT_FULL)
+         if(!m_strategy.IsTrendStillValid(direction,reason_code))
            {
             string close_error;
             if(!m_position_manager.CloseOnSignalInvalidation(ticket,reason_code,close_error))
                PrintFormat("SIGNAL_EXIT_FAILED position=%I64u code=%s",ticket,close_error);
-           }
-         else if(action==SIGNAL_EXIT_PARTIAL)
-           {
-            string partial_error;
-            if(!m_position_manager.ClosePartialOnSignalWeakening(ticket,m_config.signal_exit_partial_close_fraction,
-                                                                  reason_code,partial_error))
-               PrintFormat("SIGNAL_PARTIAL_EXIT_FAILED position=%I64u code=%s",ticket,partial_error);
            }
         }
      }
