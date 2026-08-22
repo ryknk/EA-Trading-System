@@ -28,7 +28,12 @@ from .reports import read_json_lines
 
 VARIANTS = ["IMMEDIATE", "WAIT_1_BAR", "WAIT_2_BARS", "WAIT_TRIGGER"]
 CHECKPOINT_BAR_OFFSETS = (1, 2, 3, 5, 10, 20)
-DRAWDOWN_BASELINE_R = 100.0
+# build_drawdown_curveはequity<=0を不正値として拒否する（実資金の破産を想定した安全チェック）。
+# Shadow TradeはMaxOpenPositions等の並行数制限を受けないためSetup数が多く、正式なIS期間（3年超）では
+# 1variantあたりの累積損失が数百Rに達しうる。100Rでは実データで負値に落ちて例外になったため、
+# このモジュール専用の相対指標として十分大きな値へ引き上げる（DEC-028の「口座資金とは無関係な相対指標」
+# という設計意図は維持したまま、値のみ変更）。
+DRAWDOWN_BASELINE_R = 10000.0
 
 
 def _extract_setups(records: list[dict[str, Any]]) -> pd.DataFrame:

@@ -194,8 +194,15 @@ def _extract_closed_context(records: list[dict[str, Any]]) -> pd.DataFrame:
         if not isinstance(candidate_id, str) or candidate_id in seen or not isinstance(payload, dict):
             continue
         seen.add(candidate_id)
-        rows.append({"trade_candidate_id": candidate_id, "close_reason": payload.get("close_reason")})
-    return pd.DataFrame(rows, columns=["trade_candidate_id", "close_reason"])
+        rows.append({
+            "trade_candidate_id": candidate_id,
+            "close_reason": payload.get("close_reason"),
+            # コスト感応度分析（cost_sensitivity）向け。exit_spread_pointsはOnTradeTransaction検知時点の
+            # ベストエフォート値、point_valueはこのトレードのVolumeにおける1 Point変動の口座通貨換算値。
+            "exit_spread_points": payload.get("exit_spread_points"),
+            "point_value": payload.get("point_value"),
+        })
+    return pd.DataFrame(rows, columns=["trade_candidate_id", "close_reason", "exit_spread_points", "point_value"])
 
 
 def _quantile_band(series: pd.Series, prefix: str, bins: int = 3) -> pd.Series:
@@ -225,6 +232,7 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
         "market_regime_trend", "market_regime_volatility",
         "close_reason", "close_weekday", "close_session", "giveback_ratio", "giveback_band",
         "time_stop_reason_code", "time_stop_triggered",
+        "exit_spread_points", "point_value",
     ]
     if trades.empty:
         for column in context_columns:
@@ -241,7 +249,10 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
     enriched = enriched.merge(_extract_analytics_context(records), on="trade_candidate_id", how="left")
     enriched = enriched.merge(_extract_closed_context(records), on="trade_candidate_id", how="left")
     enriched = enriched.merge(_extract_time_stop_context(records), on="trade_candidate_id", how="left")
-    for column in ("entry_atr", "entry_adx", "entry_spread_points", "risk_budget", "mfe", "mae"):
+    for column in (
+        "entry_atr", "entry_adx", "entry_spread_points", "risk_budget", "mfe", "mae",
+        "exit_spread_points", "point_value",
+    ):
         enriched[column] = pd.to_numeric(enriched[column], errors="coerce")
 
     hold_time = enriched["close_time"] - enriched["open_time"]

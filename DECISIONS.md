@@ -613,7 +613,7 @@ Market Regimeの方向性（Up/Down）とHTF Biasの方向性が食い違う場�
 * CLAUDE.md「必要最小限の変更」「既存設計を壊さない」の原則と、実注文を一切伴わない分析専用機能という要件を両立するには、既存Strategy/PositionManagerへの侵襲的な変更（Setup/Triggerの本数可変化、複数Entry候補の並行管理）よりも、読み取り専用・自己完結な別モジュールとして実装するほうが安全性への影響がゼロであることを保証しやすい
 * 既存の`CTrendFollowingRules`を再利用することで、Entry Timing比較で使われるSetup/Trigger判定式が実際のStrategyと数式レベルで一致することを保証し、二重実装による定義の乖離リスクを避ける（Indicatorハンドルの重複自体はMQL5 Terminalが同一パラメータで自動的にデデュプリケートするため計算コストの二重化にはならない）
 * R倍数で損益を表現するのは、Shadow Tradeが実ポジションのVolume（Risk Manager・Position Sizingの管轄）を持たないため。口座通貨建て損益を無理に算出すると誤った精度の印象を与える
-* Max Drawdownは基準値100Rから開始する相対指標とし、既存`python/analysis/drawdown.py`の`build_drawdown_curve`/`summarize_drawdown`をそのまま再利用した（口座残高を模した恣意的な基準値だが、Variant間の相対比較という目的には十分）
+* Max Drawdownは基準値10,000Rから開始する相対指標とし、既存`python/analysis/drawdown.py`の`build_drawdown_curve`/`summarize_drawdown`をそのまま再利用した（口座残高を模した恣意的な基準値だが、Variant間の相対比較という目的には十分。当初100Rとしていたが、正式なIS期間での検証時に不具合が判明し10,000Rへ修正した。下記「影響」参照）
 
 ## 影響
 
@@ -623,3 +623,4 @@ Market Regimeの方向性（Up/Down）とHTF Biasの方向性が食い違う場�
 * 実装後、6か月間（2018-01〜2018-06、`USDJPY_HIST`）のStrategy Tester実行でEntry Timing比較が実際に機能することを検証し、その過程でSetup完了イベントの`trigger_wait_bars`が実際のWAIT_TRIGGER Shadow Tradeの`wait_bars`と食い違う実装バグ（完了イベント出力が後続バーへずれる場合に、Trigger成立時点ではなく出力時点の経過バー数を誤って使っていた）を発見・修正した
 * `InpEnableEntryTimingAnalysis=true`にした場合の実際の分析結果（どのVariantが優れているか）はユーザーの仮説検証に委ねる。本Decisionでは待機方式の推奨・自動選択は一切行わない
 * 実装の妥当性はサンプル期間（2018-01〜2018-06）の実データで検証済みだが、正式なIS期間（2017-09〜2020-12）・OOS期間での分析はまだ実施していない
+* **2026-08-22、正式なIS期間（2017-09〜2020-12）で初めて実行し、`python/analysis/entry_timing.py`の`DRAWDOWN_BASELINE_R`（当時100R）を起点に累積損益（`pnl_r`の累計）がマイナスへ落ちるとequityが0以下になり`drawdown.build_drawdown_curve`が例外を送出する不具合を発見・修正した**。Shadow TradeはMaxOpenPositions等の並行数制限を受けないためSetup数が多く（本IS期間で1,101件）、IMMEDIATE/WAIT_1_BAR/WAIT_2_BARSの累積損失がそれぞれ-99R〜-118Rに達し100Rを超過していた。相対指標という設計意図は変えず、基準値を10,000Rへ引き上げて修正した（`python/tests/test_entry_timing.py`は基準値を直接検証しておらず、修正後も7件全PASS）。この修正を経て、正式なIS期間でのVariant比較を実施した。詳細な分析結果はTASKS.md参照

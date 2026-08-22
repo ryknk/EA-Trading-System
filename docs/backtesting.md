@@ -138,3 +138,40 @@ python -m python.analysis.entry_timing `
 ```
 
 出力は `entry-timing-report.json`（JSON契約は `contracts/entry-timing-report.schema.json` を正とする）、`entry-timing-report.md`、`entry-timing-setups.csv`、`entry-timing-trades.csv`である。レポートの`variants`はVariant別（IMMEDIATE/WAIT_1_BAR/WAIT_2_BARS/WAIT_TRIGGER）にTrades・Win Rate・Profit Factor・Expectancy・Net Profit・Max Drawdown（すべてR倍数）・平均MFE/MAE・価格推移チェックポイント平均を集計する。Max Drawdownは基準値100R（アカウント資金とは無関係な相対指標）からの累積R下落幅であり、Variant間の相対比較専用。`pre_entry_excursion`はSetup成立からEntryまでの逆行・順行の平均・中央値とTrigger成立率を要約する。`InpEnableEntryTimingAnalysis=false`のバックテストでは対象イベントが存在せず、`setups_observed=0`・全Variant`trades=0`として返る。
+
+## コスト感応度分析（2026-08-22実装）
+
+目的は、Profit Factorが低い場合の原因が「Entry/Exitロジック自体の問題」なのか「薄いエッジが取引コスト（Spread・Commission・Swap・Slippage）によって失われている」のかを切り分けることである。**過去データに最も都合よく適合するコスト条件を自動採用する処理は実装していない。** MT5テスターが実際に生成したSpread・Commission・Swap・Slippageをそのまま記録・集計するのみで、EA内部で市場コストを変更・偽装するロジックは持たない。
+
+**記録するコスト項目とEA側の実装。**
+
+- Entry Spread: 既存の`CANDIDATE`イベント`spread_points`（Entry候補生成Tick時点のSpread、Point単位。Phase 9から実装済み）
+- Exit Spread: `TRADE_CLOSED`イベントへ新規追加した`exit_spread_points`（Point単位）。決済自体はブローカー側SL/TP等で発生し、EA側は`OnTradeTransaction`が決済デタッチ（`DEAL_ENTRY_OUT`）を検知した直後のTickでベストエフォートに記録する（約定Tickそのものの値ではない近似値、`mt5/Include/Core/EAController.mqh`の`OnTradeTransaction`）
+- Entry Slippage: 既存の`ORDER_SUBMISSION`イベント`slippage_points`（要求価格`requested_price`と約定価格`confirmed_price`の差、Point単位。Phase 9から実装済み）
+- Exit Slippage: **未対応。** 決済の大半はブローカー側SL/TP自動決済であり、Entry側の`COrderManager::Submit`のような「要求価格」を安全に取得する手段が現アーキテクチャにはないため、Entry側のみ記録する（既知の制約。EXPERT/CLIENT close_reasonの決済もEA発注だが未計測）
+- Commission・Swap: 既存の`TRADE_CLOSED`イベント`commission`・`swap`（Phase 9から実装済み、net_pnlへ既に加算済み）
+- 約定価格: 既存の`TRADE_CLOSED`イベント`open_price`・`close_price`
+- Point→口座通貨換算値: `TRADE_CLOSED`イベントへ新規追加した`point_value`。該当トレードのVolumeにおける1 Point変動の口座通貨換算値を、`OrderCalcProfit`（`Risk/PositionSizer.mqh`のリスクベースLot計算と同じAPI）で算出する。算出できない場合は0（Spread/SlippageのPoint値は口座通貨へ換算不能として扱う）
+
+`python.analysis.cost_sensitivity`は、`trade_breakdown.build_trade_context`（Entry Spread・Exit Spread・point_value等を`trade_candidate_id`で相関済み）へ`ORDER_SUBMISSION.slippage_points`（Entry Slippage、`status=ACCEPTED`のもののみ）を追加相関し、トレードごとに次を算出する。
+
+- `total_spread_cost` = (Entry Spread + Exit Spread) [Point] × `point_value`
+- `entry_slippage_cost` = Entry Slippage [Point] × `point_value`
+- `total_cost` = `total_spread_cost` + `entry_slippage_cost` − `commission` − `swap`（commission/swapは符号付きのまま。swapがプラス＝スワップ収益の場合は総コストを押し下げる）
+- `pnl_before_cost` = `net_pnl` + `total_cost`（Spread・Slippage・Commission・Swapを除いた場合の推定損益）
+
+`point_value`が取得できない（0または欠落）トレードは、Spread/Slippageのコストを0として扱う（`cost_data_available=False`）。この場合`pnl_before_cost`は実際のコストを過小評価する可能性がある。
+
+```powershell
+$env:PYTHONPATH='.'
+python -m python.analysis.cost_sensitivity `
+  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-20200101.jsonl `
+  --initial-balance 1000000 `
+  --output build/cost-sensitivity-report
+```
+
+出力は`cost-sensitivity-report.json`（JSON契約は`contracts/cost-sensitivity-report.schema.json`を正とする）、`cost-sensitivity-report.md`、`trades-with-cost.csv`である。レポートは次を比較できる。
+
+- `cost_summary`: 総取引コスト・1トレードあたり平均コスト・Spread/Slippage/Commission/Swapそれぞれの合計
+- `performance_with_cost` / `performance_before_cost`: 実績（`net_pnl`）とコスト除外時の推定成績（`pnl_before_cost`）それぞれについて、既存`performance.analyze_performance`と同一定義のTrades・Net Profit・Profit Factor・Win Rate・Expectancy・Max Drawdownを算出（両者の差が大きいほど、コストがエッジを侵食している可能性を示唆する）
+- `cost_tier_breakdown`: `total_cost`の実データ三分位によるLow/Normal/High Cost別の同上指標（固定しきい値はハードコードせず、実際に発生したコスト分布から算出する）

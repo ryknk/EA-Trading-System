@@ -168,6 +168,26 @@
 * [x] **Entryタイミング自体の妥当性を検証できるよう、Entry Timing比較分析機能を実装する（ユーザー依頼、2026-08-22実施）。** 同一のプルバックSetupについて、IMMEDIATE（即時Entry）・WAIT_1_BAR（1本待ち）・WAIT_2_BARS（2本待ち）・WAIT_TRIGGER（Trigger成立待ち）の4方式を実注文なしのShadow Tradeとして並行シミュレートする新規`CEntryTimingAnalyzer`（`mt5/Include/Logging/EntryTimingAnalyzer.mqh`）を追加した。既存Strategy/PositionManager/RiskManager/OrderManagerから完全に独立した自己完結モジュールとし（実注文を一切生成しない、既存の売買判断には一切影響しない）、新規input `InpEnableEntryTimingAnalysis`（既定値`false`、無効時はIndicatorハンドルすら作成せずコスト0）・`InpEntryTimingMaxWaitBars`（既定6）・`InpEntryTimingMaxHoldingBars`（既定20）で制御する。ブレイクアウトパターンはSetupとTriggerが同一の価格事象でありSetup/Trigger間に待機できる中間状態が存在しないため、プルバックのみを対象とした（詳細は`DECISIONS.md` DEC-028）。各Variantの結果（entry_price/SL/TP/wait_bars/bars_held/MFE・MAE(R倍数)/exit_reason/pnl_r(R倍数)/Entry後1・2・3・5・10・20本時点の価格推移R倍数）を新規監査イベント`ENTRY_TIMING_TRADE`へ、Setup成立からEntry確定までの逆行・順行（pre_entry_mae_r/pre_entry_mfe_r、到達時刻付き）とTrigger成立可否を`ENTRY_TIMING_SETUP`へ記録する。新規`python/analysis/entry_timing.py`（`variant_summary()`でVariant別Trades/Win Rate/Profit Factor/Expectancy/Net Profit/Max Drawdown（すべてR倍数、既存`drawdown.py`を再利用）/平均MFE・MAE/価格推移チェックポイント平均を集計、`pre_entry_excursion_summary()`で逆行・順行とTrigger成立率を集計）・`contracts/entry-timing-report.schema.json`・単体テスト7件を追加。過去データへ最も適合する待機方式を自動採用する処理は実装していない（4方式を常に並行記録するのみ、優劣判断はユーザーの分析に委ねる）。
 
   MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS（新規`TestEntryTimingAnalyzer`、39アサーション全PASS、他既知事象と同じTerminal Exit Code 1のみ）・Python単体テスト105件全PASS（新規7件含む）で検証済み。実データ検証として2018-01〜2018-06（`USDJPY_HIST`、`InpEnableEntryTimingAnalysis=true`）でStrategy Testerを実行し、145 Setup・523 Shadow Tradeが記録され`python.analysis.entry_timing`が正常にレポートを生成することを確認した（`results/backtests/20260822-214842-USDJPY-H1/`）。同区間でIMMEDIATE（win_rate 47.6%・PF1.13・net_profit +9.23R）→WAIT_1_BAR（PF1.07）→WAIT_2_BARS（PF0.99）→WAIT_TRIGGER（win_rate 42.0%・PF0.86・net_profit -6.55R）と、待機するほど成績が悪化する一貫した傾向が観測されたが、これは6か月間・単一区間のみのサンプルであり、正式なIS/OOS期間での分析はまだ実施していない（あくまで機能実証目的の暫定観測）。実装過程で、Setup完了イベントの`trigger_wait_bars`が実際のShadow Tradeの`wait_bars`と食い違う実装バグ（完了イベント出力が後続バーへずれる場合に発生）を発見・修正済み（詳細はDEC-028）。`InpEnableEntryTimingAnalysis=false`（既定値）ではENTRY_TIMING_*イベントが一切記録されないこと、既存の`trade_breakdown`分析パイプラインが新規イベント型と混在しても正常動作することも実データで確認済み。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
+* [x] Entry Timing比較分析を正式なIS期間（2017-09〜2020-12）で実行し、Entryタイミングの妥当性を検証する（2026-08-22実施。既知の最良状態（Trend+H1 ADXのみ全条件完全決済・建値ストップ・StopAtrMultiple/RR=2.0・Time Stop有効・`InpRegimeTrendAdxMin=40`）の上で`InpEnableEntryTimingAnalysis=true`（`InpEntryTimingMaxWaitBars=6`・`InpEntryTimingMaxHoldingBars=20`、いずれも既定値）を追加して実行。MQL5コンパイル（10ターゲット）・9 Script Test全PASS確認済み。Shadow Trade専用機能のため実際の売買結果（純損益+15,511円・PF1.09・Sharpe+0.80・取引数77）は`InpEnableEntryTimingAnalysis`追加前と完全一致し、影響がないことを確認した。
+
+  **`python/analysis/entry_timing.py`の不具合を発見・修正**: 正式なIS期間の実データ（Setup 1,101件）で`python.analysis.entry_timing`を実行したところ、Max Drawdown基準値（`DRAWDOWN_BASELINE_R`、当時100R）を、IMMEDIATE/WAIT_1_BAR/WAIT_2_BARSの累積損益（それぞれ-110.27R/-117.59R/-99.16R）が下回りequityが0以下になったため、`drawdown.build_drawdown_curve`の安全チェック（実資金の破産に相当する不正値として例外送出）がトリップした。サンプル期間（2018-01〜2018-06、6か月）では累積損失がこの規模に達しておらず潜在化していた。基準値を10,000Rへ引き上げて修正（相対指標という設計意図は維持）。`python/tests/test_entry_timing.py`（7件）は修正後も全PASS。`DECISIONS.md` DEC-028へ追記済み。
+
+  | Variant | Trades | 勝率 | PF | 期待値(R) | 純損益(R) | 最大DD(R) |
+  |---|---:|---:|---:|---:|---:|---:|
+  | IMMEDIATE | 1,101 | 38.1% | 0.82 | -0.100 | -110.27 | 130.43 |
+  | WAIT_1_BAR | 1,101 | 37.7% | 0.81 | -0.107 | -117.59 | 140.93 |
+  | WAIT_2_BARS | 1,101 | 38.9% | 0.84 | -0.090 | -99.16 | 133.68 |
+  | **WAIT_TRIGGER** | 597 | **40.9%** | **0.94** | **-0.033** | **-19.54** | **45.93** |
+
+  Setup観測数1,101件のうちTrigger成立は597件（54.2%）。Setup成立からEntryまでの平均逆行(MAE)は-0.63R、平均順行(MFE)は+0.47R。
+
+  **評価: WAIT_TRIGGER（Trigger＝再加速の成立を待つ方式）が、勝率・PF・期待値・純損益・最大DDのすべての指標で他3方式を明確に上回った**。IMMEDIATE〜WAIT_2_BARSの3方式は互いに大差なく（PF0.81〜0.84）、固定本数の待機自体には価値がなく、「再加速の確認」という質的な条件こそが重要であることを示唆する。現行の実戦略（`CTrendFollowingStrategy`）はタッチ足(shift2)・確認足(shift1)の固定1本ギャップでTrigger相当の確認を行っており、本分析の柔軟なWAIT_TRIGGER（Setup後最大6本まで待機）とは厳密には同一の定義ではないが、方向性としては同じ「確認を待つ」設計であり、**これを支持する結果**である。
+
+  **重要な注意点（サンプル期間との比較）**: 実装検証時のサンプル期間（2018-01〜2018-06、6か月）では、待機するほど成績が悪化する**正反対の傾向**（IMMEDIATE PF1.13が最良、WAIT_TRIGGER PF0.86が最悪）が観測されていた。正式なIS期間（3年超、Setup数1,101件）ではこの順位が完全に逆転しており、6か月という短い観測期間の結果が全期間の傾向を代表しないことを如実に示している。これはWalk Forward各Foldの評価期間（1年）でも同様の不安定性が起こりうることを示唆しており、単一Foldの結果だけで判断せず複数Fold・OOS全体での安定性を確認する必要がある。
+
+  また、本分析はSL/TP幾何のみのShadow Tradeであり、建値ストップ・シグナル失効Exit・Time Stop・ADXレジームフィルタ等、実戦略が持つExit管理・Entry追加フィルタを一切含まないため、WAIT_TRIGGER単体でもPF0.94と1未満である点は実戦略のPF1.09と単純比較できない（Entry timingという単一要因を切り出した分析であり、比較対象が異なる）。
+
+  **総合評価: Entryタイミングは「確認を待つ」現行方針が妥当であることが、より頑健な正式IS期間のデータで支持された。次の一手候補**: (a) 現行のTrigger確認方式を維持する（推奨、追加調整は不要）、(b) `InpEntryTimingMaxWaitBars`をスイープしTrigger成立率とPFのトレードオフを確認する、(c) 現行戦略のタッチ足・確認足の固定1本ギャップを、本分析のWAIT_TRIGGERのような柔軟な待機（複数本まで探索）へ変更する仮説をさらに検証する（ただし6か月サンプルとの逆転が示すとおり過学習リスクがあるため、OOS/Walk Forwardでの確認を経ずに実戦略へ適用しない）。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
 * [ ] Final Holdout期間（2025-01〜2026-08）は、EA・MLモデル・閾値・SL/TP等を確定し他の全ゲートが完了するまで実行しない（一度だけの評価として温存する）
 * [x] 新結果を踏まえてHANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`を更新する（2026-08-16実施）
 

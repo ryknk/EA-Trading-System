@@ -25,6 +25,9 @@ private:
       ulong  position_identifier;
       ulong  position_ticket;
       string symbol;
+      // OnTradeTransaction検知時点（決済Tick直後）のSpreadをベストエフォートで記録する。
+      // 決済自体はブローカー側SL/TP等で発生するため、約定Tickそのものの値ではない近似値。
+      double exit_spread_points;
      };
    SPendingClosedPosition      m_pending_closed_positions[];
    SEaConfig                   m_config;
@@ -232,6 +235,21 @@ private:
          if(open_time<=0 || close_time<=0)
             continue; // 履歴がまだ確定していない可能性。キューに残し次回再試行する。
 
+         // コスト感応度分析用: このトレードのVolumeにおける「1 Point変動あたりの口座通貨換算値」を
+         // OrderCalcProfit（PositionSizerと同じAPI）で算出する。CANDIDATE.spread_pointsや
+         // ORDER_SUBMISSION.slippage_pointsをPython側で金額換算する際に使用する。算出できない場合は0。
+         double point_value=0.0;
+         const double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+         if(point>0.0 && closed_volume>0.0 && open_price>0.0)
+           {
+            const ENUM_ORDER_TYPE calc_type=(direction=="BUY" ? ORDER_TYPE_BUY : ORDER_TYPE_SELL);
+            double profit_for_one_point=0.0;
+            ResetLastError();
+            if(OrderCalcProfit(calc_type,symbol,closed_volume,open_price,open_price+point,profit_for_one_point) &&
+               MathIsValidNumber(profit_for_one_point))
+               point_value=MathAbs(profit_for_one_point);
+           }
+
          string closed_payload="{";
          closed_payload+="\"position_ticket\":"+JString(StringFormat("%I64u",position_ticket))+",";
          closed_payload+="\"direction\":"+JString(direction)+",";
@@ -243,7 +261,9 @@ private:
          closed_payload+="\"close_reason\":"+JString(close_reason)+",";
          closed_payload+="\"pnl\":"+JNumber(total_pnl)+",";
          closed_payload+="\"commission\":"+JNumber(total_commission)+",";
-         closed_payload+="\"swap\":"+JNumber(total_swap)+"}";
+         closed_payload+="\"swap\":"+JNumber(total_swap)+",";
+         closed_payload+="\"exit_spread_points\":"+JNumber(m_pending_closed_positions[index].exit_spread_points)+",";
+         closed_payload+="\"point_value\":"+JNumber(point_value)+"}";
          Audit("TRADE_CLOSED",candidate_id,"",symbol,closed_payload,true);
 
          double analytics_mfe=0.0,analytics_mae=0.0;
@@ -747,6 +767,15 @@ public:
          m_pending_closed_positions[slot].position_identifier=position_identifier;
          m_pending_closed_positions[slot].position_ticket=transaction.position;
          m_pending_closed_positions[slot].symbol=symbol;
+         // コスト感応度分析用: 約定Tickそのものではないが、決済検知直後のSpreadをベストエフォートで記録する。
+         MqlTick exit_tick;
+         double exit_spread_points=0.0;
+         if(SymbolInfoTick(symbol,exit_tick))
+           {
+            const double exit_point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+            if(exit_point>0.0) exit_spread_points=(exit_tick.ask-exit_tick.bid)/exit_point;
+           }
+         m_pending_closed_positions[slot].exit_spread_points=exit_spread_points;
          // 履歴が既に確定している場合に備え、今Tick内でも即時確定を試みる（次Tickを待たせない）。
          ProcessPendingClosedPositions();
         }

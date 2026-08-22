@@ -70,6 +70,7 @@ def write_audit_file(directory: Path) -> Path:
             "open_time": trade["open"], "close_time": trade["close"],
             "volume": 0.1, "open_price": 145.0, "close_price": 145.5,
             "close_reason": trade["close_reason"], "pnl": trade["pnl"], "commission": -10.0, "swap": 0.0,
+            "exit_spread_points": 1.0, "point_value": 100.0,
         }))
         records.append(audit_event("TRADE_ANALYTICS", trade["id"], trade["close"], {
             "position_ticket": str(1000 + index), "mfe": trade["mfe"], "mae": trade["mae"],
