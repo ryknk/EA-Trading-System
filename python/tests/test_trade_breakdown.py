@@ -10,6 +10,7 @@ from python.analysis.trade_breakdown import (
     BREAKDOWN_COLUMNS,
     breakdown_by,
     build_trade_context,
+    entry_pipeline_funnel_summary,
     giveback_summary,
     reversal_from_profit_summary,
     time_stop_summary,
@@ -196,6 +197,86 @@ class TradeBreakdownTests(unittest.TestCase):
         self.assertEqual(1, summary["trades_closed_by_time_stop"])
         self.assertAlmostEqual(-30.0, summary["net_profit"])
         self.assertAlmostEqual(0.0, summary["win_rate"])
+
+    def test_entry_pipeline_funnel_summary_counts_stages_when_events_present(self) -> None:
+        records = [
+            audit_event("ENTRY_PIPELINE", "p1", "2025-01-06T00:00:00Z", {
+                "stage_market_regime": "Range", "stage_market_regime_passed": False,
+                "stage_htf_bias": "NONE", "stage_htf_bias_passed": False,
+                "stage_breakout_setup_passed": False, "stage_breakout_trigger_passed": False,
+                "stage_pullback_setup_passed": False, "stage_pullback_trigger_passed": False,
+                "final_status": "REJECTED", "reason_code": "REGIME_NOT_TRENDING", "reason": "not trending",
+            }),
+            audit_event("ENTRY_PIPELINE", "p2", "2025-01-06T01:00:00Z", {
+                "stage_market_regime": "TrendUp", "stage_market_regime_passed": True,
+                "stage_htf_bias": "NONE", "stage_htf_bias_passed": False,
+                "stage_breakout_setup_passed": False, "stage_breakout_trigger_passed": False,
+                "stage_pullback_setup_passed": False, "stage_pullback_trigger_passed": False,
+                "final_status": "REJECTED", "reason_code": "TREND_NOT_ALIGNED", "reason": "not aligned",
+            }),
+            audit_event("ENTRY_PIPELINE", "p3", "2025-01-06T02:00:00Z", {
+                "stage_market_regime": "TrendUp", "stage_market_regime_passed": True,
+                "stage_htf_bias": "BUY", "stage_htf_bias_passed": True,
+                "stage_breakout_setup_passed": True, "stage_breakout_trigger_passed": False,
+                "stage_pullback_setup_passed": True, "stage_pullback_trigger_passed": False,
+                "final_status": "REJECTED", "reason_code": "ENTRY_PATTERN_NOT_FOUND", "reason": "no pattern",
+            }),
+            audit_event("ENTRY_PIPELINE", "p4", "2025-01-06T03:00:00Z", {
+                "stage_market_regime": "TrendUp", "stage_market_regime_passed": True,
+                "stage_htf_bias": "BUY", "stage_htf_bias_passed": True,
+                "stage_breakout_setup_passed": True, "stage_breakout_trigger_passed": True,
+                "stage_pullback_setup_passed": False, "stage_pullback_trigger_passed": False,
+                "final_status": "CANDIDATE", "reason_code": "TREND_BREAKOUT", "reason": "ok",
+            }),
+        ]
+        summary = entry_pipeline_funnel_summary(records)
+        self.assertEqual(4, summary["total_bars_evaluated"])
+        self.assertEqual(1, summary["reached_final_candidate"])
+        self.assertEqual(1, summary["rejected_by_stage"]["market_regime"])
+        self.assertEqual(1, summary["rejected_by_stage"]["htf_bias"])
+        self.assertEqual(1, summary["rejected_by_stage"]["setup_or_trigger"])
+        self.assertEqual(0, summary["rejected_by_stage"]["trend_strength_or_momentum_filter"])
+        self.assertEqual({"REGIME_NOT_TRENDING": 1, "TREND_NOT_ALIGNED": 1, "ENTRY_PATTERN_NOT_FOUND": 1},
+                          summary["rejection_reason_counts"])
+
+    def test_build_trade_context_tolerates_entry_pipeline_events_mixed_into_audit_log(self) -> None:
+        # ENTRY_PIPELINE（InpEntryUseStagedPipeline=true時のみ記録）が監査ログへ混在していても、
+        # 既存のtrade_breakdown/reports.load_analysis_inputsが例外を起こさないことを検証する回帰テスト。
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_audit_file(Path(directory))
+            extra = [audit_event("ENTRY_PIPELINE", "unlinked", "2025-01-06T00:00:00Z", {
+                "stage_market_regime": "Range", "stage_market_regime_passed": False,
+                "stage_htf_bias": "NONE", "stage_htf_bias_passed": False,
+                "stage_breakout_setup_passed": False, "stage_breakout_trigger_passed": False,
+                "stage_pullback_setup_passed": False, "stage_pullback_trigger_passed": False,
+                "final_status": "REJECTED", "reason_code": "REGIME_NOT_TRENDING", "reason": "not trending",
+            })]
+            with path.open("a", encoding="utf-8") as stream:
+                for record in extra:
+                    stream.write("\n" + json.dumps(record))
+            trades = build_trade_context([path])
+        self.assertEqual(5, len(trades))
+
+    def test_entry_pipeline_funnel_summary_is_empty_when_staged_pipeline_not_used(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_audit_file(Path(directory))
+            records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+        summary = entry_pipeline_funnel_summary(records)
+        self.assertEqual(0, summary["total_bars_evaluated"])
+        self.assertEqual(0, summary["reached_final_candidate"])
+
+    def test_write_report_includes_entry_pipeline_funnel_only_when_input_paths_given(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = write_audit_file(root)
+            trades = build_trade_context([path])
+            without_paths = write_report(root / "report-no-funnel", trades)
+            report_without = json.loads(without_paths["json"].read_text(encoding="utf-8"))
+            self.assertNotIn("entry_pipeline_funnel", report_without)
+            with_paths = write_report(root / "report-with-funnel", trades, input_paths=[path])
+            report_with = json.loads(with_paths["json"].read_text(encoding="utf-8"))
+            self.assertIn("entry_pipeline_funnel", report_with)
+            self.assertEqual(0, report_with["entry_pipeline_funnel"]["total_bars_evaluated"])
 
     def test_write_report_produces_schema_compatible_json(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

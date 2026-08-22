@@ -136,6 +136,53 @@ def _extract_time_stop_context(records: list[dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["trade_candidate_id", "time_stop_reason_code"])
 
 
+# ENTRY_PIPELINEのreason_codeを、段階的Entry判定パイプラインの4段階
+# （Market Regime/HTF Bias/Setup+Trigger）へ対応付ける。ADX/ATR/RSIフィルタは
+# 既存方式（Setup/Trigger分離前）からの遺構であり、Setup/Triggerとは独立した
+# 「トレンド強度・モメンタムフィルタ」として別枠で集計する（不正確な対応付けを避けるため）。
+ENTRY_PIPELINE_REASON_STAGE: dict[str, str] = {
+    "REGIME_NOT_TRENDING": "market_regime",
+    "TREND_NOT_ALIGNED": "htf_bias",
+    "ATR_TOO_LOW": "trend_strength_or_momentum_filter",
+    "ADX_TOO_LOW": "trend_strength_or_momentum_filter",
+    "CONFIRMATION_ADX_TOO_LOW": "trend_strength_or_momentum_filter",
+    "RSI_FILTERED": "trend_strength_or_momentum_filter",
+    "ENTRY_PATTERN_NOT_FOUND": "setup_or_trigger",
+}
+
+
+def entry_pipeline_funnel_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """段階的Entry判定パイプライン（`InpEntryUseStagedPipeline=true`）が記録するENTRY_PIPELINE
+    イベント（成立・否決を問わず毎確定足）から、各段階でどれだけ棄却されたかを集計する。
+    `InpEntryUseStagedPipeline=false`（既定値）のバックテストではENTRY_PIPELINEイベントが
+    記録されないため、total_bars_evaluated=0として返す（既存方式との比較時に区別するため）。
+    """
+    evaluations = [
+        record for record in records
+        if record.get("event_type") == "ENTRY_PIPELINE" and isinstance(record.get("payload"), dict)
+    ]
+    stage_counts: dict[str, int] = {
+        "market_regime": 0, "htf_bias": 0, "trend_strength_or_momentum_filter": 0,
+        "setup_or_trigger": 0, "other": 0,
+    }
+    reason_counts: dict[str, int] = {}
+    reached_final_candidate = 0
+    for record in evaluations:
+        payload = record["payload"]
+        if payload.get("final_status") == "CANDIDATE":
+            reached_final_candidate += 1
+            continue
+        reason_code = payload.get("reason_code") or "UNKNOWN"
+        reason_counts[reason_code] = reason_counts.get(reason_code, 0) + 1
+        stage_counts[ENTRY_PIPELINE_REASON_STAGE.get(reason_code, "other")] += 1
+    return {
+        "total_bars_evaluated": len(evaluations),
+        "reached_final_candidate": reached_final_candidate,
+        "rejected_by_stage": stage_counts,
+        "rejection_reason_counts": reason_counts,
+    }
+
+
 def _extract_closed_context(records: list[dict[str, Any]]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -286,6 +333,7 @@ def _markdown(
     reversal: dict[str, Any],
     giveback: dict[str, Any],
     time_stop: dict[str, Any],
+    entry_pipeline_funnel: dict[str, Any] | None = None,
 ) -> str:
     lines = [
         "# トレード条件別分析レポート", "",
@@ -325,6 +373,19 @@ def _markdown(
     lines.append(f"- 勝率: {time_stop['win_rate']:.2%}" if time_stop["trades_closed_by_time_stop"] else "- 勝率: 算出不能")
     lines.append(f"- 期待値: {time_stop['expectancy']:.2f}")
     lines.append("")
+    if entry_pipeline_funnel is not None:
+        lines += [
+            "## 段階的Entry判定パイプライン（InpEntryUseStagedPipeline=true時のみ記録）", "",
+            f"- 評価済み確定足数: {entry_pipeline_funnel['total_bars_evaluated']}",
+            f"- 最終Entry候補まで到達: {entry_pipeline_funnel['reached_final_candidate']}",
+        ]
+        if entry_pipeline_funnel["total_bars_evaluated"] == 0:
+            lines.append("- ENTRY_PIPELINEイベントが監査ログに存在しません（既存方式のバックテスト、またはInpEntryUseStagedPipeline=false）。")
+        else:
+            for stage, count in entry_pipeline_funnel["rejected_by_stage"].items():
+                lines.append(f"- Stage別棄却数（{stage}）: {count}")
+            lines += ["", "```json", json.dumps(entry_pipeline_funnel["rejection_reason_counts"], ensure_ascii=False, indent=2), "```"]
+        lines.append("")
     for name, rows in breakdowns.items():
         lines += [f"## {name}別", "", "```json", json.dumps(rows, ensure_ascii=False, indent=2), "```", ""]
     return "\n".join(lines)
@@ -334,12 +395,20 @@ def write_report(
     output_directory: Path,
     trades: pd.DataFrame,
     generated_at: datetime | None = None,
+    input_paths: list[Path] | None = None,
 ) -> dict[str, Path]:
     output_directory.mkdir(parents=True, exist_ok=True)
     breakdowns = {column: breakdown_by(trades, column) for column in BREAKDOWN_COLUMNS}
     reversal = reversal_from_profit_summary(trades)
     giveback = giveback_summary(trades)
     time_stop = time_stop_summary(trades)
+    entry_pipeline_funnel: dict[str, Any] | None = None
+    if input_paths:
+        records: list[dict[str, Any]] = []
+        for path in input_paths:
+            if path.suffix.lower() in {".jsonl", ".ndjson"}:
+                records.extend(read_json_lines(path))
+        entry_pipeline_funnel = entry_pipeline_funnel_summary(records)
     report = {
         "schema_version": "1.0",
         "generated_at": (generated_at or datetime.now(UTC)).isoformat().replace("+00:00", "Z"),
@@ -367,17 +436,21 @@ def write_report(
         "time_stop": time_stop,
         "breakdowns": breakdowns,
     }
-    paths = {
+    if entry_pipeline_funnel is not None:
+        report["entry_pipeline_funnel"] = entry_pipeline_funnel
+    output_paths = {
         "json": output_directory / "trade-breakdown-report.json",
         "markdown": output_directory / "trade-breakdown-report.md",
         "trades": output_directory / "trades-with-context.csv",
     }
-    paths["json"].write_text(
+    output_paths["json"].write_text(
         json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8",
     )
-    paths["markdown"].write_text(_markdown(breakdowns, reversal, giveback, time_stop), encoding="utf-8")
-    trades.to_csv(paths["trades"], index=False)
-    return paths
+    output_paths["markdown"].write_text(
+        _markdown(breakdowns, reversal, giveback, time_stop, entry_pipeline_funnel), encoding="utf-8",
+    )
+    trades.to_csv(output_paths["trades"], index=False)
+    return output_paths
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -386,7 +459,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     trades = build_trade_context(args.input)
-    write_report(args.output, trades)
+    write_report(args.output, trades, input_paths=args.input)
     return 0
 
 

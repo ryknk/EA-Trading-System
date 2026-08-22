@@ -29,6 +29,8 @@ input double          InpStopAtrMultiple=2.0;
 input double          InpRiskRewardRatio=2.0;
 input bool            InpEnableBreakout=true;
 input bool            InpEnablePullback=true;
+input bool            InpEntryUseStagedPipeline=false;
+input bool            InpEntryRequireMarketRegimeTrend=true;
 input double          InpRegimeTrendAdxMin=20.0;
 input int             InpRegimeAtrBaselinePeriod=50;
 input double          InpRegimeHighVolatilityRatio=1.3;
@@ -104,6 +106,8 @@ int OnInit(void)
    config.risk_reward_ratio=InpRiskRewardRatio;
    config.enable_breakout=InpEnableBreakout;
    config.enable_pullback=InpEnablePullback;
+   config.entry_use_staged_pipeline=InpEntryUseStagedPipeline;
+   config.entry_require_market_regime_trend=InpEntryRequireMarketRegimeTrend;
    config.regime_trend_adx_min=InpRegimeTrendAdxMin;
    config.regime_atr_baseline_period=InpRegimeAtrBaselinePeriod;
    config.regime_high_volatility_ratio=InpRegimeHighVolatilityRatio;

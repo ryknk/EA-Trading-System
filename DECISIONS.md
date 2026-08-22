@@ -556,3 +556,34 @@ IS側またはOOS/Walk Forward側いずれかの取引数が最小閾値未満�
 * `docs/backtesting.md`に使用方法を追記した
 * 実際のIS/OOS/Walk Forward各期間のStrategy Tester実行結果を用いた診断はまだ実施していない（`TASKS.md` 3.3節、実データ取得後に実施）
 * 本診断はEAの内部ロジックやRisk Managerの判断には一切影響しない。診断結果はレポート出力のみで、発注可否判定へは接続していない
+
+# DEC-027: 段階的Entry判定パイプラインは既存方式に対する加算的なオプトイン層とする
+
+**状態:** 採用
+
+## 背景
+
+In-Sample期間での閾値調整（`TASKS.md` 2.1節、ADX・RSI・SL/TP比等のスイープ）は、Profit Factor 0.88〜0.89、Sharpe -1.00〜-1.02付近で頭打ちになった。ユーザーから、単一条件の閾値判定ではなく「Market Regime→HTF Bias→Setup→Entry Trigger→Entry」という段階的な判定構造への見直し依頼があった。既存の`CTrendFollowingStrategy::Evaluate()`は、実質的に同じ順序（トレンド一致→ADX/ATR/RSIフィルタ→ブレイクアウト/プルバックパターン）で判定していたが、各段階が単一関数内の逐次`if`文に埋め込まれており、(a) 各段階の合否が個別にログへ残らず、(b) 既存の`CMarketRegimeClassifier`（分析専用、DEC未記載だが2026-08-17実装）がEntry判定に一切使われていなかった。
+
+## 判断
+
+新規input `InpEntryUseStagedPipeline`（既定値`false`）で既存方式と段階的方式を切り替える。`false`の間は、判定式・発注挙動ともに既存方式と完全に同一とする（`IsPullback`を`IsPullbackSetup && IsPullbackTrigger`へ内部分解したが、数式は変更前と等価）。`true`にした場合のみ、`CMarketRegimeClassifier`によるMarket Regime判定（Trend/Range）を、新規input `InpEntryRequireMarketRegimeTrend`（既定値`true`）に従いEntry棄却ゲートとして追加する。既存のHTF Bias（D1/H4トレンド一致）・ADX/ATR/RSIフィルタ・Setup/Trigger（ブレイクアウト/プルバック）の判定式自体は変更しない。
+
+各段階の合否は、`CANDIDATE`イベント（Entry成立時のみ、既存・両方式共通）と、`InpEntryUseStagedPipeline=true`時のみ毎確定足で記録する新規イベント`ENTRY_PIPELINE`へ記録する。`InpEntryUseStagedPipeline=false`（既定値）では`ENTRY_PIPELINE`イベントを記録せず、既存の監査ログ量・スキーマへ影響しない。
+
+Market Regimeの方向性（Up/Down）とHTF Biasの方向性が食い違う場合の追加棄却条件は、本Decisionでは導入しない。`InpRegimeTrendAdxMin`と既存の`InpMinimumAdx`が既定値でともに20.0のため、既定設定では新設のMarket Regimeゲートは既存のADX下限フィルタと完全に重複し、単独では受け入れ基準（Net Profit・Profit Factor等）を変化させない（`results/backtests/20260822-171814-USDJPY-H1/`で実測確認、`ENTRY_PIPELINE`ログ上はStage別棄却件数が可視化されるが、最終的な採用/棄却集合は`InpEntryUseStagedPipeline=false`の結果と一致した）。方向性一致条件や独立した閾値设定は、固定閾値の大量追加による過剰最適化を避けるため、必要性が実データで確認できるまで見送る。
+
+## 理由
+
+* CLAUDE.md「既存Entryロジックを即座に削除・置換しない」「新方式をON/OFF可能、または既存方式と比較可能な構造にする」という指示を満たすため
+* 既存の`CMarketRegimeClassifier`・`CTrendFollowingRules`・監査ログ基盤（`CTradeLogger`）を再利用し、重複実装を避けるため
+* Look-ahead biasを避けるため、新規ロジックも既存同様、確定足（shift>=1）のみを参照する。データ構造・参照バーは変更していない
+* `InpEntryUseStagedPipeline=false`が既存の全In-Sample検証結果（`TASKS.md` 2.1節の最終状態）と完全一致することを、コード変更前後のStrategy Tester再実行（同一IS期間、`results/backtests/20260822-171514-USDJPY-H1/`が変更前コード、`results/backtests/20260822-170849-USDJPY-H1/`が変更後コード、両方とも総損益-48,223円・PF0.89・Sharpe-1.10・取引数209で一致）で実証した
+
+## 影響
+
+* `mt5/Include/Signal/SignalResult.mqh`・`mt5/Include/Strategy/TrendFollowingRules.mqh`・`mt5/Include/Strategy/TrendFollowingStrategy.mqh`・`mt5/Include/Core/Config.mqh`・`mt5/Include/Core/EAController.mqh`・`mt5/Include/Logging/TradeLogger.mqh`・`mt5/Experts/CoreEA.mq5`を変更した
+* `python/analysis/trade_breakdown.py`へ`entry_pipeline_funnel_summary()`を追加し、`ENTRY_PIPELINE`ログから段階別棄却件数を集計できるようにした。`python/analysis/reports.py`の`SUPPORTED_AUDIT_EVENTS`へ`ENTRY_PIPELINE`を追加（追加しないと`ENTRY_PIPELINE`が監査ログに含まれる場合に既存の`load_analysis_inputs`が例外を送出する）
+* `contracts/trade-breakdown-report.schema.json`へ任意項目`entry_pipeline_funnel`を追加した
+* 副次的に、既存の`CTradeLogRules::SafeEventType`（`mt5/Include/Logging/TradeLogger.mqh`）に`TIME_STOP_EXIT`が含まれておらず、`InpEnableTimeStop=true`でTime Stop決済が発生しても対応する`TIME_STOP_EXIT`監査イベントが一度も書き込まれていなかった既存不具合を発見し、`ENTRY_PIPELINE`追加と同じ変更で修正した（Strategy Tester実行で、修正前0件→修正後1件以上のTIME_STOP_EXITイベント記録を確認）。Python側`python/analysis/reports.py`の`SUPPORTED_AUDIT_EVENTS`は当初から`TIME_STOP_EXIT`を含んでおり、Python側は対応済みだったがMQL5側だけが書き込みを常に拒否していた
+* `InpEntryUseStagedPipeline=true`にした場合の実際の収益性改善効果（Market Regime方向性一致条件の要否を含む）は未検証。OOS期間（2021-01〜2024-12）での効果検証は、DEC-024/025のIS/OOS分離方針に従い、方針が固まった上で一度だけ行う

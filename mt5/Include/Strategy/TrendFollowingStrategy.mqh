@@ -206,7 +206,25 @@ public:
                                                        m_config.regime_low_volatility_ratio) :
          MARKET_REGIME_VOLATILITY_UNKNOWN;
 
+      // 段階的Entry判定パイプライン: Stage 1 Market Regime。判定結果自体は方式に関わらず常に記録する
+      // （ログ・分析専用）。実際のEntry拒否ゲートとしては、InpEntryUseStagedPipeline=trueの場合のみ働く。
+      // InpEntryUseStagedPipeline=falseの既存方式では、このステージはEntry判定に一切影響しない。
+      result.staged_pipeline_used=m_config.entry_use_staged_pipeline;
+      result.stage_market_regime=MarketRegimeTrendToString(result.market_regime_trend);
+      result.stage_market_regime_passed=(result.market_regime_trend!=MARKET_REGIME_TREND_RANGE &&
+                                          result.market_regime_trend!=MARKET_REGIME_TREND_UNKNOWN);
+      if(m_config.entry_use_staged_pipeline && m_config.entry_require_market_regime_trend &&
+         !result.stage_market_regime_passed)
+        {
+         result.reason_code="REGIME_NOT_TRENDING";
+         result.reason="Staged entry pipeline rejected: market regime is not trending.";
+         return true;
+        }
+
+      // Stage 2 Higher Timeframe Bias（D1/H4トレンド一致）。既存方式・段階的方式ともに共通のゲート。
       const ESignalDirection direction=CTrendFollowingRules::TrendDirection(d1_close,d1_slow,h4_fast,h4_slow);
+      result.stage_htf_bias=SignalDirectionToString(direction);
+      result.stage_htf_bias_passed=(direction!=SIGNAL_DIRECTION_NONE);
       if(direction==SIGNAL_DIRECTION_NONE)
         { result.reason_code="TREND_NOT_ALIGNED"; result.reason="D1 and H4 trends are not aligned."; return true; }
       if(atr/point<m_config.minimum_atr_points)
@@ -233,6 +251,17 @@ public:
       const bool pullback=m_config.enable_pullback &&
          CTrendFollowingRules::IsPullback(direction,entry_bar.open,entry_bar.high,entry_bar.low,entry_bar.close,h1_fast,
                                            touch_high,touch_low,h1_fast_touch,atr,m_config.pullback_atr_tolerance);
+
+      // Stage 3 Setup / Stage 4 Entry Trigger。IsPullbackをSetup（押し目/戻り成立）とTrigger（再加速）に
+      // 分解した診断専用フィールド（既存のbreakout/pullback変数と数式上等価、判定への影響はない）。
+      // ブレイクアウトにはSetup相当の別ロジックがないため、有効化かつレンジデータ取得成功をSetup成立とみなす。
+      result.stage_breakout_setup_passed=m_config.enable_breakout;
+      result.stage_breakout_trigger_passed=breakout;
+      result.stage_pullback_setup_passed=m_config.enable_pullback &&
+         CTrendFollowingRules::IsPullbackSetup(direction,touch_high,touch_low,h1_fast_touch,atr,m_config.pullback_atr_tolerance);
+      result.stage_pullback_trigger_passed=m_config.enable_pullback &&
+         CTrendFollowingRules::IsPullbackTrigger(direction,entry_bar.open,entry_bar.close,h1_fast,touch_high,touch_low);
+
       if(!breakout && !pullback)
         { result.reason_code="ENTRY_PATTERN_NOT_FOUND"; result.reason="No enabled closed-bar entry pattern matched."; return true; }
 

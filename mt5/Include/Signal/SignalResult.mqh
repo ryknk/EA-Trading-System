@@ -51,6 +51,18 @@ struct SSignalResult
    EMarketRegimeVolatility  market_regime_volatility;
    string             reason_code;
    string             reason;
+   // 段階的Entry判定パイプライン（InpEntryUseStagedPipeline有効時のみ意味を持つ）専用の診断フィールド。
+   // Market Regime -> HTF Bias -> Setup -> Entry Triggerの各段階の合否をログ・分析用に個別保持する。
+   // 既存のstatus/direction/entry_pattern/reason_code/reasonによる最終判定には一切影響しない。
+   bool               staged_pipeline_used;
+   string             stage_market_regime;
+   bool               stage_market_regime_passed;
+   string             stage_htf_bias;
+   bool               stage_htf_bias_passed;
+   bool               stage_breakout_setup_passed;
+   bool               stage_breakout_trigger_passed;
+   bool               stage_pullback_setup_passed;
+   bool               stage_pullback_trigger_passed;
   };
 
 void ResetSignalResult(SSignalResult &result)
@@ -62,6 +74,9 @@ void ResetSignalResult(SSignalResult &result)
    result.market_regime_trend=MARKET_REGIME_TREND_UNKNOWN;
    result.market_regime_volatility=MARKET_REGIME_VOLATILITY_UNKNOWN;
    result.reason_code="NO_SIGNAL";
+   result.staged_pipeline_used=false;
+   result.stage_market_regime="NotEvaluated";
+   result.stage_htf_bias="NONE";
   }
 
 string SignalDirectionToString(const ESignalDirection direction)

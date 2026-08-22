@@ -27,6 +27,8 @@ struct SEaConfig
    double            risk_reward_ratio;
    bool              enable_breakout;
    bool              enable_pullback;
+   bool              entry_use_staged_pipeline;
+   bool              entry_require_market_regime_trend;
    double            regime_trend_adx_min;
    int               regime_atr_baseline_period;
    double            regime_high_volatility_ratio;
@@ -99,6 +101,8 @@ void SetDefaultConfig(SEaConfig &config)
    config.risk_reward_ratio         = 2.0;
    config.enable_breakout           = true;
    config.enable_pullback           = true;
+   config.entry_use_staged_pipeline = false;
+   config.entry_require_market_regime_trend = true;
    config.regime_trend_adx_min      = 20.0;
    config.regime_atr_baseline_period = 50;
    config.regime_high_volatility_ratio = 1.3;

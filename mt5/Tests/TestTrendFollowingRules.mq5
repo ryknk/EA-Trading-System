@@ -47,6 +47,27 @@ void OnStart(void)
                                                 1.05,0.95,1.0,0.1,0.15),
               "no direction rejected");
 
+   // 段階的Entry判定パイプライン専用: Setup(押し目/戻り成立)とTrigger(再加速)への分解が、
+   // 既存のIsPullbackと数式上等価であることを検証する。
+   AssertTrue(CTrendFollowingRules::IsPullbackSetup(SIGNAL_DIRECTION_BUY,1.1005,1.0995,1.1000,0.0100,0.15),
+              "buy pullback setup accepted when touch bar is near EMA");
+   AssertTrue(CTrendFollowingRules::IsPullbackTrigger(SIGNAL_DIRECTION_BUY,1.1002,1.1010,1.1006,1.1005,1.0995),
+              "buy pullback trigger accepted when entry bar reaccelerates");
+   AssertTrue(!CTrendFollowingRules::IsPullbackSetup(SIGNAL_DIRECTION_BUY,1.2005,1.1995,1.1000,0.0100,0.15),
+              "buy pullback setup rejected when touch bar is far from EMA");
+   AssertTrue(!CTrendFollowingRules::IsPullbackTrigger(SIGNAL_DIRECTION_BUY,1.1002,1.1010,1.1006,1.1015,1.0995),
+              "buy pullback trigger rejected when entry close fails to break touch bar high");
+   AssertTrue((CTrendFollowingRules::IsPullbackSetup(SIGNAL_DIRECTION_BUY,1.1005,1.0995,1.1000,0.0100,0.15)&&
+               CTrendFollowingRules::IsPullbackTrigger(SIGNAL_DIRECTION_BUY,1.1002,1.1010,1.1006,1.1005,1.0995))==
+              CTrendFollowingRules::IsPullback(SIGNAL_DIRECTION_BUY,1.1002,1.1012,1.1000,1.1010,1.1006,
+                                                1.1005,1.0995,1.1000,0.0100,0.15),
+              "setup AND trigger equals composed IsPullback for accepted buy case");
+   AssertTrue((CTrendFollowingRules::IsPullbackSetup(SIGNAL_DIRECTION_BUY,1.1015,1.0995,1.1000,0.0100,0.15)&&
+               CTrendFollowingRules::IsPullbackTrigger(SIGNAL_DIRECTION_BUY,1.1002,1.1010,1.1006,1.1015,1.0995))==
+              CTrendFollowingRules::IsPullback(SIGNAL_DIRECTION_BUY,1.1002,1.1012,1.1000,1.1010,1.1006,
+                                                1.1015,1.0995,1.1000,0.0100,0.15),
+              "setup AND trigger equals composed IsPullback for rejected buy case");
+
    if(g_failures==0)
       Print("TEST_SUITE_PASS TestTrendFollowingRules");
    else

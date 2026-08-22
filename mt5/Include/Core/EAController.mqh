@@ -484,6 +484,27 @@ public:
          AuditSystemError("SIGNAL_ENGINE",result.reason_code,result.reason);
          return;
         }
+      // 段階的Entry判定パイプラインの全評価結果（成立・否決を問わず毎確定足）を記録する診断専用イベント。
+      // InpEntryUseStagedPipeline=trueの場合のみ記録し、既存方式（既定値）では監査ログ量を増やさない。
+      if(m_config.entry_use_staged_pipeline)
+        {
+         const string pipeline_id=SafeIdentifier(
+            StringFormat("%s-%s-%I64d",m_config.ea_id,result.symbol,(long)result.signal_bar_time),"unlinked");
+         string pipeline_payload="{";
+         pipeline_payload+="\"stage_market_regime\":"+JString(result.stage_market_regime)+",";
+         pipeline_payload+="\"stage_market_regime_passed\":"+(result.stage_market_regime_passed ? "true" : "false")+",";
+         pipeline_payload+="\"stage_htf_bias\":"+JString(result.stage_htf_bias)+",";
+         pipeline_payload+="\"stage_htf_bias_passed\":"+(result.stage_htf_bias_passed ? "true" : "false")+",";
+         pipeline_payload+="\"stage_breakout_setup_passed\":"+(result.stage_breakout_setup_passed ? "true" : "false")+",";
+         pipeline_payload+="\"stage_breakout_trigger_passed\":"+(result.stage_breakout_trigger_passed ? "true" : "false")+",";
+         pipeline_payload+="\"stage_pullback_setup_passed\":"+(result.stage_pullback_setup_passed ? "true" : "false")+",";
+         pipeline_payload+="\"stage_pullback_trigger_passed\":"+(result.stage_pullback_trigger_passed ? "true" : "false")+",";
+         pipeline_payload+="\"final_status\":"+JString(result.status==SIGNAL_STATUS_CANDIDATE ? "CANDIDATE" : "REJECTED")+",";
+         pipeline_payload+="\"reason_code\":"+JString(result.reason_code)+",";
+         pipeline_payload+="\"reason\":"+JString(result.reason)+"}";
+         Audit("ENTRY_PIPELINE",pipeline_id,"",result.symbol,pipeline_payload,false);
+        }
+
       if(result.status!=SIGNAL_STATUS_CANDIDATE)
         {
          PrintFormat("SIGNAL_NONE symbol=%s bar=%s code=%s reason=%s",m_config.symbol,
@@ -520,6 +541,14 @@ public:
       candidate_payload+="\"market_regime_volatility\":"+JString(MarketRegimeVolatilityToString(result.market_regime_volatility))+",";
       candidate_payload+="\"hour\":"+IntegerToString(result.hour)+",";
       candidate_payload+="\"day_of_week\":"+IntegerToString(result.day_of_week)+",";
+      // 段階的Entry判定パイプラインの各ステージ結果（InpEntryUseStagedPipelineの有効・無効に関わらず記録、分析専用）。
+      candidate_payload+="\"staged_pipeline_used\":"+(result.staged_pipeline_used ? "true" : "false")+",";
+      candidate_payload+="\"stage_market_regime\":"+JString(result.stage_market_regime)+",";
+      candidate_payload+="\"stage_htf_bias\":"+JString(result.stage_htf_bias)+",";
+      candidate_payload+="\"stage_breakout_setup_passed\":"+(result.stage_breakout_setup_passed ? "true" : "false")+",";
+      candidate_payload+="\"stage_breakout_trigger_passed\":"+(result.stage_breakout_trigger_passed ? "true" : "false")+",";
+      candidate_payload+="\"stage_pullback_setup_passed\":"+(result.stage_pullback_setup_passed ? "true" : "false")+",";
+      candidate_payload+="\"stage_pullback_trigger_passed\":"+(result.stage_pullback_trigger_passed ? "true" : "false")+",";
       candidate_payload+="\"reason_code\":"+JString(result.reason_code)+",";
       candidate_payload+="\"reason\":"+JString(result.reason)+"}";
       Audit("CANDIDATE",result.trade_candidate_id,"",result.symbol,candidate_payload,false);

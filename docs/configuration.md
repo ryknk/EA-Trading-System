@@ -29,15 +29,36 @@ EA設定は用途別に管理し、dev、staging・デモ、productionで設定�
 | `InpStopAtrMultiple` | 2 | SLのATR倍率（初期実装からATRベース。2026-08-17、1.0/1.25/1.5/1.75/2.0/2.5/3.0でスイープし、1.5が純損益・PFで最良だったが隣接水準(1.25/1.75)が非単調に悪化しIS期間への過学習リスクがあるため2.0を維持、詳細はTASKS.md参照） |
 | `InpRiskRewardRatio` | 2 | TP/SL比（初期実装からATRベース。2026-08-17、1.5/2.0/2.5/3.0でスイープし2.0が最良と再確認、詳細はTASKS.md参照） |
 | `InpEnableBreakout` / `InpEnablePullback` | true / true | entry pattern有効化 |
-| `InpRegimeTrendAdxMin` | 20 | 市場レジーム判定用のADX下限。下回るとRange判定（Entry判定のADXフィルタとは独立、分析専用） |
+| `InpEntryUseStagedPipeline` | false | 段階的Entry判定パイプライン（Market Regime→HTF Bias→Setup→Entry Trigger）を有効化する（2026-08-22追加）。falseの間は既存方式と完全に同一の判定・発注挙動を維持する。詳細は本節末尾および`docs/backtesting.md`「段階的Entry判定パイプライン」を参照 |
+| `InpEntryRequireMarketRegimeTrend` | true | `InpEntryUseStagedPipeline=true`の場合のみ有効。市場レジームがRange/Unknownの確定足でEntry候補を棄却する（2026-08-22追加） |
+| `InpRegimeTrendAdxMin` | 20 | 市場レジーム判定用のADX下限。下回るとRange判定（Entry判定のADXフィルタとは独立） |
 | `InpRegimeAtrBaselinePeriod` | 50 | ボラティリティ判定用ATRベースライン（単純平均）の算出本数 |
 | `InpRegimeHighVolatilityRatio` | 1.3 | ATR/ベースライン比がこの値以上でHighVolatility判定 |
 | `InpRegimeLowVolatilityRatio` | 0.7 | ATR/ベースライン比がこの値以下でLowVolatility判定 |
 | `InpRegimeMaSlopeLookback` | 5 | トレンド方向判定用、H1 EMA(Fast)の参照本数（現在値と何本前を比較するか） |
 
-市場レジーム判定（`InpRegime*`）は分析・監査ログ専用であり、Entry判定・発注・既存ポジション管理には一切影響しない（判定と売買制御の分離）。詳細は`docs/backtesting.md`「条件別分析」を参照。
+市場レジーム判定（`InpRegime*`）自体は`CMarketRegimeClassifier`（既存、変更なし）が行う。`InpEntryUseStagedPipeline=false`（既定値）では、この判定結果は監査ログ記録のみに使われ、Entry判定・発注・既存ポジション管理には一切影響しない（判定と売買制御の分離）。`InpEntryUseStagedPipeline=true`にした場合のみ、`InpEntryRequireMarketRegimeTrend`に従いRange/Unknown判定をEntry棄却条件として使用する。詳細は`docs/backtesting.md`「条件別分析」および「段階的Entry判定パイプライン」を参照。
 
 固定値を最適化結果だけで変更しない。変更前にOOS期間と受入基準を固定し、Walk Forwardとデモで再検証する。
+
+### 段階的Entry判定パイプライン（`InpEntryUseStagedPipeline`）
+
+`CTrendFollowingStrategy::Evaluate()`は、既存の単一関数による閾値判定を、次の4段階として明示的に区別できる構造を持つ（2026-08-22追加）。
+
+```text
+Stage 1 Market Regime  : CMarketRegimeClassifier（既存の再利用、Trend/Range判定）
+Stage 2 HTF Bias        : D1/H4 EMAトレンド一致（既存のCTrendFollowingRules::TrendDirection、変更なし）
+Stage 3 Setup            : 押し目/戻り成立（CTrendFollowingRules::IsPullbackSetup）、
+                            またはブレイクアウトのレンジ形成
+Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::IsPullbackTrigger）、
+                            またはレンジ突破（CTrendFollowingRules::IsBreakout、既存、変更なし）
+```
+
+`InpEntryUseStagedPipeline=false`（既定値）では、Stage 1のRange/Unknown棄却ゲートが働かない点を除き、判定式は既存方式と完全に同一である（`IsPullback`は内部で`IsPullbackSetup && IsPullbackTrigger`として再定義されているが、数式は変更前と等価）。`true`にすると、Stage 1でRange/Unknown判定の確定足を追加で棄却する（`InpEntryRequireMarketRegimeTrend=true`の場合）。
+
+各段階の合否は、`CANDIDATE`イベント（Entry成立時のみ）と、`InpEntryUseStagedPipeline=true`の場合に限り毎確定足で記録される新規イベント`ENTRY_PIPELINE`（`stage_market_regime`・`stage_htf_bias`・`stage_breakout_setup_passed`・`stage_breakout_trigger_passed`・`stage_pullback_setup_passed`・`stage_pullback_trigger_passed`・`final_status`・`reason_code`・`reason`）へ記録される。`InpEntryUseStagedPipeline=false`のままでは`ENTRY_PIPELINE`イベントは記録されず、既存の監査ログ量・スキーマに影響しない。
+
+既存方式（false）と段階的方式（true）の比較は、同一IS期間で`InpEntryUseStagedPipeline`のみを変更した2回のStrategy Tester実行を、`docs/backtesting.md`の既存手順（Net Profit・Profit Factor・Sharpe・取引数等）で比較する。段階的方式のみ、`ENTRY_PIPELINE`ログから各Stageの棄却件数も追加で確認できる。
 
 ## リスク・注文設定
 
