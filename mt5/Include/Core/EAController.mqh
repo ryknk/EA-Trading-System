@@ -502,7 +502,12 @@ public:
          if(position_now-m_last_position_error_log>=60)
            {
             PrintFormat("POSITION_MONITOR_ERROR code=%s new_orders=false",position_error);
-            AuditSystemError("POSITION_MANAGER",position_error,"Managed position monitoring failed.");
+            // position_errorはPositionManager::Monitor()が返す詳細理由。AuditSystemError()の
+            // 第2引数(reason_code)はSafeCorrelationId検証を通らない値だと"UNKNOWN_ERROR"へ
+            // フォールバックし詳細が失われるため、常に安全な固定識別子を渡し、詳細はreason（自由文字列、
+            // 検証なし）側で運ぶ（RISK_MANAGER/SIGNAL_ENGINE呼び出しと同じパターン）。
+            AuditSystemError("POSITION_MANAGER","POSITION_MONITOR_ERROR",
+                             StringFormat("Managed position monitoring failed: %s",position_error));
             m_last_position_error_log=position_now;
            }
         }

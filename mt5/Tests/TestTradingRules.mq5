@@ -56,6 +56,12 @@ void OnStart(void)
    AssertTrue(CPositionProtectionRules::IsManagedPosition(26072001,26072001),"matching magic managed");
    AssertTrue(!CPositionProtectionRules::IsManagedPosition(0,26072001),"manual position not managed");
 
+   AssertTrue(CPositionProtectionRules::HasValidMarketData(150.00,150.02),"normal bid/ask accepted");
+   AssertTrue(!CPositionProtectionRules::HasValidMarketData(0.0,150.02),"zero bid rejected");
+   AssertTrue(!CPositionProtectionRules::HasValidMarketData(150.00,0.0),"zero ask rejected");
+   AssertTrue(!CPositionProtectionRules::HasValidMarketData(150.02,150.00),"crossed bid/ask rejected");
+   AssertTrue(CPositionProtectionRules::HasValidMarketData(150.00,150.00),"equal bid/ask (zero spread) accepted");
+
    AssertTrue(CBreakevenStopRules::ShouldMoveToBreakeven(POSITION_TYPE_BUY,150.00,149.00,151.00,151.02,1.0),
               "buy triggers at exactly 1R profit");
    AssertTrue(!CBreakevenStopRules::ShouldMoveToBreakeven(POSITION_TYPE_BUY,150.00,149.00,150.99,151.01,1.0),

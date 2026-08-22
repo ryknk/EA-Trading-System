@@ -223,6 +223,36 @@
   | `InpEnableEntryTimingAnalysis` | false | false | 分析専用機能のため本番相当設定では無効 |
 
   この状態でのIS実績（`20260822-183152-USDJPY-H1`他）: 純損益+15,511円、Profit Factor 1.09、Sharpe +0.80、取引数77、最大DD 3%。コスト感応度分析で理論上の利益の約59%がコストに失われる薄いエッジであること、`InpRegimeTrendAdxMin`が隣接水準（35/45）に対し非単調でIS期間固有の過学習リスクがあることを踏まえたうえで、ユーザー判断によりこの状態を凍結してOOSへ進む。次はOOS期間（2021-01〜2024-12）で本節と同一パラメータでのStrategy Tester初回実行を行う。未コミットの作業ツリー差分のため、凍結の証跡としてのcommitはユーザー指示があるまで保留する）
+* [x] **OOS期間（2021-01〜2024-12）で、凍結したIS最良パラメータセットの初回評価を実行する**（2026-08-22実施。パラメータ変更は一切行わず、`tools/run-strategy-tester.ps1`を`-FromDate 2021.01.01 -ToDate 2024.12.31`で実行。結果は`results/backtests/20260822-235947-USDJPY-H1/`: 純損益+5,294円、Profit Factor 1.02、Sharpe +0.20、取引数105、最大DD 4%。
+
+  | | IS（`20260822-183152`） | OOS（`20260822-235947`） |
+  |---|---:|---:|
+  | 純損益 | +15,511円 | +5,294円 |
+  | Profit Factor | 1.09 | **1.02** |
+  | Sharpe | +0.80 | **+0.20** |
+  | 取引数 | 77 | 105 |
+
+  **PF・Sharpeともに大きく低下しており、IS段階で既に指摘していた過学習リスク（`InpRegimeTrendAdxMin`の隣接水準に対する非単調な挙動、サンプル数の少なさ）と整合する結果**。コスト感応度分析（OOS）では、コスト除外時利益29,985円のうち82.3%（24,691円）がコスト（Spread中心）で失われており、ISの59.0%よりさらに深刻。コスト込みPFは1.02とほぼ収支均衡ラインで、未計測のSlippage（引き続きSlippage=0の楽観的仮定）を考慮すればマイナスへ転じる可能性が高い。direction別ではBUY（89件、PF1.12、純利益+23,295円）とSELL（16件、PF0.52、純損失-18,001円）で顕著な差があり、2021-2024の実勢USDJPYが大幅な円安トレンドだった期間特性と整合する（ISでのBuy/Sell有意差検定は「有意差なし」だった点との対比）。close_reason別ではTP平均利益(9,447円)・SL平均損失(-4,063円)はISとほぼ同水準で安定していたが、EXPERT（早期Exit）がISでは概ね収支均衡だったのに対しOOSでは明確なマイナス(-3,873円)だった。
+
+  **副次的発見（安全性への影響なし）**: OOS期間中の2022-02-25〜2022-04-11に監査ログの`SYSTEM_ERROR`（`POSITION_MANAGER`/`UNKNOWN_ERROR`）が162件記録された。同期間のDEAL/TRADE_CLOSEDイベントを確認したところポジションの開閉・SL/TP到達は正常に継続しており、保護SLが失われた形跡はない。`EAController::AuditSystemError()`が`PositionManager::Monitor()`のerror文字列を`reason_code`として記録する際、空文字列等で`SafeCorrelationId`検証に失敗すると`UNKNOWN_ERROR`へフォールバックし、実際の詳細理由が失われ原因調査ができない状態であることが判明（監査ログの観測性の問題であり、取引実行・ポジション保護への影響はない）。今回は分析専用ラウンドのためコード修正は行っていない。
+
+  **総合評価: DEC-024/025のIS/OOS分離方針に基づき、本結果を理由としたIS期間パラメータの再変更は行わない。** OOSでの明確な性能劣化（PF1.09→1.02、Sharpe0.80→0.20）と、コスト感応度のさらなる悪化（59%→82.3%）は、本パラメータセットが依然として本番投入の水準に達していないことを示している。次の一手候補: (a) Walk Forward各Fold（2021/2022/2023/2024の年次）で年ごとの安定性を確認する（本節既存タスク参照）、(b) `AuditSystemError`の詳細理由欠落を修正する（安全性には影響しないが、将来の障害調査のため）、(c) Demo口座でのSlippage実測（6節参照）を優先し、コスト面での実行可能性を先に見極める。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
+* [x] `AuditSystemError`の詳細理由欠落を修正する（2026-08-23実施、ユーザー依頼）。原因は`mt5/Include/Core/EAController.mqh`の`POSITION_MANAGER`向け呼び出し1箇所のみで、実際の詳細理由（`position_error`）を`AuditSystemError()`の第2引数（`reason_code`、`CTradeLogRules::SafeCorrelationId`検証を通過しないとフォールバック値`UNKNOWN_ERROR`へ置換される）へ渡し、第3引数（`reason`、検証なしの自由文字列）には固定の一般文言のみを渡していたため、フォールバック発生時に詳細情報が完全に失われていた。他3箇所の呼び出し（`RISK_MANAGER`・`SIGNAL_ENGINE`×2）は元から詳細を`reason`側に渡す設計になっており対象外。**修正**: `POSITION_MANAGER`呼び出しも他3箇所と同じパターン（`reason_code`は固定の安全な識別子`POSITION_MONITOR_ERROR`、詳細は`reason`側で運ぶ）へ統一。取引実行・ポジション保護判断には一切触れていない（監査ログ専用の変更）。コンパイル（10ターゲット）・9 Script Test全PASS確認済み。
+
+  **再検証**: 同一OOS期間（2021-01〜2024-12）で再実行し、純損益+5,294円・PF1.02・Sharpe+0.20・取引数105が修正前と完全一致（退行なし）を確認。修正後、当該162件の`SYSTEM_ERROR`の`reason_code`は安定して`POSITION_MONITOR_ERROR`となり（`UNKNOWN_ERROR`は解消）、`reason`に実際の詳細（`"Managed position monitoring failed: EMERGENCY_ORDER_CHECK_FAILED retcode=0 comment="`）が記録されるようになった。
+
+  **修正により判明した根本原因の詳細**: `PositionManager::EmergencyClose()`内の`OrderCheck()`呼び出しが`retcode=0`・空`comment`で失敗している（`OrderCheck()`自体が失敗、Broker側の具体的な拒否コードではない）。全162件が2022-02（99件）・2022-04（63件）の2つの期間にのみ集中しており、OOS全体（2021-2024）の他期間には一切出現しない局所的な事象であることを確認。ポジション保護（Broker側SL）自体は同期間中も継続しており実害はない。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
+* [x] **`EMERGENCY_ORDER_CHECK_FAILED retcode=0`が2022-02/04にのみ発生する根本原因を調査し、追加修正を実施する**（2026-08-23実施、ユーザー依頼）。
+
+  **調査手順**: (1) 該当ポジション（ticket=68、ticket=74）の`TRADE_CLOSED`を確認したところ、いずれも金曜〜月曜の週跨ぎ保有で、`exit_spread_points`が通常3〜6ptに対し80pt・147ptと異常に拡大しており週末ギャップでの決済と判明。(2) `HasValidProtectiveStop`と同じbid/ask健全性チェック（`CPositionProtectionRules::HasValidMarketData`新設）を`EmergencyClose`/`CloseOnSignalInvalidation`/`CloseOnTimeStop`のOrderCheck前へ追加し再実行したが、エラーは解消せず、bid/ask自体は不正値ではないことが判明（この健全性チェック自体は将来の異常値混入に対する妥当な防御であり残置）。(3) `GetLastError()`・`price`・`bid`・`ask`を診断メッセージへ追加し再実行した結果、`last_error=0`（真のエラーなし）かつbid/askとも正常値（例: bid=124.025 ask=124.085）であることを確認。(4) 既存の`COrderCheckRules::IsAccepted()`のコメント・単体テスト（`mt5/Tests/TestTradingRules.mq5`の`"OrderCheck bool success accepts documented retcode zero"`）から、**OrderCheckは成功時（bool戻り値true）でもretcode=0（TRADE_RETCODE_DONEではなく"Done"相当の0）を返すことがMQL5仕様上ある**ことを再確認。`EmergencyClose()`は`ModifyStopLoss`/`CloseOnSignalInvalidation`/`CloseOnTimeStop`の3箇所と異なり`COrderCheckRules::IsAccepted`を使わず`check.retcode!=TRADE_RETCODE_DONE`という独自の不完全な判定をしており、retcode=0の正当な成功ケースを常に失敗と誤判定していたことが真の原因と判明。
+
+  **修正**: `mt5/Include/Trading/PositionManager.mqh`の`EmergencyClose()`を、他3箇所と同じ`COrderCheckRules::IsAccepted(check_ok,check.retcode)`による判定へ統一。あわせて`CPositionProtectionRules::HasValidMarketData()`を新設し`HasValidProtectiveStop`と3つの決済メソッドで共通利用するようリファクタ、診断メッセージへ`last_error`/`price`/`bid`/`ask`を追加。`mt5/Tests/TestTradingRules.mq5`へ`HasValidMarketData`の単体テスト5件を追加。取引実行・ポジション保護判断のロジック自体には触れていない。コンパイル（10ターゲット）・9 Script Test全PASS確認済み。
+
+  **修正後の再検証で判明した真の根本原因**: 修正により`OrderCheck`が正しく通過するようになった結果、同一箇所は今度は`OrderSend()`が`retcode=10018 (TRADE_RETCODE_MARKET_CLOSED)`・`comment=Market closed`で失敗することが判明した。**これはコードのバグではなく、週末クローズ中の現実の市場制約である**: ポジションのSLが週末の価格ギャップで見かけ上無効化され（`HasValidProtectiveStop`がfalseと判定）、EAが安全網として`EmergencyClose`を試みるが、市場が閉場しているため実際に成行注文を送信できない。ポジション自体はBroker側の指値SL注文（市場閉場中でも有効なスタンディングオーダー）により保護され続けており、月曜の取引再開時に正常にSL決済されている（前段で確認した80pt/147ptの`exit_spread_points`はこのギャップによるもの）。
+
+  **再検証**: 同一OOS期間で再実行し、純損益+5,294円・PF1.02・Sharpe+0.20・取引数105が完全一致（退行なし）することを確認。修正後の162件の内訳は、160件が`EMERGENCY_CLOSE_ALREADY_ATTEMPTED`（初回試行でべき等性フラグが正しく設定されるようになり、以降のTickで無駄なOrderSend再試行をしなくなった）、残り2件が`EMERGENCY_CLOSE_FAILED retcode=10018 comment=Market closed`（正確な失敗理由）となり、以前の不透明な`EMERGENCY_ORDER_CHECK_FAILED retcode=0`から診断精度が大幅に改善した。
+
+  **安全性への意義**: 本バグは、`EmergencyClose`が呼び出される稀な条件（`HasValidProtectiveStop`がfalseと判定される状況）で`OrderCheck`がretcode=0を返した場合に常に失敗する、という潜在的な安全網の欠陥だった。過去のIS/OOS全期間で`EmergencyClose`が呼び出しを試みたのは本件（週末ギャップ）が初めてであり実害はなかったが、今後、取引時間中に何らかの理由で正規のポジション保護が失われた場合の安全網が機能しない可能性があったため、安全性に関わる重要な修正である。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
 * [ ] Final Holdout期間（2025-01〜2026-08）は、EA・MLモデル・閾値・SL/TP等を確定し他の全ゲートが完了するまで実行しない（一度だけの評価として温存する）
 * [x] 新結果を踏まえてHANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`を更新する（2026-08-16実施）
 

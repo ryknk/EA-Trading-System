@@ -7,10 +7,18 @@
 class CPositionProtectionRules
   {
 public:
+   // Bid/Askそのものの健全性チェック（週末クローズ中の陳腐化・欠落Tick等でbid<=0/ask<=0/
+   // ask<bid（クロス）になりうる）。HasValidProtectiveStopと成行決済系メソッドの両方から
+   // 共通で使う、成行注文の価格として使用可能かどうかの判定。
+   static bool HasValidMarketData(const double bid,const double ask)
+     {
+      return bid>0.0 && ask>0.0 && ask>=bid;
+     }
+
    static bool HasValidProtectiveStop(const ENUM_POSITION_TYPE type,const double bid,
                                       const double ask,const double stop_loss)
      {
-      if(bid<=0.0 || ask<=0.0 || ask<bid || stop_loss<=0.0)
+      if(!HasValidMarketData(bid,ask) || stop_loss<=0.0)
          return false;
       if(type==POSITION_TYPE_BUY) return stop_loss<bid;
       if(type==POSITION_TYPE_SELL) return stop_loss>ask;
@@ -182,6 +190,12 @@ private:
       MqlTick tick;
       if(volume<=0.0 || !SymbolInfoTick(symbol,tick))
         { error="POSITION_CLOSE_DATA_UNAVAILABLE"; return false; }
+      // 週末クローズ中等、Tick取得自体は成功するがbid/askが陳腐化・欠落している場合がある
+      // （OANDA_HIST実績: 週跨ぎ保有ポジションでbid<=0/ask<=0/クロスにより成行決済のOrderCheckが
+      // retcode=0で失敗し続け、詳細不明なまま次Tickへ持ち越されていた）。実際に発注を試みる前に
+      // HasValidProtectiveStopと同じ健全性基準で弾き、原因を明示する。
+      if(!CPositionProtectionRules::HasValidMarketData(tick.bid,tick.ask))
+        { error="EMERGENCY_CLOSE_INVALID_MARKET_DATA"; return false; }
 
       MqlTradeRequest request;
       MqlTradeCheckResult check;
@@ -199,8 +213,22 @@ private:
       request.deviation=m_config.max_deviation_points;
       request.type_filling=FillingMode(symbol);
       request.comment="EMERGENCY_NO_SL";
-      if(!OrderCheck(request,check) || check.retcode!=TRADE_RETCODE_DONE)
-        { error=StringFormat("EMERGENCY_ORDER_CHECK_FAILED retcode=%u comment=%s",check.retcode,check.comment); return false; }
+      // 根本原因（2026-08-23、OOS期間で162件のEmergencyClose失敗を調査して判明）: OrderCheckは
+      // 成功時（bool戻り値true）でもretcode=0（"Done"相当、TRADE_RETCODE_DONEではない）を返す
+      // ことがMQL5仕様上ある（COrderCheckRules::IsAcceptedのコメント・単体テスト参照）。本メソッドは
+      // 他3箇所（ModifyStopLoss/CloseOnSignalInvalidation/CloseOnTimeStop）と異なりCOrderCheckRules::
+      // IsAcceptedを使わず`retcode!=TRADE_RETCODE_DONE`のみで判定していたため、retcode=0の正当な
+      // 成功ケースを常に失敗と誤判定し、EmergencyCloseが実質的に一度も成功できない状態だった
+      // （保有ポジションはBroker側SLで保護され続けていたため実害はなかったが、EA自身の安全網が
+      // 機能していなかった）。他3箇所と同じCOrderCheckRules::IsAcceptedへ統一する。
+      ResetLastError();
+      const bool check_ok=OrderCheck(request,check);
+      if(!COrderCheckRules::IsAccepted(check_ok,check.retcode))
+        {
+         error=StringFormat("EMERGENCY_ORDER_CHECK_FAILED retcode=%u comment=%s last_error=%d price=%.5f bid=%.5f ask=%.5f",
+                            check.retcode,check.comment,GetLastError(),request.price,tick.bid,tick.ask);
+         return false;
+        }
       ResetLastError();
       if(GlobalVariableSet(attempt_key,1.0)==0 && GetLastError()!=0)
         { error="EMERGENCY_IDEMPOTENCY_PERSIST_FAILED"; return false; }
@@ -344,6 +372,8 @@ public:
       MqlTick tick;
       if(volume<=0.0 || !SymbolInfoTick(symbol,tick))
         { error="POSITION_CLOSE_DATA_UNAVAILABLE"; return false; }
+      if(!CPositionProtectionRules::HasValidMarketData(tick.bid,tick.ask))
+        { error="SIGNAL_EXIT_INVALID_MARKET_DATA"; return false; }
 
       MqlTradeRequest request;
       MqlTradeCheckResult check;
@@ -396,6 +426,8 @@ public:
       MqlTick tick;
       if(volume<=0.0 || !SymbolInfoTick(symbol,tick))
         { error="POSITION_CLOSE_DATA_UNAVAILABLE"; return false; }
+      if(!CPositionProtectionRules::HasValidMarketData(tick.bid,tick.ask))
+        { error="TIME_STOP_INVALID_MARKET_DATA"; return false; }
 
       MqlTradeRequest request;
       MqlTradeCheckResult check;
