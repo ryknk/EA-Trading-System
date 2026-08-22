@@ -110,3 +110,31 @@ python -m python.analysis.trade_breakdown `
 ```
 
 出力は `trade-breakdown-report.json`（JSON契約は `contracts/trade-breakdown-report.schema.json` を正とする）、`trade-breakdown-report.md`、および条件別列（`entry_atr`・`entry_adx`・`entry_spread_points`・`risk_budget`・`mfe`・`mae`・`r_multiple`・`hold_time_hours`・`weekday`・`session`・`atr_band`・`adx_band`・`hold_time_band`・`mfe_band`・`mae_band`・`market_regime_trend`・`market_regime_volatility`・`close_reason`・`close_weekday`・`close_session`・`giveback_ratio`・`giveback_band`）を付加した `trades-with-context.csv` である。ATR帯・ADX帯・保有時間帯・MFE帯・MAE帯・Giveback帯は実データの分位点（三分位）から算出し、固定のしきい値をハードコードしない。Session区分（Tokyo/London/London_NewYork_Overlap/NewYork）はUTC時刻に基づく概算区分であり、DSTは考慮しない簡略化である。R換算損益（`r_multiple`）は該当候補が承認された `RISK_DECISION` の `risk_budget`（発注時点のリスク許容額）に対する比率で、EA側での追加ロジックなしにPython側で算出する。`market_regime_trend`・`market_regime_volatility`はEA側の判定結果をそのまま再構成した値であり、Python側は判定ロジックを持たない。`close_reason`はMT5の`DEAL_REASON`をそのまま文字列化した値であり、EA側で決済理由を推定・分類するロジックは持たない。CLIから実行した場合（`--input`で指定した監査JSONLに`ENTRY_PIPELINE`イベントが含まれる場合のみ）、レポートJSON・Markdownへ`entry_pipeline_funnel`（段階的Entry判定パイプラインのStage別棄却件数）が追加される。
+
+## Entry Timing比較分析（2026-08-22実装）
+
+`InpEnableEntryTimingAnalysis`（既定値`false`）を`true`にすると、EA側`CEntryTimingAnalyzer`（`mt5/Include/Logging/EntryTimingAnalyzer.mqh`）が、同一のプルバックSetupについて次の4方式を**実注文なしのShadow Trade**として並行シミュレートする。
+
+```text
+IMMEDIATE    : Setup成立bar自身の終値で即Entry
+WAIT_1_BAR   : 1本待ってEntry
+WAIT_2_BARS  : 2本待ってEntry
+WAIT_TRIGGER : Setup後のTrigger（再加速）成立を待ってEntry（InpEntryTimingMaxWaitBars以内に不成立なら生成しない）
+```
+
+Setup検出・SL/TP幾何（`InpStopAtrMultiple`・`InpRiskRewardRatio`）・Trigger判定は、既存の`CTrendFollowingRules`（`IsPullbackSetup`・`IsPullbackTrigger`・`IsBreakout`と同じ関数群）をそのまま再利用するが、`CEntryTimingAnalyzer`は自前のIndicatorハンドルでHTF Bias・ATR/ADX/RSIゲートを独立に再評価する自己完結モジュールであり、実際の`CTrendFollowingStrategy`・`RiskManager`・`OrderManager`・`PositionManager`には一切参照されず、実注文・実ポジションを一切発生させない。`InpEnableEntryTimingAnalysis=false`（既定値）ではIndicatorハンドルすら作成せず、既存の売買判断・監査ログ量に影響しない。ブレイクアウトパターンはSetupとTriggerが同一の価格事象（レンジ突破）であり両者の間に待機できる中間状態が存在しないため、本分析はプルバックパターンのみを対象とする。
+
+Shadow TradeのSL/TP判定はtick粒度（Strategy Testerの"Every tick"モード相当）で行い、価格推移チェックポイント（Entry後1/2/3/5/10/20本経過時点の価格、R倍数）とMFE/MAE（当初SL距離を1RとしたR倍数）を記録する。損益は口座通貨ではなくR倍数で表現する（Shadow TradeはPosition Sizing・Risk Managerを経由しないため、口座通貨建て損益は算出できない）。また、Setup成立bar終値からEntry確定までの間に想定方向へどれだけ順行し、逆側へどれだけ逆行したか（`pre_entry_mfe_r`・`pre_entry_mae_r`、到達時刻付き）を記録する。
+
+**過去データに最も適合する待機方式を自動採用する処理は実装していない。** 4方式すべてを常に並行記録し、優劣の判断・待機方式の変更はユーザーが分析結果を見て行う。
+
+`InpAuditFileEnabled=true`かつ`InpEnableEntryTimingAnalysis=true`でStrategy Testerを実行すると、監査JSONLへ`ENTRY_TIMING_SETUP`（Setup単位、`pre_entry_mfe_r`・`pre_entry_mae_r`・`trigger_found`・`trigger_wait_bars`）と`ENTRY_TIMING_TRADE`（Variant単位、`variant`・`entry_price`・`wait_bars`・`bars_held`・`mfe_r`・`mae_r`・`exit_reason`・`pnl_r`・`checkpoint_r`）が記録される。
+
+```powershell
+$env:PYTHONPATH='.'
+python -m python.analysis.entry_timing `
+  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-20200101.jsonl `
+  --output build/entry-timing-report
+```
+
+出力は `entry-timing-report.json`（JSON契約は `contracts/entry-timing-report.schema.json` を正とする）、`entry-timing-report.md`、`entry-timing-setups.csv`、`entry-timing-trades.csv`である。レポートの`variants`はVariant別（IMMEDIATE/WAIT_1_BAR/WAIT_2_BARS/WAIT_TRIGGER）にTrades・Win Rate・Profit Factor・Expectancy・Net Profit・Max Drawdown（すべてR倍数）・平均MFE/MAE・価格推移チェックポイント平均を集計する。Max Drawdownは基準値100R（アカウント資金とは無関係な相対指標）からの累積R下落幅であり、Variant間の相対比較専用。`pre_entry_excursion`はSetup成立からEntryまでの逆行・順行の平均・中央値とTrigger成立率を要約する。`InpEnableEntryTimingAnalysis=false`のバックテストでは対象イベントが存在せず、`setups_observed=0`・全Variant`trades=0`として返る。

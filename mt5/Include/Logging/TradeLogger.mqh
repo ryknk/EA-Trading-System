@@ -25,7 +25,8 @@ public:
       return value=="CANDIDATE" || value=="EXTERNAL_DECISION" || value=="RISK_DECISION" ||
              value=="ORDER_SUBMISSION" || value=="DEAL" || value=="POSITION_SNAPSHOT" ||
              value=="TRADE_CLOSED" || value=="ACCOUNT_SNAPSHOT" || value=="SYSTEM_ERROR" ||
-             value=="TRADE_ANALYTICS" || value=="TIME_STOP_EXIT" || value=="ENTRY_PIPELINE";
+             value=="TRADE_ANALYTICS" || value=="TIME_STOP_EXIT" || value=="ENTRY_PIPELINE" ||
+             value=="ENTRY_TIMING_SETUP" || value=="ENTRY_TIMING_TRADE";
      }
   };
 

@@ -56,6 +56,9 @@ struct SEaConfig
    int               max_holding_bars;
    bool              time_stop_require_min_mfe;
    double            time_stop_min_mfe_r_multiple;
+   bool              enable_entry_timing_analysis;
+   int               entry_timing_max_wait_bars;
+   int               entry_timing_max_holding_bars;
    bool              decision_api_enabled;
    string            decision_api_url;
    string            decision_api_key_id;
@@ -130,6 +133,9 @@ void SetDefaultConfig(SEaConfig &config)
    config.max_holding_bars          = 20;
    config.time_stop_require_min_mfe = false;
    config.time_stop_min_mfe_r_multiple = 0.5;
+   config.enable_entry_timing_analysis = false;
+   config.entry_timing_max_wait_bars   = 6;
+   config.entry_timing_max_holding_bars = 20;
    config.decision_api_enabled       = false;
    config.decision_api_url           = "";
    config.decision_api_key_id        = "";
@@ -209,6 +215,9 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_TIME_STOP_MAX_HOLDING_BARS"; return false; }
    if(config.enable_time_stop && config.time_stop_require_min_mfe && config.time_stop_min_mfe_r_multiple<=0.0)
      { error="INVALID_TIME_STOP_MIN_MFE"; return false; }
+   if(config.enable_entry_timing_analysis &&
+      (config.entry_timing_max_wait_bars<1 || config.entry_timing_max_holding_bars<1))
+     { error="INVALID_ENTRY_TIMING_ANALYSIS_CONFIG"; return false; }
    if(config.minimum_free_margin_rate<0.0 || config.minimum_free_margin_rate>=1.0 || config.max_deviation_points<0)
      { error="INVALID_MARGIN_OR_DEVIATION_LIMIT"; return false; }
    if(config.magic_number==0)

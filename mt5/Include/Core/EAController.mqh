@@ -12,6 +12,7 @@
 #include <EaTradingSystem/External/TelemetryApiClient.mqh>
 #include <EaTradingSystem/Logging/TradeLogger.mqh>
 #include <EaTradingSystem/Logging/TradeAnalyticsTracker.mqh>
+#include <EaTradingSystem/Logging/EntryTimingAnalyzer.mqh>
 
 class CEAController
   {
@@ -38,6 +39,7 @@ private:
    CTelemetryApiClient         m_telemetry_client;
    CTradeLogger                m_trade_logger;
    CTradeAnalyticsTracker      m_analytics_tracker;
+   CEntryTimingAnalyzer        m_entry_timing_analyzer;
    bool                        m_initialized;
    datetime                    m_last_risk_error_log;
    string                      m_last_risk_lock_code;
@@ -90,6 +92,55 @@ private:
       // Telemetry transport failures never call this helper, avoiding recursive
       // reporting while still persisting operational component failures.
       Audit("SYSTEM_ERROR","system","",m_config.symbol,payload,true);
+     }
+
+   // Entry Timing分析（分析専用、実注文なし）の完了イベントを監査ログへ記録する。
+   // Telemetryへは送らない（バー単位で発生しうる高頻度データのためローカル監査のみ）。
+   void AuditEntryTimingEvents(const SEntryTimingSetupEvent &setups[],const SEntryTimingTradeEvent &trades[])
+     {
+      for(int index=0; index<ArraySize(setups); index++)
+        {
+         string payload="{";
+         payload+="\"setup_bar_time\":"+JString(Iso8601Utc(setups[index].setup_bar_time))+",";
+         payload+="\"direction\":"+JString(SignalDirectionToString(setups[index].direction))+",";
+         payload+="\"pre_entry_mfe_price\":"+JNumber(setups[index].pre_entry_mfe_price)+",";
+         payload+="\"pre_entry_mfe_r\":"+JNumber(setups[index].pre_entry_mfe_r)+",";
+         payload+="\"pre_entry_mfe_time\":"+JString(Iso8601Utc(setups[index].pre_entry_mfe_time))+",";
+         payload+="\"pre_entry_mae_price\":"+JNumber(setups[index].pre_entry_mae_price)+",";
+         payload+="\"pre_entry_mae_r\":"+JNumber(setups[index].pre_entry_mae_r)+",";
+         payload+="\"pre_entry_mae_time\":"+JString(Iso8601Utc(setups[index].pre_entry_mae_time))+",";
+         payload+="\"trigger_found\":"+(setups[index].trigger_found ? "true" : "false")+",";
+         payload+="\"trigger_wait_bars\":"+IntegerToString(setups[index].trigger_wait_bars)+"}";
+         Audit("ENTRY_TIMING_SETUP",setups[index].setup_id,"",m_config.symbol,payload,false);
+        }
+      for(int index=0; index<ArraySize(trades); index++)
+        {
+         string checkpoints="{";
+         for(int checkpoint_index=0; checkpoint_index<CEntryTimingRules::CheckpointCount(); checkpoint_index++)
+           {
+            if(!trades[index].checkpoint_valid[checkpoint_index]) continue;
+            if(StringLen(checkpoints)>1) checkpoints+=",";
+            checkpoints+="\"bars_"+IntegerToString(CEntryTimingRules::CheckpointBars(checkpoint_index))+"\":"+
+                         JNumber(trades[index].checkpoint_r[checkpoint_index]);
+           }
+         checkpoints+="}";
+         string payload="{";
+         payload+="\"variant\":"+JString(EntryTimingVariantToString(trades[index].variant))+",";
+         payload+="\"entry_bar_time\":"+JString(Iso8601Utc(trades[index].entry_bar_time))+",";
+         payload+="\"direction\":"+JString(SignalDirectionToString(trades[index].direction))+",";
+         payload+="\"entry_price\":"+JNumber(trades[index].entry_price)+",";
+         payload+="\"stop_loss\":"+JNumber(trades[index].stop_loss)+",";
+         payload+="\"take_profit\":"+JNumber(trades[index].take_profit)+",";
+         payload+="\"wait_bars\":"+IntegerToString(trades[index].wait_bars)+",";
+         payload+="\"bars_held\":"+IntegerToString(trades[index].bars_held)+",";
+         payload+="\"mfe_r\":"+JNumber(trades[index].mfe_r)+",";
+         payload+="\"mae_r\":"+JNumber(trades[index].mae_r)+",";
+         payload+="\"exit_reason\":"+JString(trades[index].exit_reason)+",";
+         payload+="\"exit_price\":"+JNumber(trades[index].exit_price)+",";
+         payload+="\"pnl_r\":"+JNumber(trades[index].pnl_r)+",";
+         payload+="\"checkpoint_r\":"+checkpoints+"}";
+         Audit("ENTRY_TIMING_TRADE",trades[index].setup_id,"",m_config.symbol,payload,false);
+        }
      }
 
    string CandidateForPosition(const ulong position_identifier,const string symbol)
@@ -381,6 +432,11 @@ public:
          m_strategy.Shutdown();
          return false;
         }
+      if(!m_entry_timing_analyzer.Initialize(m_config,error))
+        {
+         m_strategy.Shutdown();
+         return false;
+        }
       const bool use_mock=(MQLInfoInteger(MQL_TESTER) && m_config.tester_decision_mode!=TESTER_DECISION_FAIL_SAFE);
       if(!(use_mock ? m_mock_decision_provider.Initialize(m_config,error) : m_decision_client.Initialize(m_config,error)))
         {
@@ -407,6 +463,7 @@ public:
       m_trade_logger.Shutdown();
       m_decision_client.Shutdown();
       m_mock_decision_provider.Shutdown();
+      m_entry_timing_analyzer.Shutdown();
       m_strategy.Shutdown();
      }
 
@@ -431,6 +488,12 @@ public:
         }
       // 分析専用のMFE/MAE追跡。既存ポジション管理の判断・発注には一切影響しない。
       m_analytics_tracker.Update();
+      // 分析専用。Entry Timing比較（Setup成立時即時/1本待ち/2本待ち/Trigger待ち）をShadow Tradeとして
+      // 並行シミュレートする。実注文は一切発生しない。InpEnableEntryTimingAnalysis=false（既定）では即return。
+      SEntryTimingSetupEvent entry_timing_setups[];
+      SEntryTimingTradeEvent entry_timing_trades[];
+      m_entry_timing_analyzer.OnTick(entry_timing_setups,entry_timing_trades);
+      AuditEntryTimingEvents(entry_timing_setups,entry_timing_trades);
       // 分析専用。前Tickで決済検知しキューへ積んだポジションの履歴を確定させる。
       ProcessPendingClosedPositions();
       // 既存ポジション管理の一部。エントリー根拠（トレンド/ADX）が消失した保有ポジションを
