@@ -188,6 +188,41 @@
   また、本分析はSL/TP幾何のみのShadow Tradeであり、建値ストップ・シグナル失効Exit・Time Stop・ADXレジームフィルタ等、実戦略が持つExit管理・Entry追加フィルタを一切含まないため、WAIT_TRIGGER単体でもPF0.94と1未満である点は実戦略のPF1.09と単純比較できない（Entry timingという単一要因を切り出した分析であり、比較対象が異なる）。
 
   **総合評価: Entryタイミングは「確認を待つ」現行方針が妥当であることが、より頑健な正式IS期間のデータで支持された。次の一手候補**: (a) 現行のTrigger確認方式を維持する（推奨、追加調整は不要）、(b) `InpEntryTimingMaxWaitBars`をスイープしTrigger成立率とPFのトレードオフを確認する、(c) 現行戦略のタッチ足・確認足の固定1本ギャップを、本分析のWAIT_TRIGGERのような柔軟な待機（複数本まで探索）へ変更する仮説をさらに検証する（ただし6か月サンプルとの逆転が示すとおり過学習リスクがあるため、OOS/Walk Forwardでの確認を経ずに実戦略へ適用しない）。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
+* [x] コスト感応度分析（Spread/Commission/Swap/Slippage）を、OANDA証券での運用を想定した設定で正式なIS期間（2017-09〜2020-12）に対し実施する（2026-08-22実施。**OANDA証券のコスト条件確認**: 公式サイト（[oanda.jp/course](https://www.oanda.jp/course)）をWebFetchで確認し、MT5対応の東京サーバー2コース（裁量プラン・スタンダードプラン）はいずれも取引手数料無料（Commission=0円）であることを確認。`USDJPY_HIST`は`CustomSymbolCreate`でOANDA接続時点の実`USDJPY`からSpread（実tick）・Swap仕様を複製済みのため、既存のStrategy Tester設定（Commission=0円が既定）が既にOANDA証券の実態を反映しており、追加のコスト条件変更は不要と判断した（詳細は3.1節「Spread、Commission、Swap、Slippageのデータ条件を決定する」参照）。既知の最良状態（Trend+H1 ADXのみ全条件完全決済・建値ストップ・StopAtrMultiple/RR=2.0・Time Stop有効・`InpRegimeTrendAdxMin=40`）で実行し、コンパイル（10ターゲット）・9 Script Test・Python単体テスト37件全PASS確認済み。純損益+15,511円・PF1.09・取引数77はコスト感応度分析追加前と完全一致。
+
+  `python.analysis.cost_sensitivity`（`results/backtests/20260822-230027-USDJPY-H1/cost-sensitivity-report/`）による結果:
+
+  | 指標 | コスト込み（実績） | コスト除外時（推定） | 差分 |
+  |---|---:|---:|---:|
+  | 純損益 | 15,511円 | 37,802円 | -22,291円 |
+  | Profit Factor | 1.087 | 1.229 | -0.14 |
+  | 勝率 | 36.4% | 48.1% | -11.7pt |
+  | 期待値 | 201.44円 | 490.94円 | -289.49円 |
+  | Sharpe | 0.18 | 0.42 | -0.24 |
+
+  コスト内訳（総コスト22,291円、77件全トレードでpoint_value取得可能）: Spreadコスト合計17,317円（77.7%）、Slippageコスト合計0円、Commission合計0円、Swap合計-4,974円（スワップは収益ではなく追加コストとして寄与）。**理論上の税引前(コスト除外)利益37,802円のうち、59.0%（22,291円）が取引コストで失われている。**
+
+  コスト水準別（`total_cost`の実データ三分位）: Low Cost（27件、平均コスト-20.9円=スワップ収益がSpreadを上回る）はPF1.53と極めて良好。Normal Cost（24件、平均150.8円）はPF0.85で純損益-10,253円の赤字。High Cost（26件、平均739.8円）はPF0.95で純損益-2,621円の小幅赤字。**コスト水準が上がるほど成績が悪化する明確な傾向があり**、コストが単なる一律控除ではなく、収益性の低いトレード（≒質の低いエントリー）ほど高コストになりやすいという相関を示唆する（因果関係は未検証の仮説）。
+
+  **総合評価: PF1.09という現行の最良状態の収益性は、取引コストに対して脆弱な薄いエッジである**。理論上の利益の約6割がコスト（主にSpread）で失われており、Commission=0円というOANDA証券の有利な条件下でもこの結果である。さらに、本バックテストのSlippage合計は0円（Testerの約定モデルが市場成行注文を要求価格どおりに約定させている）であり、これは楽観的な仮定である可能性が高い。実際のOANDA証券ライブ環境では、指標発表時・薄商い時間帯のSpread拡大や、Market Executionでの実際のSlippageが発生しうるため、本結果はコスト面で最良ケースに近い。**追加の調整が必要**: (a) Demo口座でのフォワードテスト時にSlippage・約定品質を実測し、本バックテストの楽観的仮定（Slippage=0）とのギャップを確認する（優先度高、本番移行前の必須ゲート）、(b) High/Normal Costトレードが低品質エントリーと相関するという仮説を、`atr_band`・`session`等の既存`trade_breakdown`の切り口と`cost_tier`を突き合わせて検証する、(c) Spreadコストの影響が大きい銘柄特性を踏まえ、StopAtrMultiple等でリスク幅を拡大しコスト比率を相対的に下げる方向性を検討する（ただし過去のスイープでStopAtrMultiple変更は非単調な挙動を示しており慎重な検証が必要）。ini設定・コード変更は行っていない（分析専用ラウンド）。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
+* [x] **In-Sample凍結（2026-08-22、ユーザー指示）。以後、OOS/Walk Forward結果を理由とした本パラメータセットの変更は行わない（DEC-024/025のIS/OOS分離方針）。** 現行`mt5/test-config/StrategyTester-USDJPY-H1.ini`の`[TesterInputs]`をIS期間（2017-09〜2020-12）における最終確定パラメータセットとする。デフォルト値からの変更点（IS内チューニングで確定した項目）:
+
+  | パラメータ | 値 | 既定値 | 根拠 |
+  |---|---|---|---|
+  | `InpEntryUseStagedPipeline` | true | false | 段階的Entry判定パイプライン有効化 |
+  | `InpRegimeTrendAdxMin` | 40.0 | 20.0 | 唯一PF>1を達成した閾値（`20260822-183152`他、本節参照） |
+  | `InpEnableBreakevenStop` | true | true | 建値ストップ、`InpBreakevenTriggerR=1.0`が最良（トリガー水準スイープ済み） |
+  | `InpEnableSignalInvalidationExit` | true | true | シグナル失効Exit有効 |
+  | `InpSignalExitCheckTrend` / `InpSignalExitCheckH1Adx` | true / true | true / true | Trend反転・H1 ADX弱体化で完全決済 |
+  | `InpSignalExitCheckH4Adx` | **false** | true | H4 ADXはH1 ADXと重複しTP到達を妨げるため無効化 |
+  | `InpEnableTimeStop` | true | true | ユーザー指示によりリスク管理方針として有効化（IS単体では純損益わずかに悪化するが維持） |
+  | `InpMaxHoldingBars`/`InpTimeStopRequireMinMfe`/`InpTimeStopMinMfeR` | 20 / true / 0.5 | 同左 | 既定値のまま採用 |
+  | `InpStopAtrMultiple` / `InpRiskRewardRatio` | 2.0 / 2.0 | 2.0 / 2.0 | スイープの結果、既定値が最も安定（1.5は非単調で過学習リスクありのため不採用） |
+  | `InpMinimumAdx` / `InpMinimumConfirmationAdx` | 20.0 / 20.0 | 20.0 / 20.0 | 既定値のまま |
+  | `InpPullbackAtrTolerance` | 0.15 | 0.15 | 既定値のまま（2026-08-17確定済み） |
+  | `InpEnableEntryTimingAnalysis` | false | false | 分析専用機能のため本番相当設定では無効 |
+
+  この状態でのIS実績（`20260822-183152-USDJPY-H1`他）: 純損益+15,511円、Profit Factor 1.09、Sharpe +0.80、取引数77、最大DD 3%。コスト感応度分析で理論上の利益の約59%がコストに失われる薄いエッジであること、`InpRegimeTrendAdxMin`が隣接水準（35/45）に対し非単調でIS期間固有の過学習リスクがあることを踏まえたうえで、ユーザー判断によりこの状態を凍結してOOSへ進む。次はOOS期間（2021-01〜2024-12）で本節と同一パラメータでのStrategy Tester初回実行を行う。未コミットの作業ツリー差分のため、凍結の証跡としてのcommitはユーザー指示があるまで保留する）
 * [ ] Final Holdout期間（2025-01〜2026-08）は、EA・MLモデル・閾値・SL/TP等を確定し他の全ゲートが完了するまで実行しない（一度だけの評価として温存する）
 * [x] 新結果を踏まえてHANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`を更新する（2026-08-16実施）
 
@@ -239,16 +274,16 @@
 * [ ] データ利用条件とライセンスを確認する
 * [ ] TimezoneとDSTの扱いを決定する
 * [ ] Point-in-time整合性を確認する
-* [ ] Spread、Commission、Swap、Slippageのデータ条件を決定する
+* [x] Spread、Commission、Swap、Slippageのデータ条件を決定する（2026-08-22決定。**Spread**: `USDJPY_HIST`は`mt5/Tools/ImportOandaTicks.mq5`が`CustomSymbolCreate`の`origin_name`にOANDA証券MT5口座接続時点の実`USDJPY`を指定して仕様を複製しており、Bid/Askも実tickデータをそのまま使用するためヒストリカルなOANDA実勢スプレッドを再現している（`DECISIONS.md`参照）。**Commission**: OANDA証券公式サイト（[oanda.jp/course](https://www.oanda.jp/course)、WebFetchで確認）で、MT5対応の東京サーバー2コース（裁量プラン・スタンダードプラン、いずれもUSD/JPYスプレッド0.3〜0.7銭程度）はいずれも「取引手数料：無料」であることを確認。Strategy Testerの既定Commission（0円）はOANDA MT5の実態と一致しており変更不要と判断した。**Swap**: `CustomSymbolCreate`が実`USDJPY`からSwap仕様も複製するため、OANDA証券の実際のSwap Rateを反映している（前提: Custom Symbol作成時にOANDA証券MT5口座へ接続済みであったこと、`DECISIONS.md` DEC-023参照）。**Slippage**: EA側の許容上限は`InpMaxDeviationPoints`（既定10 Point）。実際に発生するSlippageはStrategy Testerの実tickベース約定シミュレーション（`Model=4`、`ExecutionMode=0`）に委ねており、これはSpread同様「過去データへ最も都合よく適合する値を注入しない」という本プロジェクトの分析方針に沿う。ただし本IS期間の実行では`ORDER_SUBMISSION.slippage_points`の合計が0（`results/backtests/20260822-230027-USDJPY-H1/`のコスト感応度分析で確認）であり、Testerの約定モデルが楽観的（Slippage無し）である可能性を残存リスクとして記録する。詳細な評価は2.1節のコスト感応度分析エントリを参照）
 * [ ] Data Quality Checkを実装または実行する
 
 ## 3.2 検証期間
 
-* [ ] In-Sample期間を固定する
-* [ ] Calibration期間を固定する
-* [ ] Out-of-Sample期間を固定する
-* [ ] Label Horizonに応じたgapを固定する
-* [ ] OOS確認後に同じ期間を再利用しない運用を確立する
+* [x] In-Sample期間を固定する（`DECISIONS.md` DEC-024/025で2017-09〜2020-12に確定済み。2026-08-22、本節2.1のIS凍結エントリでパラメータセットも確定し、期間・パラメータ両方が固定された）
+* [ ] Calibration期間を固定する（rule-based Strategyには学習・確率較正ステップが存在しないため現時点で対象外。ML学習パイプライン導入時に別途検討する）
+* [x] Out-of-Sample期間を固定する（`DECISIONS.md` DEC-024で2021-01〜2024-12に確定済み）
+* [ ] Label Horizonに応じたgapを固定する（rule-based Strategyには教師ラベルが存在しないため現時点で対象外。ML学習パイプライン導入時に別途検討する）
+* [x] OOS確認後に同じ期間を再利用しない運用を確立する（本セッション全体を通じ、IS期間のみでのパラメータ探索・OOS/Walk Forward期間への非先取りを一貫して実施（例: 2.1節各エントリの「OOS期間を先取りして確認することはしない」等の記述）。2026-08-22のIS凍結以降は、OOS/Walk Forward結果を理由とした本パラメータセットの再変更を行わない運用を明文化した）
 
 ## 3.3 ML評価
 
@@ -378,6 +413,18 @@
 ---
 
 # 6. Demo口座
+
+**Slippage・約定品質の実測計画（2026-08-22策定、コード・設定変更なし・計画書のみ）**: コスト感応度分析（2.1節参照）で、本バックテストのSlippage合計が0円（Testerの約定モデルが市場成行注文を要求価格どおりに約定させる楽観的仮定）と判明したため、Demo口座での実測を計画する。**6.1観測モード・6.2障害試験は未着手（全項目`[ ]`）であり、6.3取引モードは下記の順序どおりこれらの完了後にのみ着手する**（TASKS.md既存の明記どおり）。以下は各フェーズの具体的な設定値・所要期間・分析方法の計画であり、実行（EAをDemo口座のチャートへアタッチする、AutoTradingを有効化する等）はユーザーが手動で行う必要がある（Claude Codeからは実行できないGUI操作）。
+
+* **6.1観測モードの推奨EA入力値**: `InpEnableTradeMutations=false`（既定値のまま）・`InpAuditFileEnabled=true`（既定値のまま）。`InpDecisionApiEnabled=true`にする場合はAWS Decision APIスタックのdev環境が到達可能である必要があり（`docs/aws-infrastructure.md`参照）、現時点でAWS dev実通信は未検証（CLAUDE.md「現在の安全状態」参照）。AWS側の準備がまだの場合は、`InpDecisionApiEnabled=false`のまま観測モードを開始し、ローカルRisk判定・監査ログ・Broker Symbol仕様の確認から進める代替順序も検討可能（ただしこの場合Decision API関連項目は別途スケジュールする必要がある）。所要期間の目安: 各項目を最低1回確認できるまで、数日〜1週間程度。
+* **6.2障害試験**: 多くの項目（Emergency Stop、Strategy Stop、Spread急拡大、Margin不足、OrderCheck失敗、約定拒否、Stop Level/Freeze Level違反等）はDemo口座上でMT5設定操作・注文操作により再現可能。Decision API/AWS関連の障害試験（Timeout、HTTP 4xx/5xx/429、不正JSON、request ID不一致、TTL切れ、Clock Skew、Replay、DynamoDB障害）はAWS dev環境が前提となるため、6.1で`InpDecisionApiEnabled=true`の検証を実施する場合にあわせて計画する。
+* **6.3取引モード（Slippage・約定品質の実測、本計画の主目的）**:
+  - 前提: 「ユーザー承認を得る」「設定の証跡を保存する」を経てから`InpEnableTradeMutations=true`へ変更する（TASKS.md既存の順序どおり）。
+  - 推奨EA入力値: 現行の最良状態（本節2.1参照、Trend+H1 ADXのみ全条件完全決済・建値ストップ・StopAtrMultiple/RR=2.0・Time Stop有効・`InpEntryUseStagedPipeline=true`・`InpRegimeTrendAdxMin=40.0`・`InpSignalExitCheckH4Adx=false`）と同一のパラメータをDemo口座のEA InputsタブへExpert Advisor起動時に設定する。Decision APIは、6.1で検証済みならそのまま有効、未検証なら`InpDecisionApiEnabled=false`で純粋にRisk Manager・ローカルルールのみでの約定挙動を先に確認する案も検討可（Decision APIの可否とSlippage計測は独立した関心事のため）。
+  - **サンプルサイズと所要期間の見積り**: `InpRegimeTrendAdxMin=40`は正式IS期間（3.3年）で77トレード（年間約23件、月間2件弱）と取引頻度が低い。Slippage統計として意味を持たせるには最低20〜30トレード程度のサンプルが望ましく、現行の高選別的な設定のままでは**数か月（目安3〜6か月）を要する見込み**。より早くSlippageサンプルを収集したい場合、**Slippage計測に限っては、より取引頻度の高い設定（例: `InpEntryUseStagedPipeline=false`でStaged Pipelineを無効化した基準構成、年間約200件）に一時的に切り替える**という代替案もある（Slippageは主にBroker側の約定メカニズムに起因し、Entry選別ロジックの違いに大きく依存しないという前提に基づく仮説であり、この前提自体の妥当性はユーザー判断による）。どちらの方針を採るかはユーザーが決定する。
+  - **計測する指標**: 既存の監査ログ基盤がそのまま使える（追加のコード変更は不要）。`ORDER_SUBMISSION.slippage_points`（Entry Slippage）、`CANDIDATE.spread_points`・`TRADE_CLOSED.exit_spread_points`（Entry/Exit Spread）、`TRADE_CLOSED.commission`・`swap`。
+  - **分析方法**: 十分なトレード数が蓄積された時点で、Demo口座のAudit JSONL（`InpAuditLogDirectory`配下）を`results/`配下へ複製し、既存の`python.analysis.cost_sensitivity`・`python.analysis.trade_breakdown`をそのまま実行する（新規ツール開発は不要）。得られたSlippage・Spread実測値を、本バックテストの仮定（Slippage=0、Spread=ヒストリカル実tick、Commission=0）と比較し、乖離があればコスト感応度分析（2.1節）の`pnl_before_cost`との差分を実測値ベースで再計算する。
+  - **ロールバック・安全性**: Demo口座のため実資金リスクはないが、CLAUDE.mdの安全原則（新規注文拒否・既存ポジション保護継続を優先）は同様に適用する。異常時は`InpEmergencyStop=true`で新規注文のみ即時停止可能（既存ポジション管理は継続、6.4参照）。
 
 ## 6.1 観測モード
 
