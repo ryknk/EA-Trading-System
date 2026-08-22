@@ -27,12 +27,29 @@ $content = $content -replace '^FromDate=.*$', ("FromDate=" + $FromDate)
 $content = $content -replace '^ToDate=.*$', ("ToDate=" + $ToDate)
 Set-Content -LiteralPath $config -Value $content -Encoding Unicode
 
+$searchRoots = @($root, $TerminalData, $InstallPath, (Join-Path $env:APPDATA "MetaQuotes")) | Select-Object -Unique
+
+# 監査JSONL（audit-*.jsonl）はEA側がFILE_WRITE|FILE_SHARE_READでSEEK_END追記するため、
+# Tester Agentフォルダ（単一Agentが実行間で使い回される）に残っていると前回以前の実行分が
+# 累積したまま残る。今回の実行結果とは無関係な過去データが後段のコピー対象へ混入し、
+# python.analysis.trade_breakdown等の分析が別実行のデータで汚染される（2026-08-22発見）。
+# 実行前に既存の監査JSONLを削除し、今回の実行分のみが書き込まれる状態にする。
+$staleAuditFiles = foreach ($searchRoot in $searchRoots) {
+    if (Test-Path -LiteralPath $searchRoot) {
+        Get-ChildItem -LiteralPath $searchRoot -Recurse -File -Filter "audit-*.jsonl" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\EaTradingSystem\\Audit\\' }
+    }
+}
+if ($staleAuditFiles) {
+    foreach ($stale in $staleAuditFiles) { Remove-Item -LiteralPath $stale.FullName -Force }
+    Write-Host "STRATEGY_TESTER_STALE_AUDIT_CLEARED count=$($staleAuditFiles.Count)"
+}
+
 $process = Start-Process -FilePath $terminal -ArgumentList @("/config:$config") -PassThru -WindowStyle Hidden
 if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
     Stop-Process -Id $process.Id -Force
     throw "Strategy Tester timeout: $TimeoutSeconds seconds"
 }
-$searchRoots = @($root, $TerminalData, $InstallPath, (Join-Path $env:APPDATA "MetaQuotes")) | Select-Object -Unique
 $reports = foreach ($searchRoot in $searchRoots) {
     if (Test-Path -LiteralPath $searchRoot) {
         Get-ChildItem -LiteralPath $searchRoot -Recurse -File -ErrorAction SilentlyContinue |
