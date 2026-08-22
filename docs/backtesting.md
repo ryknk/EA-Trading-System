@@ -89,3 +89,89 @@ python -m python.analysis.overfitting `
 ```
 
 出力は `overfitting-assessment.json`（JSON契約は `contracts/overfitting-report.schema.json` を正とする）と `overfitting-report.md` である。
+
+## 条件別分析（Entry/Exit改善根拠の把握）
+
+`python.analysis.trade_breakdown` は、Phase 9監査JSONL（`CANDIDATE`・`RISK_DECISION`・`TRADE_CLOSED`・`TRADE_ANALYTICS`イベント）から1トレードごとの文脈情報を再構成し、条件別（Buy/Sell、Entry曜日、Entry Session、ATR帯、ADX帯、保有時間帯、MFE帯、MAE帯、市場レジームTrend、市場レジームVolatility、決済トリガー`close_reason`、Exit曜日`close_weekday`、Exit Session`close_session`、Giveback帯`giveback_band`）にTrades・Win Rate・Profit Factor・Expectancy・Net Profit・平均利益・平均損失を集計する。エントリー条件自体の改善かExit条件の改善か、特定方向・時間帯・相場環境による偏りがあるか、負けトレードが一度含み益になってからSLに到達しているかを判断する材料を提供するための分析専用機能であり、閾値の自動変更は行わない。
+
+**Exit（決済）側の分析（2026-08-17実装）。** `TRADE_CLOSED`ペイロードへMT5の`DEAL_REASON`（決済を発生させたトリガー）を`close_reason`として追加記録した（`SL`/`TP`/`SO`/`EXPERT`/`CLIENT`等。`EXPERT`はEA発注によるEmergency Close等）。現時点のEAにはトレーリングストップや時間切れ決済のロジックはなく、決済は事実上SL到達・TP到達・保護SLなしのEmergency closeの3種類のみである。あわせて、決済時刻（Exit）基準の曜日・Session（`close_weekday`・`close_session`、Entry基準の既存`weekday`・`session`とは別集計）と、一度到達した含み益（MFE）に対して決済までにどれだけ手放したかを示すGiveback比率（`giveback_ratio`=`(mfe-net_pnl)/mfe`、MFE<=0のトレードは対象外）を追加した。レポートの`giveback_from_peak_profit`セクションは、勝敗を問わず含み益到達後の平均・中央値Giveback比率と、損益ゼロ以下まで完全反転した割合（`giveback_ratio>=1.0`）を要約する。これらはエントリー条件ではなく、決済ロジック（SL/TP幅、保有時間、決済タイミング）の改善余地を判断する材料である。
+
+**市場レジーム判定（2026-08-17実装）。** EA側`CMarketRegimeClassifier`（`mt5/Include/Filter/MarketRegimeClassifier.mqh`）が、既存のADX/ATR/H1 EMA(Fast) Indicatorハンドルを再利用し、確定足データのみでEntry候補ごとにTrend（`TrendUp`/`TrendDown`/`Range`）とVolatility（`HighVolatility`/`NormalVolatility`/`LowVolatility`）を判定する。判定に必要なデータが不足する場合（バックテスト開始直後のバッファ不足等）は`Unknown`とする。閾値は固定値ではなくEA input（`InpRegimeTrendAdxMin`・`InpRegimeAtrBaselinePeriod`・`InpRegimeHighVolatilityRatio`・`InpRegimeLowVolatilityRatio`・`InpRegimeMaSlopeLookback`、詳細は`docs/configuration.md`）で設定する。判定結果は`CANDIDATE`イベントpayloadの`market_regime_trend`・`market_regime_volatility`へ記録されるのみで、Entry判定・売買制御には一切使用しない（判定と売買制御の分離）。現時点ではレジームによるEntry禁止・売買ロジック変更は行っていない。
+
+**段階的Entry判定パイプライン（2026-08-22実装）。** 市場レジーム判定は当初分析専用（Entry判定に不使用）だったが、`InpEntryUseStagedPipeline`（既定値`false`）を`true`にすると、`CTrendFollowingStrategy::Evaluate()`をMarket Regime→HTF Bias（D1/H4トレンド一致）→Setup（押し目/戻り成立）→Entry Trigger（再加速/レンジ突破）→Entryという4段階として明示的に評価し、Market RegimeがRange/Unknownの確定足を追加で棄却できるようになった（`InpEntryRequireMarketRegimeTrend`、既定値`true`）。`InpEntryUseStagedPipeline=false`では判定式・発注挙動とも既存方式と完全に同一である（Strategy Tester再実行による実証は`DECISIONS.md` DEC-027参照）。`InpEntryUseStagedPipeline=true`の場合のみ、毎確定足の評価結果（成立・否決を問わず）を新規イベント`ENTRY_PIPELINE`（`stage_market_regime`・`stage_htf_bias`・`stage_breakout_setup_passed`・`stage_breakout_trigger_passed`・`stage_pullback_setup_passed`・`stage_pullback_trigger_passed`・`final_status`・`reason_code`）へ記録する。`python.analysis.trade_breakdown.entry_pipeline_funnel_summary()`がこのログから、各段階（`market_regime`・`htf_bias`・`trend_strength_or_momentum_filter`・`setup_or_trigger`）でどれだけ棄却されたかを集計し、`write_report(..., input_paths=...)`経由でレポートJSON（`entry_pipeline_funnel`キー、任意項目）・Markdownへ出力する。詳細な設定項目は`docs/configuration.md`「段階的Entry判定パイプライン」を参照。
+
+`InpAuditFileEnabled=true`（既定値）でStrategy Testerを実行すると、`EaTradingSystem\Audit\audit-YYYYMMDD.jsonl` にCANDIDATE（エントリー時ATR・ADX・Spread・時刻を含む）、RISK_DECISION（承認リスク額）、TRADE_CLOSED、TRADE_ANALYTICS（MFE・MAE）が記録される。`tools/run-strategy-tester.ps1` は実行後にこれらのJSONLを検出できた場合、自動的に `results/backtests/<run-id>-USDJPY-H1/audit/` へ複製する（見つからない場合はベストエフォートで警告を出すのみで、Strategy Tester自体の成功判定には影響しない）。
+
+```powershell
+$env:PYTHONPATH='.'
+python -m python.analysis.trade_breakdown `
+  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-20200101.jsonl `
+  --output build/trade-breakdown-report
+```
+
+出力は `trade-breakdown-report.json`（JSON契約は `contracts/trade-breakdown-report.schema.json` を正とする）、`trade-breakdown-report.md`、および条件別列（`entry_atr`・`entry_adx`・`entry_spread_points`・`risk_budget`・`mfe`・`mae`・`r_multiple`・`hold_time_hours`・`weekday`・`session`・`atr_band`・`adx_band`・`hold_time_band`・`mfe_band`・`mae_band`・`market_regime_trend`・`market_regime_volatility`・`close_reason`・`close_weekday`・`close_session`・`giveback_ratio`・`giveback_band`）を付加した `trades-with-context.csv` である。ATR帯・ADX帯・保有時間帯・MFE帯・MAE帯・Giveback帯は実データの分位点（三分位）から算出し、固定のしきい値をハードコードしない。Session区分（Tokyo/London/London_NewYork_Overlap/NewYork）はUTC時刻に基づく概算区分であり、DSTは考慮しない簡略化である。R換算損益（`r_multiple`）は該当候補が承認された `RISK_DECISION` の `risk_budget`（発注時点のリスク許容額）に対する比率で、EA側での追加ロジックなしにPython側で算出する。`market_regime_trend`・`market_regime_volatility`はEA側の判定結果をそのまま再構成した値であり、Python側は判定ロジックを持たない。`close_reason`はMT5の`DEAL_REASON`をそのまま文字列化した値であり、EA側で決済理由を推定・分類するロジックは持たない。CLIから実行した場合（`--input`で指定した監査JSONLに`ENTRY_PIPELINE`イベントが含まれる場合のみ）、レポートJSON・Markdownへ`entry_pipeline_funnel`（段階的Entry判定パイプラインのStage別棄却件数）が追加される。
+
+## Entry Timing比較分析（2026-08-22実装）
+
+`InpEnableEntryTimingAnalysis`（既定値`false`）を`true`にすると、EA側`CEntryTimingAnalyzer`（`mt5/Include/Logging/EntryTimingAnalyzer.mqh`）が、同一のプルバックSetupについて次の4方式を**実注文なしのShadow Trade**として並行シミュレートする。
+
+```text
+IMMEDIATE    : Setup成立bar自身の終値で即Entry
+WAIT_1_BAR   : 1本待ってEntry
+WAIT_2_BARS  : 2本待ってEntry
+WAIT_TRIGGER : Setup後のTrigger（再加速）成立を待ってEntry（InpEntryTimingMaxWaitBars以内に不成立なら生成しない）
+```
+
+Setup検出・SL/TP幾何（`InpStopAtrMultiple`・`InpRiskRewardRatio`）・Trigger判定は、既存の`CTrendFollowingRules`（`IsPullbackSetup`・`IsPullbackTrigger`・`IsBreakout`と同じ関数群）をそのまま再利用するが、`CEntryTimingAnalyzer`は自前のIndicatorハンドルでHTF Bias・ATR/ADX/RSIゲートを独立に再評価する自己完結モジュールであり、実際の`CTrendFollowingStrategy`・`RiskManager`・`OrderManager`・`PositionManager`には一切参照されず、実注文・実ポジションを一切発生させない。`InpEnableEntryTimingAnalysis=false`（既定値）ではIndicatorハンドルすら作成せず、既存の売買判断・監査ログ量に影響しない。ブレイクアウトパターンはSetupとTriggerが同一の価格事象（レンジ突破）であり両者の間に待機できる中間状態が存在しないため、本分析はプルバックパターンのみを対象とする。
+
+Shadow TradeのSL/TP判定はtick粒度（Strategy Testerの"Every tick"モード相当）で行い、価格推移チェックポイント（Entry後1/2/3/5/10/20本経過時点の価格、R倍数）とMFE/MAE（当初SL距離を1RとしたR倍数）を記録する。損益は口座通貨ではなくR倍数で表現する（Shadow TradeはPosition Sizing・Risk Managerを経由しないため、口座通貨建て損益は算出できない）。また、Setup成立bar終値からEntry確定までの間に想定方向へどれだけ順行し、逆側へどれだけ逆行したか（`pre_entry_mfe_r`・`pre_entry_mae_r`、到達時刻付き）を記録する。
+
+**過去データに最も適合する待機方式を自動採用する処理は実装していない。** 4方式すべてを常に並行記録し、優劣の判断・待機方式の変更はユーザーが分析結果を見て行う。
+
+`InpAuditFileEnabled=true`かつ`InpEnableEntryTimingAnalysis=true`でStrategy Testerを実行すると、監査JSONLへ`ENTRY_TIMING_SETUP`（Setup単位、`pre_entry_mfe_r`・`pre_entry_mae_r`・`trigger_found`・`trigger_wait_bars`）と`ENTRY_TIMING_TRADE`（Variant単位、`variant`・`entry_price`・`wait_bars`・`bars_held`・`mfe_r`・`mae_r`・`exit_reason`・`pnl_r`・`checkpoint_r`）が記録される。
+
+```powershell
+$env:PYTHONPATH='.'
+python -m python.analysis.entry_timing `
+  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-20200101.jsonl `
+  --output build/entry-timing-report
+```
+
+出力は `entry-timing-report.json`（JSON契約は `contracts/entry-timing-report.schema.json` を正とする）、`entry-timing-report.md`、`entry-timing-setups.csv`、`entry-timing-trades.csv`である。レポートの`variants`はVariant別（IMMEDIATE/WAIT_1_BAR/WAIT_2_BARS/WAIT_TRIGGER）にTrades・Win Rate・Profit Factor・Expectancy・Net Profit・Max Drawdown（すべてR倍数）・平均MFE/MAE・価格推移チェックポイント平均を集計する。Max Drawdownは基準値100R（アカウント資金とは無関係な相対指標）からの累積R下落幅であり、Variant間の相対比較専用。`pre_entry_excursion`はSetup成立からEntryまでの逆行・順行の平均・中央値とTrigger成立率を要約する。`InpEnableEntryTimingAnalysis=false`のバックテストでは対象イベントが存在せず、`setups_observed=0`・全Variant`trades=0`として返る。
+
+## コスト感応度分析（2026-08-22実装）
+
+目的は、Profit Factorが低い場合の原因が「Entry/Exitロジック自体の問題」なのか「薄いエッジが取引コスト（Spread・Commission・Swap・Slippage）によって失われている」のかを切り分けることである。**過去データに最も都合よく適合するコスト条件を自動採用する処理は実装していない。** MT5テスターが実際に生成したSpread・Commission・Swap・Slippageをそのまま記録・集計するのみで、EA内部で市場コストを変更・偽装するロジックは持たない。
+
+**記録するコスト項目とEA側の実装。**
+
+- Entry Spread: 既存の`CANDIDATE`イベント`spread_points`（Entry候補生成Tick時点のSpread、Point単位。Phase 9から実装済み）
+- Exit Spread: `TRADE_CLOSED`イベントへ新規追加した`exit_spread_points`（Point単位）。決済自体はブローカー側SL/TP等で発生し、EA側は`OnTradeTransaction`が決済デタッチ（`DEAL_ENTRY_OUT`）を検知した直後のTickでベストエフォートに記録する（約定Tickそのものの値ではない近似値、`mt5/Include/Core/EAController.mqh`の`OnTradeTransaction`）
+- Entry Slippage: 既存の`ORDER_SUBMISSION`イベント`slippage_points`（要求価格`requested_price`と約定価格`confirmed_price`の差、Point単位。Phase 9から実装済み）
+- Exit Slippage: **未対応。** 決済の大半はブローカー側SL/TP自動決済であり、Entry側の`COrderManager::Submit`のような「要求価格」を安全に取得する手段が現アーキテクチャにはないため、Entry側のみ記録する（既知の制約。EXPERT/CLIENT close_reasonの決済もEA発注だが未計測）
+- Commission・Swap: 既存の`TRADE_CLOSED`イベント`commission`・`swap`（Phase 9から実装済み、net_pnlへ既に加算済み）
+- 約定価格: 既存の`TRADE_CLOSED`イベント`open_price`・`close_price`
+- Point→口座通貨換算値: `TRADE_CLOSED`イベントへ新規追加した`point_value`。該当トレードのVolumeにおける1 Point変動の口座通貨換算値を、`OrderCalcProfit`（`Risk/PositionSizer.mqh`のリスクベースLot計算と同じAPI）で算出する。算出できない場合は0（Spread/SlippageのPoint値は口座通貨へ換算不能として扱う）
+
+`python.analysis.cost_sensitivity`は、`trade_breakdown.build_trade_context`（Entry Spread・Exit Spread・point_value等を`trade_candidate_id`で相関済み）へ`ORDER_SUBMISSION.slippage_points`（Entry Slippage、`status=ACCEPTED`のもののみ）を追加相関し、トレードごとに次を算出する。
+
+- `total_spread_cost` = (Entry Spread + Exit Spread) [Point] × `point_value`
+- `entry_slippage_cost` = Entry Slippage [Point] × `point_value`
+- `total_cost` = `total_spread_cost` + `entry_slippage_cost` − `commission` − `swap`（commission/swapは符号付きのまま。swapがプラス＝スワップ収益の場合は総コストを押し下げる）
+- `pnl_before_cost` = `net_pnl` + `total_cost`（Spread・Slippage・Commission・Swapを除いた場合の推定損益）
+
+`point_value`が取得できない（0または欠落）トレードは、Spread/Slippageのコストを0として扱う（`cost_data_available=False`）。この場合`pnl_before_cost`は実際のコストを過小評価する可能性がある。
+
+```powershell
+$env:PYTHONPATH='.'
+python -m python.analysis.cost_sensitivity `
+  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-20200101.jsonl `
+  --initial-balance 1000000 `
+  --output build/cost-sensitivity-report
+```
+
+出力は`cost-sensitivity-report.json`（JSON契約は`contracts/cost-sensitivity-report.schema.json`を正とする）、`cost-sensitivity-report.md`、`trades-with-cost.csv`である。レポートは次を比較できる。
+
+- `cost_summary`: 総取引コスト・1トレードあたり平均コスト・Spread/Slippage/Commission/Swapそれぞれの合計
+- `performance_with_cost` / `performance_before_cost`: 実績（`net_pnl`）とコスト除外時の推定成績（`pnl_before_cost`）それぞれについて、既存`performance.analyze_performance`と同一定義のTrades・Net Profit・Profit Factor・Win Rate・Expectancy・Max Drawdownを算出（両者の差が大きいほど、コストがエッジを侵食している可能性を示唆する）
+- `cost_tier_breakdown`: `total_cost`の実データ三分位によるLow/Normal/High Cost別の同上指標（固定しきい値はハードコードせず、実際に発生したコスト分布から算出する）

@@ -13,6 +13,7 @@ from .performance import (
     SNAPSHOT_COLUMNS,
     TRADE_COLUMNS,
     PerformanceMetrics,
+    aggregate_trade_group,
     analyze_performance,
     normalize_closed_trades,
     normalize_equity_snapshots,
@@ -25,6 +26,8 @@ AUDIT_ROOT_FIELDS = {
 SUPPORTED_AUDIT_EVENTS = {
     "CANDIDATE", "EXTERNAL_DECISION", "RISK_DECISION", "ORDER_SUBMISSION", "DEAL",
     "POSITION_SNAPSHOT", "TRADE_CLOSED", "ACCOUNT_SNAPSHOT", "SYSTEM_ERROR",
+    "TRADE_ANALYTICS", "TIME_STOP_EXIT", "ENTRY_PIPELINE",
+    "ENTRY_TIMING_SETUP", "ENTRY_TIMING_TRADE",
 }
 
 
@@ -43,7 +46,7 @@ def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _read_json_lines(path: Path) -> list[dict[str, Any]]:
+def read_json_lines(path: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8-sig") as stream:
         for line_number, raw in enumerate(stream, start=1):
@@ -84,7 +87,8 @@ def _audit_inputs(records: list[dict[str, Any]]) -> AnalysisInputs:
         if record["event_type"] == "TRADE_CLOSED":
             required = {
                 "position_ticket", "direction", "open_time", "close_time", "volume",
-                "open_price", "close_price", "pnl", "commission", "swap",
+                "open_price", "close_price", "close_reason", "pnl", "commission", "swap",
+                "exit_spread_points", "point_value",
             }
             if set(payload) != required:
                 raise ValueError("TRADE_CLOSED payload fields do not match Phase 9")
@@ -120,7 +124,7 @@ def load_analysis_inputs(paths: Iterable[Path]) -> AnalysisInputs:
         if path.suffix.lower() == ".csv":
             trade_frames.append(normalize_closed_trades(pd.read_csv(path)))
         elif path.suffix.lower() in {".jsonl", ".ndjson"}:
-            records = _read_json_lines(path)
+            records = read_json_lines(path)
             if records and "event_type" not in records[0]:
                 trade_frames.append(normalize_closed_trades(pd.DataFrame(records)))
             else:
@@ -146,19 +150,10 @@ def load_snapshot_csv(path: Path) -> pd.DataFrame:
 def grouped_performance(trades: pd.DataFrame, group: str) -> list[dict[str, Any]]:
     if group not in {"strategy", "symbol"}:
         raise ValueError("group must be strategy or symbol")
-    rows: list[dict[str, Any]] = []
-    for name, part in trades.groupby(group, sort=True):
-        pnl = part["net_pnl"]
-        gross_profit = float(pnl[pnl > 0].sum())
-        gross_loss = float(pnl[pnl < 0].sum())
-        rows.append({
-            group: str(name), "number_of_trades": int(len(part)),
-            "net_profit": float(pnl.sum()),
-            "win_rate": float((pnl > 0).sum() / len(part)),
-            "profit_factor": None if gross_loss == 0 else gross_profit / abs(gross_loss),
-            "expectancy": float(pnl.mean()),
-        })
-    return rows
+    return [
+        {group: str(name), **aggregate_trade_group(part["net_pnl"])}
+        for name, part in trades.groupby(group, sort=True)
+    ]
 
 
 def monthly_performance(trades: pd.DataFrame, initial_balance: float) -> pd.DataFrame:

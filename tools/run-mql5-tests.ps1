@@ -11,7 +11,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $terminal = Join-Path $InstallPath "terminal64.exe"
 $configDir = Join-Path $repoRoot "mt5\test-config"
 $log = Join-Path $TerminalData ("MQL5\logs\" + (Get-Date -Format "yyyyMMdd") + ".log")
-$tests = @("TestTrendFollowingRules", "TestPositionSizer", "TestRiskGuards", "TestTradingRules", "TestDecisionApiRules", "TestAuditRules", "TestProductionSafetyRules")
+$tests = @("TestTrendFollowingRules", "TestMarketRegimeClassifier", "TestPositionSizer", "TestRiskGuards", "TestTradingRules", "TestDecisionApiRules", "TestAuditRules", "TestProductionSafetyRules", "TestEntryTimingAnalyzer")
 
 if (-not (Test-Path -LiteralPath $terminal)) { throw "Terminal not found: $terminal" }
 if (Get-Process terminal64 -ErrorAction SilentlyContinue) {

@@ -11,20 +11,38 @@
 #include <EaTradingSystem/External/MockDecisionProvider.mqh>
 #include <EaTradingSystem/External/TelemetryApiClient.mqh>
 #include <EaTradingSystem/Logging/TradeLogger.mqh>
+#include <EaTradingSystem/Logging/TradeAnalyticsTracker.mqh>
+#include <EaTradingSystem/Logging/EntryTimingAnalyzer.mqh>
 
 class CEAController
   {
 private:
+   // 決済直後はHistoryDealGetXxx(直近デタッチticket,...)の一部プロパティ(価格・volume・pnl等)が
+   // Strategy Tester上でまだ確定していないことがあるため、即時集計せずキューへ積み、
+   // 次Tick（履歴が確定した後）でTRADE_CLOSED・TRADE_ANALYTICSを確定させる。
+   struct SPendingClosedPosition
+     {
+      ulong  position_identifier;
+      ulong  position_ticket;
+      string symbol;
+      // OnTradeTransaction検知時点（決済Tick直後）のSpreadをベストエフォートで記録する。
+      // 決済自体はブローカー側SL/TP等で発生するため、約定Tickそのものの値ではない近似値。
+      double exit_spread_points;
+     };
+   SPendingClosedPosition      m_pending_closed_positions[];
    SEaConfig                   m_config;
    CTrendFollowingStrategy     m_strategy;
    CSignalEngine               m_signal_engine;
    CRiskManager                m_risk_manager;
    COrderManager               m_order_manager;
    CPositionManager            m_position_manager;
+   CTimeStopTracker            m_time_stop_tracker;
    CDecisionApiClient          m_decision_client;
    CMockDecisionProvider       m_mock_decision_provider;
    CTelemetryApiClient         m_telemetry_client;
    CTradeLogger                m_trade_logger;
+   CTradeAnalyticsTracker      m_analytics_tracker;
+   CEntryTimingAnalyzer        m_entry_timing_analyzer;
    bool                        m_initialized;
    datetime                    m_last_risk_error_log;
    string                      m_last_risk_lock_code;
@@ -79,6 +97,55 @@ private:
       Audit("SYSTEM_ERROR","system","",m_config.symbol,payload,true);
      }
 
+   // Entry Timing分析（分析専用、実注文なし）の完了イベントを監査ログへ記録する。
+   // Telemetryへは送らない（バー単位で発生しうる高頻度データのためローカル監査のみ）。
+   void AuditEntryTimingEvents(const SEntryTimingSetupEvent &setups[],const SEntryTimingTradeEvent &trades[])
+     {
+      for(int index=0; index<ArraySize(setups); index++)
+        {
+         string payload="{";
+         payload+="\"setup_bar_time\":"+JString(Iso8601Utc(setups[index].setup_bar_time))+",";
+         payload+="\"direction\":"+JString(SignalDirectionToString(setups[index].direction))+",";
+         payload+="\"pre_entry_mfe_price\":"+JNumber(setups[index].pre_entry_mfe_price)+",";
+         payload+="\"pre_entry_mfe_r\":"+JNumber(setups[index].pre_entry_mfe_r)+",";
+         payload+="\"pre_entry_mfe_time\":"+JString(Iso8601Utc(setups[index].pre_entry_mfe_time))+",";
+         payload+="\"pre_entry_mae_price\":"+JNumber(setups[index].pre_entry_mae_price)+",";
+         payload+="\"pre_entry_mae_r\":"+JNumber(setups[index].pre_entry_mae_r)+",";
+         payload+="\"pre_entry_mae_time\":"+JString(Iso8601Utc(setups[index].pre_entry_mae_time))+",";
+         payload+="\"trigger_found\":"+(setups[index].trigger_found ? "true" : "false")+",";
+         payload+="\"trigger_wait_bars\":"+IntegerToString(setups[index].trigger_wait_bars)+"}";
+         Audit("ENTRY_TIMING_SETUP",setups[index].setup_id,"",m_config.symbol,payload,false);
+        }
+      for(int index=0; index<ArraySize(trades); index++)
+        {
+         string checkpoints="{";
+         for(int checkpoint_index=0; checkpoint_index<CEntryTimingRules::CheckpointCount(); checkpoint_index++)
+           {
+            if(!trades[index].checkpoint_valid[checkpoint_index]) continue;
+            if(StringLen(checkpoints)>1) checkpoints+=",";
+            checkpoints+="\"bars_"+IntegerToString(CEntryTimingRules::CheckpointBars(checkpoint_index))+"\":"+
+                         JNumber(trades[index].checkpoint_r[checkpoint_index]);
+           }
+         checkpoints+="}";
+         string payload="{";
+         payload+="\"variant\":"+JString(EntryTimingVariantToString(trades[index].variant))+",";
+         payload+="\"entry_bar_time\":"+JString(Iso8601Utc(trades[index].entry_bar_time))+",";
+         payload+="\"direction\":"+JString(SignalDirectionToString(trades[index].direction))+",";
+         payload+="\"entry_price\":"+JNumber(trades[index].entry_price)+",";
+         payload+="\"stop_loss\":"+JNumber(trades[index].stop_loss)+",";
+         payload+="\"take_profit\":"+JNumber(trades[index].take_profit)+",";
+         payload+="\"wait_bars\":"+IntegerToString(trades[index].wait_bars)+",";
+         payload+="\"bars_held\":"+IntegerToString(trades[index].bars_held)+",";
+         payload+="\"mfe_r\":"+JNumber(trades[index].mfe_r)+",";
+         payload+="\"mae_r\":"+JNumber(trades[index].mae_r)+",";
+         payload+="\"exit_reason\":"+JString(trades[index].exit_reason)+",";
+         payload+="\"exit_price\":"+JNumber(trades[index].exit_price)+",";
+         payload+="\"pnl_r\":"+JNumber(trades[index].pnl_r)+",";
+         payload+="\"checkpoint_r\":"+checkpoints+"}";
+         Audit("ENTRY_TIMING_TRADE",trades[index].setup_id,"",m_config.symbol,payload,false);
+        }
+     }
+
    string CandidateForPosition(const ulong position_identifier,const string symbol)
      {
       if(position_identifier==0 || !HistorySelectByPosition(position_identifier)) return "unlinked";
@@ -89,8 +156,13 @@ private:
          if(deal==0) continue;
          const ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
          if(entry!=DEAL_ENTRY_IN && entry!=DEAL_ENTRY_INOUT) continue;
+         // Deal CommentはOrderManager::Submitがentry_bar時刻のみを格納する（trade_candidate_id
+         // 全体はMQL5のComment上限31文字を超えるため）。CANDIDATE/RISK_DECISION監査ログと同じ
+         // "{ea_id}-{symbol}-{unix_time}"形式へ復元する。
          const string comment=HistoryDealGetString(deal,DEAL_COMMENT);
-         if(CTradeLogRules::SafeCorrelationId(comment)) return comment;
+         if(!CTradeLogRules::SafeCorrelationId(comment) || StringLen(comment)<1) continue;
+         const string candidate_id=StringFormat("%s-%s-%s",m_config.ea_id,symbol,comment);
+         if(CTradeLogRules::SafeCorrelationId(candidate_id)) return candidate_id;
         }
       return "unlinked";
      }
@@ -102,6 +174,203 @@ private:
       if(entry==DEAL_ENTRY_INOUT) return "INOUT";
       if(entry==DEAL_ENTRY_OUT_BY) return "OUT_BY";
       return "UNKNOWN";
+     }
+
+   // 決済トリガー種別。SL/TPは注文設定どおりの自動決済、EXPERTはEA発注（Emergency Close等）による決済。
+   string DealReasonName(const ENUM_DEAL_REASON reason)
+     {
+      if(reason==DEAL_REASON_SL) return "SL";
+      if(reason==DEAL_REASON_TP) return "TP";
+      if(reason==DEAL_REASON_SO) return "SO";
+      if(reason==DEAL_REASON_EXPERT) return "EXPERT";
+      if(reason==DEAL_REASON_CLIENT) return "CLIENT";
+      if(reason==DEAL_REASON_MOBILE) return "MOBILE";
+      if(reason==DEAL_REASON_WEB) return "WEB";
+      if(reason==DEAL_REASON_ROLLOVER) return "ROLLOVER";
+      if(reason==DEAL_REASON_VMARGIN) return "VMARGIN";
+      if(reason==DEAL_REASON_SPLIT) return "SPLIT";
+      return "UNKNOWN";
+     }
+
+   // キュー済みの決済済みポジションを確定させ、TRADE_CLOSED・TRADE_ANALYTICSを記録する。
+   // 履歴がまだ確定していない場合はキューに残し、次回のTickで再試行する。
+   void ProcessPendingClosedPositions(void)
+     {
+      for(int index=ArraySize(m_pending_closed_positions)-1; index>=0; index--)
+        {
+         const ulong position_identifier=m_pending_closed_positions[index].position_identifier;
+         const ulong position_ticket=m_pending_closed_positions[index].position_ticket;
+         const string symbol=m_pending_closed_positions[index].symbol;
+         if(!HistorySelectByPosition(position_identifier))
+            continue;
+         const string candidate_id=CandidateForPosition(position_identifier,symbol);
+         datetime open_time=0,close_time=0;
+         double open_price=0.0,close_price=0.0,closed_volume=0.0,total_pnl=0.0,total_commission=0.0,total_swap=0.0;
+         string direction="BUY";
+         string close_reason="UNKNOWN";
+         const int total=HistoryDealsTotal();
+         for(int deal_index=0; deal_index<total; deal_index++)
+           {
+            const ulong deal=HistoryDealGetTicket(deal_index);
+            if(deal==0) continue;
+            const ENUM_DEAL_ENTRY deal_entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
+            if((deal_entry==DEAL_ENTRY_IN || deal_entry==DEAL_ENTRY_INOUT) && open_time==0)
+              {
+               open_time=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
+               open_price=HistoryDealGetDouble(deal,DEAL_PRICE);
+               direction=(HistoryDealGetInteger(deal,DEAL_TYPE)==DEAL_TYPE_BUY ? "BUY" : "SELL");
+              }
+            if(deal_entry==DEAL_ENTRY_OUT || deal_entry==DEAL_ENTRY_OUT_BY)
+              {
+               close_time=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
+               close_price=HistoryDealGetDouble(deal,DEAL_PRICE);
+               closed_volume+=HistoryDealGetDouble(deal,DEAL_VOLUME);
+               close_reason=DealReasonName((ENUM_DEAL_REASON)HistoryDealGetInteger(deal,DEAL_REASON));
+              }
+            total_pnl+=HistoryDealGetDouble(deal,DEAL_PROFIT)+HistoryDealGetDouble(deal,DEAL_COMMISSION)+
+                       HistoryDealGetDouble(deal,DEAL_SWAP)+HistoryDealGetDouble(deal,DEAL_FEE);
+            total_commission+=HistoryDealGetDouble(deal,DEAL_COMMISSION)+HistoryDealGetDouble(deal,DEAL_FEE);
+            total_swap+=HistoryDealGetDouble(deal,DEAL_SWAP);
+           }
+         if(open_time<=0 || close_time<=0)
+            continue; // 履歴がまだ確定していない可能性。キューに残し次回再試行する。
+
+         // コスト感応度分析用: このトレードのVolumeにおける「1 Point変動あたりの口座通貨換算値」を
+         // OrderCalcProfit（PositionSizerと同じAPI）で算出する。CANDIDATE.spread_pointsや
+         // ORDER_SUBMISSION.slippage_pointsをPython側で金額換算する際に使用する。算出できない場合は0。
+         double point_value=0.0;
+         const double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+         if(point>0.0 && closed_volume>0.0 && open_price>0.0)
+           {
+            const ENUM_ORDER_TYPE calc_type=(direction=="BUY" ? ORDER_TYPE_BUY : ORDER_TYPE_SELL);
+            double profit_for_one_point=0.0;
+            ResetLastError();
+            if(OrderCalcProfit(calc_type,symbol,closed_volume,open_price,open_price+point,profit_for_one_point) &&
+               MathIsValidNumber(profit_for_one_point))
+               point_value=MathAbs(profit_for_one_point);
+           }
+
+         string closed_payload="{";
+         closed_payload+="\"position_ticket\":"+JString(StringFormat("%I64u",position_ticket))+",";
+         closed_payload+="\"direction\":"+JString(direction)+",";
+         closed_payload+="\"open_time\":"+JString(Iso8601Utc(open_time))+",";
+         closed_payload+="\"close_time\":"+JString(Iso8601Utc(close_time))+",";
+         closed_payload+="\"volume\":"+JNumber(closed_volume)+",";
+         closed_payload+="\"open_price\":"+JNumber(open_price)+",";
+         closed_payload+="\"close_price\":"+JNumber(close_price)+",";
+         closed_payload+="\"close_reason\":"+JString(close_reason)+",";
+         closed_payload+="\"pnl\":"+JNumber(total_pnl)+",";
+         closed_payload+="\"commission\":"+JNumber(total_commission)+",";
+         closed_payload+="\"swap\":"+JNumber(total_swap)+",";
+         closed_payload+="\"exit_spread_points\":"+JNumber(m_pending_closed_positions[index].exit_spread_points)+",";
+         closed_payload+="\"point_value\":"+JNumber(point_value)+"}";
+         Audit("TRADE_CLOSED",candidate_id,"",symbol,closed_payload,true);
+
+         double analytics_mfe=0.0,analytics_mae=0.0;
+         if(m_analytics_tracker.Finalize(position_ticket,analytics_mfe,analytics_mae))
+           {
+            string analytics_payload="{";
+            analytics_payload+="\"position_ticket\":"+JString(StringFormat("%I64u",position_ticket))+",";
+            analytics_payload+="\"mfe\":"+JNumber(analytics_mfe)+",";
+            analytics_payload+="\"mae\":"+JNumber(analytics_mae)+"}";
+            Audit("TRADE_ANALYTICS",candidate_id,"",symbol,analytics_payload,true);
+           }
+
+         const int last=ArraySize(m_pending_closed_positions)-1;
+         m_pending_closed_positions[index]=m_pending_closed_positions[last];
+         ArrayResize(m_pending_closed_positions,last);
+        }
+     }
+
+   // 保有ポジションのエントリー根拠（トレンド/ADX）を再検証し、消失していれば早期決済する。
+   // PositionManagerはメカニズム（決済実行）のみを持ち、判断（Strategy参照）はここで行う
+   // （Strategyから直接発注処理を呼び出さない、という責務境界を維持するため）。
+   void EvaluateSignalInvalidationExits(void)
+     {
+      if(!m_config.enable_signal_invalidation_exit || !m_config.enable_trade_mutations)
+         return;
+      const int total=PositionsTotal();
+      for(int index=0; index<total; index++)
+        {
+         const ulong ticket=PositionGetTicket(index);
+         if(ticket==0) continue;
+         if(!CPositionProtectionRules::IsManagedPosition(PositionGetInteger(POSITION_MAGIC),m_config.magic_number))
+            continue;
+         const ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         const ESignalDirection direction=(type==POSITION_TYPE_BUY ? SIGNAL_DIRECTION_BUY : SIGNAL_DIRECTION_SELL);
+         string reason_code;
+         if(!m_strategy.IsTrendStillValid(direction,reason_code))
+           {
+            string close_error;
+            if(!m_position_manager.CloseOnSignalInvalidation(ticket,reason_code,close_error))
+               PrintFormat("SIGNAL_EXIT_FAILED position=%I64u code=%s",ticket,close_error);
+           }
+        }
+     }
+
+   // Entry後、entry_timeframe換算で何本の確定足が経過したかを返す（look-ahead biasを避けるため、
+   // 当日の未確定足は本数へ含めない）。Bars(symbol,timeframe,open_time,TimeCurrent())は境界を含むため-1する。
+   int ElapsedClosedBars(const string symbol,const ENUM_TIMEFRAMES timeframe,const datetime open_time)
+     {
+      const int bars=Bars(symbol,timeframe,open_time,TimeCurrent());
+      return bars>0 ? bars-1 : 0;
+     }
+
+   // 保有ポジションの経過バー数（entry_timeframe換算）が上限へ達したら、必要に応じて最低MFE到達判定を経て
+   // 決済する。判断（経過バー数・MFE）はここで行い、メカニズム（決済実行）はPositionManagerへ委ねる
+   // （EvaluateSignalInvalidationExitsと同じ責務境界）。
+   void EvaluateTimeStopExits(void)
+     {
+      if(!m_config.enable_time_stop || !m_config.enable_trade_mutations)
+         return;
+      const int total=PositionsTotal();
+      for(int index=0; index<total; index++)
+        {
+         const ulong ticket=PositionGetTicket(index);
+         if(ticket==0) continue;
+         if(!CPositionProtectionRules::IsManagedPosition(PositionGetInteger(POSITION_MAGIC),m_config.magic_number))
+            continue;
+         const double stop_loss=PositionGetDouble(POSITION_SL);
+         if(stop_loss<=0.0) continue; // 保護SL未確定のpositionはPositionManager::Monitorの緊急決済側の責務
+         const string symbol=PositionGetString(POSITION_SYMBOL);
+         const ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         const double open_price=PositionGetDouble(POSITION_PRICE_OPEN);
+         const datetime open_time=(datetime)PositionGetInteger(POSITION_TIME);
+         const ulong position_identifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+         MqlTick tick;
+         if(!SymbolInfoTick(symbol,tick)) continue;
+         const double current_price=(type==POSITION_TYPE_BUY ? tick.bid : tick.ask);
+
+         double initial_stop_loss,peak_favorable_price;
+         m_time_stop_tracker.Update(ticket,type,stop_loss,current_price,initial_stop_loss,peak_favorable_price);
+
+         const int elapsed_bars=ElapsedClosedBars(symbol,m_config.entry_timeframe,open_time);
+         if(!CTimeStopRules::HasExceededMaxHoldingBars(elapsed_bars,m_config.max_holding_bars))
+            continue;
+         if(m_config.time_stop_require_min_mfe &&
+            CTimeStopRules::HasReachedMinMfeR(type,open_price,initial_stop_loss,peak_favorable_price,
+                                              m_config.time_stop_min_mfe_r_multiple))
+            continue; // 十分なMFEに到達済み。通常のSL/TP/建値ストップへ委ねる
+
+         const string reason_code=(m_config.time_stop_require_min_mfe ?
+            "MAX_HOLDING_BARS_MIN_MFE_NOT_REACHED" : "MAX_HOLDING_BARS");
+         string close_error;
+         if(!m_position_manager.CloseOnTimeStop(ticket,reason_code,close_error))
+           { PrintFormat("TIME_STOP_EXIT_FAILED position=%I64u code=%s",ticket,close_error); continue; }
+         m_time_stop_tracker.Remove(ticket);
+
+         const double risk_distance=(type==POSITION_TYPE_BUY ? open_price-initial_stop_loss : initial_stop_loss-open_price);
+         const double favorable_distance=(type==POSITION_TYPE_BUY ? peak_favorable_price-open_price : open_price-peak_favorable_price);
+         const double mfe_r_multiple=(risk_distance>0.0 ? favorable_distance/risk_distance : 0.0);
+         const string candidate_id=CandidateForPosition(position_identifier,symbol);
+         string payload="{";
+         payload+="\"position_ticket\":"+JString(StringFormat("%I64u",ticket))+",";
+         payload+="\"reason_code\":"+JString(reason_code)+",";
+         payload+="\"elapsed_bars\":"+IntegerToString(elapsed_bars)+",";
+         payload+="\"mfe_r_multiple\":"+JNumber(mfe_r_multiple)+"}";
+         // ローカル監査のみ。Time Stop識別は分析専用の新規イベントであり、既存TRADE_CLOSEDの契約は変更しない。
+         Audit("TIME_STOP_EXIT",candidate_id,"",symbol,payload,false);
+        }
      }
 
    void AuditDailySnapshots(void)
@@ -165,6 +434,7 @@ public:
       string telemetry_error;
       if(!m_telemetry_client.Initialize(m_config,telemetry_error))
          PrintFormat("TELEMETRY_INIT_FAILED code=%s trading_impact=none",telemetry_error);
+      m_analytics_tracker.Initialize(m_config.magic_number);
       if(!m_strategy.Initialize(m_config,error))
          return false;
       if(!m_signal_engine.Initialize(GetPointer(m_strategy),m_config.symbol,m_config.entry_timeframe,error))
@@ -178,6 +448,11 @@ public:
          return false;
         }
       if(!m_order_manager.Initialize(m_config,error) || !m_position_manager.Initialize(m_config,error))
+        {
+         m_strategy.Shutdown();
+         return false;
+        }
+      if(!m_entry_timing_analyzer.Initialize(m_config,error))
         {
          m_strategy.Shutdown();
          return false;
@@ -208,6 +483,7 @@ public:
       m_trade_logger.Shutdown();
       m_decision_client.Shutdown();
       m_mock_decision_provider.Shutdown();
+      m_entry_timing_analyzer.Shutdown();
       m_strategy.Shutdown();
      }
 
@@ -230,6 +506,22 @@ public:
             m_last_position_error_log=position_now;
            }
         }
+      // 分析専用のMFE/MAE追跡。既存ポジション管理の判断・発注には一切影響しない。
+      m_analytics_tracker.Update();
+      // 分析専用。Entry Timing比較（Setup成立時即時/1本待ち/2本待ち/Trigger待ち）をShadow Tradeとして
+      // 並行シミュレートする。実注文は一切発生しない。InpEnableEntryTimingAnalysis=false（既定）では即return。
+      SEntryTimingSetupEvent entry_timing_setups[];
+      SEntryTimingTradeEvent entry_timing_trades[];
+      m_entry_timing_analyzer.OnTick(entry_timing_setups,entry_timing_trades);
+      AuditEntryTimingEvents(entry_timing_setups,entry_timing_trades);
+      // 分析専用。前Tickで決済検知しキューへ積んだポジションの履歴を確定させる。
+      ProcessPendingClosedPositions();
+      // 既存ポジション管理の一部。エントリー根拠（トレンド/ADX）が消失した保有ポジションを
+      // 満期(SL/TP)を待たず早期決済する。新規候補評価より先に行う。
+      EvaluateSignalInvalidationExits();
+      // 既存ポジション管理の一部。Entry後の経過バー数が上限を超えたポジションを、シグナルの
+      // 有効期限切れとみなし早期決済する（必要に応じ最低MFE到達判定を伴う）。
+      EvaluateTimeStopExits();
 
       string risk_lock_code,risk_monitor_error;
       if(!m_risk_manager.Monitor(risk_lock_code,risk_monitor_error))
@@ -275,6 +567,27 @@ public:
          AuditSystemError("SIGNAL_ENGINE",result.reason_code,result.reason);
          return;
         }
+      // 段階的Entry判定パイプラインの全評価結果（成立・否決を問わず毎確定足）を記録する診断専用イベント。
+      // InpEntryUseStagedPipeline=trueの場合のみ記録し、既存方式（既定値）では監査ログ量を増やさない。
+      if(m_config.entry_use_staged_pipeline)
+        {
+         const string pipeline_id=SafeIdentifier(
+            StringFormat("%s-%s-%I64d",m_config.ea_id,result.symbol,(long)result.signal_bar_time),"unlinked");
+         string pipeline_payload="{";
+         pipeline_payload+="\"stage_market_regime\":"+JString(result.stage_market_regime)+",";
+         pipeline_payload+="\"stage_market_regime_passed\":"+(result.stage_market_regime_passed ? "true" : "false")+",";
+         pipeline_payload+="\"stage_htf_bias\":"+JString(result.stage_htf_bias)+",";
+         pipeline_payload+="\"stage_htf_bias_passed\":"+(result.stage_htf_bias_passed ? "true" : "false")+",";
+         pipeline_payload+="\"stage_breakout_setup_passed\":"+(result.stage_breakout_setup_passed ? "true" : "false")+",";
+         pipeline_payload+="\"stage_breakout_trigger_passed\":"+(result.stage_breakout_trigger_passed ? "true" : "false")+",";
+         pipeline_payload+="\"stage_pullback_setup_passed\":"+(result.stage_pullback_setup_passed ? "true" : "false")+",";
+         pipeline_payload+="\"stage_pullback_trigger_passed\":"+(result.stage_pullback_trigger_passed ? "true" : "false")+",";
+         pipeline_payload+="\"final_status\":"+JString(result.status==SIGNAL_STATUS_CANDIDATE ? "CANDIDATE" : "REJECTED")+",";
+         pipeline_payload+="\"reason_code\":"+JString(result.reason_code)+",";
+         pipeline_payload+="\"reason\":"+JString(result.reason)+"}";
+         Audit("ENTRY_PIPELINE",pipeline_id,"",result.symbol,pipeline_payload,false);
+        }
+
       if(result.status!=SIGNAL_STATUS_CANDIDATE)
         {
          PrintFormat("SIGNAL_NONE symbol=%s bar=%s code=%s reason=%s",m_config.symbol,
@@ -289,6 +602,14 @@ public:
                   DoubleToString(result.entry_price,digits),DoubleToString(result.stop_loss,digits),
                   DoubleToString(result.take_profit,digits),
                   result.reason_code,result.reason);
+      // 分析用の市場コンテキスト（ATR・ADX・スプレッド・曜日）。売買判断には使用しない。
+      MqlTick candidate_tick;
+      double candidate_spread_points=0.0;
+      if(SymbolInfoTick(result.symbol,candidate_tick))
+        {
+         const double candidate_point=SymbolInfoDouble(result.symbol,SYMBOL_POINT);
+         if(candidate_point>0.0) candidate_spread_points=(candidate_tick.ask-candidate_tick.bid)/candidate_point;
+        }
       string candidate_payload="{";
       candidate_payload+="\"direction\":"+JString(SignalDirectionToString(result.direction))+",";
       candidate_payload+="\"pattern\":"+JString(EntryPatternToString(result.entry_pattern))+",";
@@ -296,6 +617,21 @@ public:
       candidate_payload+="\"stop_loss\":"+JNumber(result.stop_loss)+",";
       candidate_payload+="\"take_profit\":"+JNumber(result.take_profit)+",";
       candidate_payload+="\"risk_reward_ratio\":"+JNumber(result.risk_reward_ratio)+",";
+      candidate_payload+="\"atr\":"+JNumber(result.atr)+",";
+      candidate_payload+="\"adx\":"+JNumber(result.adx)+",";
+      candidate_payload+="\"spread_points\":"+JNumber(candidate_spread_points)+",";
+      candidate_payload+="\"market_regime_trend\":"+JString(MarketRegimeTrendToString(result.market_regime_trend))+",";
+      candidate_payload+="\"market_regime_volatility\":"+JString(MarketRegimeVolatilityToString(result.market_regime_volatility))+",";
+      candidate_payload+="\"hour\":"+IntegerToString(result.hour)+",";
+      candidate_payload+="\"day_of_week\":"+IntegerToString(result.day_of_week)+",";
+      // 段階的Entry判定パイプラインの各ステージ結果（InpEntryUseStagedPipelineの有効・無効に関わらず記録、分析専用）。
+      candidate_payload+="\"staged_pipeline_used\":"+(result.staged_pipeline_used ? "true" : "false")+",";
+      candidate_payload+="\"stage_market_regime\":"+JString(result.stage_market_regime)+",";
+      candidate_payload+="\"stage_htf_bias\":"+JString(result.stage_htf_bias)+",";
+      candidate_payload+="\"stage_breakout_setup_passed\":"+(result.stage_breakout_setup_passed ? "true" : "false")+",";
+      candidate_payload+="\"stage_breakout_trigger_passed\":"+(result.stage_breakout_trigger_passed ? "true" : "false")+",";
+      candidate_payload+="\"stage_pullback_setup_passed\":"+(result.stage_pullback_setup_passed ? "true" : "false")+",";
+      candidate_payload+="\"stage_pullback_trigger_passed\":"+(result.stage_pullback_trigger_passed ? "true" : "false")+",";
       candidate_payload+="\"reason_code\":"+JString(result.reason_code)+",";
       candidate_payload+="\"reason\":"+JString(result.reason)+"}";
       Audit("CANDIDATE",result.trade_candidate_id,"",result.symbol,candidate_payload,false);
@@ -399,7 +735,17 @@ public:
       const string symbol=HistoryDealGetString(transaction.deal,DEAL_SYMBOL);
       const ulong position_identifier=(ulong)HistoryDealGetInteger(transaction.deal,DEAL_POSITION_ID);
       const string candidate_id=CandidateForPosition(position_identifier,symbol);
-      const ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(transaction.deal,DEAL_ENTRY);
+      // このデタッチ自身の価格・volume・entry種別は、SL/TP等の自動決済デタッチではDEAL_ADD通知の時点で
+      // HistoryDealGetXxx(transaction.deal,...)がまだ確定していないことがある（Strategy Testerで確認済み）。
+      // MqlTradeTransaction構造体が直接持つ価格・volumeと、ライブのポジション残存有無で代替する。
+      // 反転（ドテン）は想定しないため、ライブのポジション残存有無によるIN/OUTの二値判定で十分。
+      // 部分決済（PositionManager::ClosePartial）のデタッチもここではINと分類されるが（決済後も
+      // ポジションが残存するため）、TRADE_CLOSED側のclosed_volume/pnlはポジションの全デタッチを
+      // 合算するため、最終的な決済集計への影響はない（このDEALイベント自体の表示上の簡略化に留まる）。
+      const bool position_still_open=PositionSelectByTicket(transaction.position);
+      const ENUM_DEAL_ENTRY entry=(position_still_open ? DEAL_ENTRY_IN : DEAL_ENTRY_OUT);
+      // pnl（損益）はHistory側の値に依存するため、自動決済デタッチでは0で記録される場合がある既知の制約。
+      // 決済済みトレードの正本はTRADE_CLOSED（ProcessPendingClosedPositionsで次Tick確定）を参照する。
       const double pnl=HistoryDealGetDouble(transaction.deal,DEAL_PROFIT)+
                        HistoryDealGetDouble(transaction.deal,DEAL_COMMISSION)+
                        HistoryDealGetDouble(transaction.deal,DEAL_SWAP)+
@@ -409,55 +755,29 @@ public:
       deal_payload+="\"order_ticket\":"+JString(StringFormat("%I64u",transaction.order))+",";
       deal_payload+="\"position_ticket\":"+JString(StringFormat("%I64u",transaction.position))+",";
       deal_payload+="\"entry\":"+JString(DealEntryName(entry))+",";
-      deal_payload+="\"price\":"+JNumber(HistoryDealGetDouble(transaction.deal,DEAL_PRICE))+",";
-      deal_payload+="\"volume\":"+JNumber(HistoryDealGetDouble(transaction.deal,DEAL_VOLUME))+",";
+      deal_payload+="\"price\":"+JNumber(transaction.price)+",";
+      deal_payload+="\"volume\":"+JNumber(transaction.volume)+",";
       deal_payload+="\"pnl\":"+JNumber(pnl)+"}";
       Audit("DEAL",candidate_id,"",symbol,deal_payload,true);
 
-      if((entry==DEAL_ENTRY_OUT || entry==DEAL_ENTRY_OUT_BY) && !PositionSelectByTicket(transaction.position) &&
-         HistorySelectByPosition(position_identifier))
+      if(entry==DEAL_ENTRY_OUT)
         {
-         datetime open_time=0,close_time=0;
-         double open_price=0.0,close_price=0.0,closed_volume=0.0,total_pnl=0.0,total_commission=0.0,total_swap=0.0;
-         string direction="BUY";
-         const int total=HistoryDealsTotal();
-         for(int index=0; index<total; index++)
+         const int slot=ArraySize(m_pending_closed_positions);
+         ArrayResize(m_pending_closed_positions,slot+1);
+         m_pending_closed_positions[slot].position_identifier=position_identifier;
+         m_pending_closed_positions[slot].position_ticket=transaction.position;
+         m_pending_closed_positions[slot].symbol=symbol;
+         // コスト感応度分析用: 約定Tickそのものではないが、決済検知直後のSpreadをベストエフォートで記録する。
+         MqlTick exit_tick;
+         double exit_spread_points=0.0;
+         if(SymbolInfoTick(symbol,exit_tick))
            {
-            const ulong deal=HistoryDealGetTicket(index);
-            if(deal==0) continue;
-            const ENUM_DEAL_ENTRY deal_entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
-            if((deal_entry==DEAL_ENTRY_IN || deal_entry==DEAL_ENTRY_INOUT) && open_time==0)
-              {
-               open_time=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
-               open_price=HistoryDealGetDouble(deal,DEAL_PRICE);
-               direction=(HistoryDealGetInteger(deal,DEAL_TYPE)==DEAL_TYPE_BUY ? "BUY" : "SELL");
-              }
-            if(deal_entry==DEAL_ENTRY_OUT || deal_entry==DEAL_ENTRY_OUT_BY)
-              {
-               close_time=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
-               close_price=HistoryDealGetDouble(deal,DEAL_PRICE);
-               closed_volume+=HistoryDealGetDouble(deal,DEAL_VOLUME);
-              }
-            total_pnl+=HistoryDealGetDouble(deal,DEAL_PROFIT)+HistoryDealGetDouble(deal,DEAL_COMMISSION)+
-                       HistoryDealGetDouble(deal,DEAL_SWAP)+HistoryDealGetDouble(deal,DEAL_FEE);
-            total_commission+=HistoryDealGetDouble(deal,DEAL_COMMISSION)+HistoryDealGetDouble(deal,DEAL_FEE);
-            total_swap+=HistoryDealGetDouble(deal,DEAL_SWAP);
+            const double exit_point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+            if(exit_point>0.0) exit_spread_points=(exit_tick.ask-exit_tick.bid)/exit_point;
            }
-         if(open_time>0 && close_time>0)
-           {
-            string closed_payload="{";
-            closed_payload+="\"position_ticket\":"+JString(StringFormat("%I64u",transaction.position))+",";
-            closed_payload+="\"direction\":"+JString(direction)+",";
-            closed_payload+="\"open_time\":"+JString(Iso8601Utc(open_time))+",";
-            closed_payload+="\"close_time\":"+JString(Iso8601Utc(close_time))+",";
-            closed_payload+="\"volume\":"+JNumber(closed_volume)+",";
-            closed_payload+="\"open_price\":"+JNumber(open_price)+",";
-            closed_payload+="\"close_price\":"+JNumber(close_price)+",";
-            closed_payload+="\"pnl\":"+JNumber(total_pnl)+",";
-            closed_payload+="\"commission\":"+JNumber(total_commission)+",";
-            closed_payload+="\"swap\":"+JNumber(total_swap)+"}";
-            Audit("TRADE_CLOSED",candidate_id,"",symbol,closed_payload,true);
-           }
+         m_pending_closed_positions[slot].exit_spread_points=exit_spread_points;
+         // 履歴が既に確定している場合に備え、今Tick内でも即時確定を試みる（次Tickを待たせない）。
+         ProcessPendingClosedPositions();
         }
      }
   };

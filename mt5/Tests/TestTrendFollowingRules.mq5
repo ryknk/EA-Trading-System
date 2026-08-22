@@ -34,12 +34,39 @@ void OnStart(void)
               "buy breakout boundary is strict");
    AssertTrue(CTrendFollowingRules::IsBreakout(SIGNAL_DIRECTION_SELL,1.1790,1.2000,1.1800,0.0001),
               "sell breakout accepted");
-   AssertTrue(CTrendFollowingRules::IsPullback(SIGNAL_DIRECTION_BUY,1.1010,1.1060,1.0990,1.1050,1.1000,0.0100,0.25),
-              "buy pullback accepted");
-   AssertTrue(CTrendFollowingRules::IsPullback(SIGNAL_DIRECTION_SELL,1.0990,1.1010,1.0940,1.0950,1.1000,0.0100,0.25),
-              "sell pullback accepted");
-   AssertTrue(!CTrendFollowingRules::IsPullback(SIGNAL_DIRECTION_NONE,1.0,1.1,0.9,1.0,1.0,0.1,0.25),
+   AssertTrue(CTrendFollowingRules::IsPullback(SIGNAL_DIRECTION_BUY,1.1002,1.1012,1.1000,1.1010,1.1006,
+                                                1.1005,1.0995,1.1000,0.0100,0.15),
+              "buy pullback accepted with 2-bar confirmation");
+   AssertTrue(CTrendFollowingRules::IsPullback(SIGNAL_DIRECTION_SELL,1.0993,1.0995,1.0980,1.0985,1.0994,
+                                                1.1005,1.0995,1.1000,0.0100,0.15),
+              "sell pullback accepted with 2-bar confirmation");
+   AssertTrue(!CTrendFollowingRules::IsPullback(SIGNAL_DIRECTION_BUY,1.1002,1.1012,1.1000,1.1010,1.1006,
+                                                1.1015,1.0995,1.1000,0.0100,0.15),
+              "buy pullback rejected when entry close fails to break touch bar high");
+   AssertTrue(!CTrendFollowingRules::IsPullback(SIGNAL_DIRECTION_NONE,1.0,1.1,0.9,1.0,1.0,
+                                                1.05,0.95,1.0,0.1,0.15),
               "no direction rejected");
+
+   // 段階的Entry判定パイプライン専用: Setup(押し目/戻り成立)とTrigger(再加速)への分解が、
+   // 既存のIsPullbackと数式上等価であることを検証する。
+   AssertTrue(CTrendFollowingRules::IsPullbackSetup(SIGNAL_DIRECTION_BUY,1.1005,1.0995,1.1000,0.0100,0.15),
+              "buy pullback setup accepted when touch bar is near EMA");
+   AssertTrue(CTrendFollowingRules::IsPullbackTrigger(SIGNAL_DIRECTION_BUY,1.1002,1.1010,1.1006,1.1005,1.0995),
+              "buy pullback trigger accepted when entry bar reaccelerates");
+   AssertTrue(!CTrendFollowingRules::IsPullbackSetup(SIGNAL_DIRECTION_BUY,1.2005,1.1995,1.1000,0.0100,0.15),
+              "buy pullback setup rejected when touch bar is far from EMA");
+   AssertTrue(!CTrendFollowingRules::IsPullbackTrigger(SIGNAL_DIRECTION_BUY,1.1002,1.1010,1.1006,1.1015,1.0995),
+              "buy pullback trigger rejected when entry close fails to break touch bar high");
+   AssertTrue((CTrendFollowingRules::IsPullbackSetup(SIGNAL_DIRECTION_BUY,1.1005,1.0995,1.1000,0.0100,0.15)&&
+               CTrendFollowingRules::IsPullbackTrigger(SIGNAL_DIRECTION_BUY,1.1002,1.1010,1.1006,1.1005,1.0995))==
+              CTrendFollowingRules::IsPullback(SIGNAL_DIRECTION_BUY,1.1002,1.1012,1.1000,1.1010,1.1006,
+                                                1.1005,1.0995,1.1000,0.0100,0.15),
+              "setup AND trigger equals composed IsPullback for accepted buy case");
+   AssertTrue((CTrendFollowingRules::IsPullbackSetup(SIGNAL_DIRECTION_BUY,1.1015,1.0995,1.1000,0.0100,0.15)&&
+               CTrendFollowingRules::IsPullbackTrigger(SIGNAL_DIRECTION_BUY,1.1002,1.1010,1.1006,1.1015,1.0995))==
+              CTrendFollowingRules::IsPullback(SIGNAL_DIRECTION_BUY,1.1002,1.1012,1.1000,1.1010,1.1006,
+                                                1.1015,1.0995,1.1000,0.0100,0.15),
+              "setup AND trigger equals composed IsPullback for rejected buy case");
 
    if(g_failures==0)
       Print("TEST_SUITE_PASS TestTrendFollowingRules");

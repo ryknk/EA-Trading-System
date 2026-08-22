@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/v1/cost-sensitivity-report.schema.json",
+  "title": "CostSensitivityReportV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "currency", "definitions", "cost_summary", "performance_with_cost", "performance_before_cost", "cost_tier_breakdown"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "currency": {"const": "ACCOUNT_CURRENCY"},
+    "definitions": {"type": "object"},
+    "cost_summary": {"type": "object"},
+    "performance_with_cost": {"type": ["object", "null"]},
+    "performance_before_cost": {"type": ["object", "null"]},
+    "cost_tier_breakdown": {"type": "array"}
+  }
+}

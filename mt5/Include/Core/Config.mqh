@@ -20,10 +20,20 @@ struct SEaConfig
    double            rsi_sell_min;
    double            rsi_sell_max;
    double            minimum_atr_points;
+   int               adx_period;
+   double            minimum_adx;
+   double            minimum_confirmation_adx;
    double            stop_atr_multiple;
    double            risk_reward_ratio;
    bool              enable_breakout;
    bool              enable_pullback;
+   bool              entry_use_staged_pipeline;
+   bool              entry_require_market_regime_trend;
+   double            regime_trend_adx_min;
+   int               regime_atr_baseline_period;
+   double            regime_high_volatility_ratio;
+   double            regime_low_volatility_ratio;
+   int               regime_ma_slope_lookback;
    double            risk_per_trade_rate;
    double            daily_loss_limit_rate;
    double            max_drawdown_rate;
@@ -36,6 +46,19 @@ struct SEaConfig
    bool              strategy_enabled;
    bool              enable_trade_mutations;
    bool              close_unprotected_positions;
+   bool              enable_breakeven_stop;
+   double            breakeven_trigger_r_multiple;
+   bool              enable_signal_invalidation_exit;
+   bool              signal_exit_check_trend;
+   bool              signal_exit_check_h1_adx;
+   bool              signal_exit_check_h4_adx;
+   bool              enable_time_stop;
+   int               max_holding_bars;
+   bool              time_stop_require_min_mfe;
+   double            time_stop_min_mfe_r_multiple;
+   bool              enable_entry_timing_analysis;
+   int               entry_timing_max_wait_bars;
+   int               entry_timing_max_holding_bars;
    bool              decision_api_enabled;
    string            decision_api_url;
    string            decision_api_key_id;
@@ -68,16 +91,26 @@ void SetDefaultConfig(SEaConfig &config)
    config.atr_period                = 14;
    config.breakout_lookback         = 20;
    config.breakout_buffer_points    = 0.0;
-   config.pullback_atr_tolerance    = 0.25;
+   config.pullback_atr_tolerance    = 0.15;
    config.rsi_buy_min               = 50.0;
    config.rsi_buy_max               = 75.0;
    config.rsi_sell_min              = 25.0;
    config.rsi_sell_max              = 50.0;
    config.minimum_atr_points        = 10.0;
+   config.adx_period                = 14;
+   config.minimum_adx               = 20.0;
+   config.minimum_confirmation_adx  = 20.0;
    config.stop_atr_multiple         = 2.0;
    config.risk_reward_ratio         = 2.0;
    config.enable_breakout           = true;
    config.enable_pullback           = true;
+   config.entry_use_staged_pipeline = false;
+   config.entry_require_market_regime_trend = true;
+   config.regime_trend_adx_min      = 20.0;
+   config.regime_atr_baseline_period = 50;
+   config.regime_high_volatility_ratio = 1.3;
+   config.regime_low_volatility_ratio  = 0.7;
+   config.regime_ma_slope_lookback  = 5;
    config.risk_per_trade_rate       = 0.005;
    config.daily_loss_limit_rate     = 0.02;
    config.max_drawdown_rate         = 0.10;
@@ -90,6 +123,19 @@ void SetDefaultConfig(SEaConfig &config)
    config.strategy_enabled          = true;
    config.enable_trade_mutations    = false;
    config.close_unprotected_positions = true;
+   config.enable_breakeven_stop     = true;
+   config.breakeven_trigger_r_multiple = 1.0;
+   config.enable_signal_invalidation_exit = true;
+   config.signal_exit_check_trend   = true;
+   config.signal_exit_check_h1_adx  = true;
+   config.signal_exit_check_h4_adx  = true;
+   config.enable_time_stop          = true;
+   config.max_holding_bars          = 20;
+   config.time_stop_require_min_mfe = false;
+   config.time_stop_min_mfe_r_multiple = 0.5;
+   config.enable_entry_timing_analysis = false;
+   config.entry_timing_max_wait_bars   = 6;
+   config.entry_timing_max_holding_bars = 20;
    config.decision_api_enabled       = false;
    config.decision_api_url           = "";
    config.decision_api_key_id        = "";
@@ -140,8 +186,18 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_SELL_RSI_RANGE"; return false; }
    if(config.minimum_atr_points<0.0 || config.stop_atr_multiple<=0.0 || config.risk_reward_ratio<=0.0)
      { error="INVALID_RISK_GEOMETRY"; return false; }
+   if(config.adx_period<2 || config.minimum_adx<0.0 || config.minimum_adx>100.0 ||
+      config.minimum_confirmation_adx<0.0 || config.minimum_confirmation_adx>100.0)
+     { error="INVALID_TREND_STRENGTH_FILTER"; return false; }
    if(!config.enable_breakout && !config.enable_pullback)
      { error="NO_ENTRY_PATTERN_ENABLED"; return false; }
+   if(config.regime_trend_adx_min<0.0 || config.regime_trend_adx_min>100.0)
+     { error="INVALID_REGIME_TREND_ADX_MIN"; return false; }
+   if(config.regime_atr_baseline_period<2 || config.regime_ma_slope_lookback<1)
+     { error="INVALID_REGIME_LOOKBACK_PERIOD"; return false; }
+   if(config.regime_high_volatility_ratio<=1.0 ||
+      config.regime_low_volatility_ratio<=0.0 || config.regime_low_volatility_ratio>=1.0)
+     { error="INVALID_REGIME_VOLATILITY_RATIO"; return false; }
    if(config.risk_per_trade_rate<=0.0 || config.risk_per_trade_rate>0.05)
      { error="INVALID_TRADE_RISK_RATE"; return false; }
    if(config.daily_loss_limit_rate<=0.0 || config.daily_loss_limit_rate>0.20)
@@ -150,6 +206,18 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_DRAWDOWN_RATE"; return false; }
    if(config.max_open_positions<1 || config.max_spread_points<=0.0)
      { error="INVALID_EXPOSURE_OR_SPREAD_LIMIT"; return false; }
+   if(config.enable_breakeven_stop && config.breakeven_trigger_r_multiple<=0.0)
+     { error="INVALID_BREAKEVEN_TRIGGER"; return false; }
+   if(config.enable_signal_invalidation_exit &&
+      !config.signal_exit_check_trend && !config.signal_exit_check_h1_adx && !config.signal_exit_check_h4_adx)
+     { error="NO_SIGNAL_EXIT_CONDITION_ENABLED"; return false; }
+   if(config.enable_time_stop && config.max_holding_bars<1)
+     { error="INVALID_TIME_STOP_MAX_HOLDING_BARS"; return false; }
+   if(config.enable_time_stop && config.time_stop_require_min_mfe && config.time_stop_min_mfe_r_multiple<=0.0)
+     { error="INVALID_TIME_STOP_MIN_MFE"; return false; }
+   if(config.enable_entry_timing_analysis &&
+      (config.entry_timing_max_wait_bars<1 || config.entry_timing_max_holding_bars<1))
+     { error="INVALID_ENTRY_TIMING_ANALYSIS_CONFIG"; return false; }
    if(config.minimum_free_margin_rate<0.0 || config.minimum_free_margin_rate>=1.0 || config.max_deviation_points<0)
      { error="INVALID_MARGIN_OR_DEVIATION_LIMIT"; return false; }
    if(config.magic_number==0)

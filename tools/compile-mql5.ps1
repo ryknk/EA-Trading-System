@@ -18,12 +18,14 @@ New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $targets = @(
     @{ Name = "CoreEA"; Path = Join-Path $mql5 "Experts\EaTradingSystem\CoreEA.mq5" },
     @{ Name = "TestTrendFollowingRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestTrendFollowingRules.mq5" },
+    @{ Name = "TestMarketRegimeClassifier"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestMarketRegimeClassifier.mq5" },
     @{ Name = "TestPositionSizer"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestPositionSizer.mq5" },
     @{ Name = "TestRiskGuards"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestRiskGuards.mq5" },
     @{ Name = "TestTradingRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestTradingRules.mq5" },
     @{ Name = "TestDecisionApiRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestDecisionApiRules.mq5" },
     @{ Name = "TestAuditRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestAuditRules.mq5" },
-    @{ Name = "TestProductionSafetyRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestProductionSafetyRules.mq5" }
+    @{ Name = "TestProductionSafetyRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestProductionSafetyRules.mq5" },
+    @{ Name = "TestEntryTimingAnalyzer"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestEntryTimingAnalyzer.mq5" }
 )
 
 foreach ($target in $targets) {

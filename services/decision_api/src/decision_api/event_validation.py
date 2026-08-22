@@ -39,7 +39,7 @@ PAYLOAD_FIELDS = {
     },
     "TRADE_CLOSED": {
         "position_ticket", "direction", "open_time", "close_time", "volume",
-        "open_price", "close_price", "pnl", "commission", "swap",
+        "open_price", "close_price", "close_reason", "pnl", "commission", "swap",
     },
     "ACCOUNT_SNAPSHOT": {"balance", "equity", "margin", "free_margin", "margin_level", "open_positions"},
     "SYSTEM_ERROR": {"component", "reason_code", "reason"},
@@ -47,6 +47,7 @@ PAYLOAD_FIELDS = {
 SAFE_TEXT_FIELDS = {
     "status", "reason_code", "entry", "direction", "component", "pattern", "decision",
     "ml_status", "ml_model_version", "llm_status", "llm_provider", "llm_model", "llm_prompt_version",
+    "close_reason",
 }
 TICKET_FIELDS = {"order_ticket", "deal_ticket", "position_ticket"}
 TIME_FIELDS = {"open_time", "close_time"}

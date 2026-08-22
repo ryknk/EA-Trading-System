@@ -556,3 +556,71 @@ IS側またはOOS/Walk Forward側いずれかの取引数が最小閾値未満�
 * `docs/backtesting.md`に使用方法を追記した
 * 実際のIS/OOS/Walk Forward各期間のStrategy Tester実行結果を用いた診断はまだ実施していない（`TASKS.md` 3.3節、実データ取得後に実施）
 * 本診断はEAの内部ロジックやRisk Managerの判断には一切影響しない。診断結果はレポート出力のみで、発注可否判定へは接続していない
+
+# DEC-027: 段階的Entry判定パイプラインは既存方式に対する加算的なオプトイン層とする
+
+**状態:** 採用
+
+## 背景
+
+In-Sample期間での閾値調整（`TASKS.md` 2.1節、ADX・RSI・SL/TP比等のスイープ）は、Profit Factor 0.88〜0.89、Sharpe -1.00〜-1.02付近で頭打ちになった。ユーザーから、単一条件の閾値判定ではなく「Market Regime→HTF Bias→Setup→Entry Trigger→Entry」という段階的な判定構造への見直し依頼があった。既存の`CTrendFollowingStrategy::Evaluate()`は、実質的に同じ順序（トレンド一致→ADX/ATR/RSIフィルタ→ブレイクアウト/プルバックパターン）で判定していたが、各段階が単一関数内の逐次`if`文に埋め込まれており、(a) 各段階の合否が個別にログへ残らず、(b) 既存の`CMarketRegimeClassifier`（分析専用、DEC未記載だが2026-08-17実装）がEntry判定に一切使われていなかった。
+
+## 判断
+
+新規input `InpEntryUseStagedPipeline`（既定値`false`）で既存方式と段階的方式を切り替える。`false`の間は、判定式・発注挙動ともに既存方式と完全に同一とする（`IsPullback`を`IsPullbackSetup && IsPullbackTrigger`へ内部分解したが、数式は変更前と等価）。`true`にした場合のみ、`CMarketRegimeClassifier`によるMarket Regime判定（Trend/Range）を、新規input `InpEntryRequireMarketRegimeTrend`（既定値`true`）に従いEntry棄却ゲートとして追加する。既存のHTF Bias（D1/H4トレンド一致）・ADX/ATR/RSIフィルタ・Setup/Trigger（ブレイクアウト/プルバック）の判定式自体は変更しない。
+
+各段階の合否は、`CANDIDATE`イベント（Entry成立時のみ、既存・両方式共通）と、`InpEntryUseStagedPipeline=true`時のみ毎確定足で記録する新規イベント`ENTRY_PIPELINE`へ記録する。`InpEntryUseStagedPipeline=false`（既定値）では`ENTRY_PIPELINE`イベントを記録せず、既存の監査ログ量・スキーマへ影響しない。
+
+Market Regimeの方向性（Up/Down）とHTF Biasの方向性が食い違う場合の追加棄却条件は、本Decisionでは導入しない。`InpRegimeTrendAdxMin`と既存の`InpMinimumAdx`が既定値でともに20.0のため、既定設定では新設のMarket Regimeゲートは既存のADX下限フィルタと完全に重複し、単独では受け入れ基準（Net Profit・Profit Factor等）を変化させない（`results/backtests/20260822-171814-USDJPY-H1/`で実測確認、`ENTRY_PIPELINE`ログ上はStage別棄却件数が可視化されるが、最終的な採用/棄却集合は`InpEntryUseStagedPipeline=false`の結果と一致した）。方向性一致条件や独立した閾値设定は、固定閾値の大量追加による過剰最適化を避けるため、必要性が実データで確認できるまで見送る。
+
+## 理由
+
+* CLAUDE.md「既存Entryロジックを即座に削除・置換しない」「新方式をON/OFF可能、または既存方式と比較可能な構造にする」という指示を満たすため
+* 既存の`CMarketRegimeClassifier`・`CTrendFollowingRules`・監査ログ基盤（`CTradeLogger`）を再利用し、重複実装を避けるため
+* Look-ahead biasを避けるため、新規ロジックも既存同様、確定足（shift>=1）のみを参照する。データ構造・参照バーは変更していない
+* `InpEntryUseStagedPipeline=false`が既存の全In-Sample検証結果（`TASKS.md` 2.1節の最終状態）と完全一致することを、コード変更前後のStrategy Tester再実行（同一IS期間、`results/backtests/20260822-171514-USDJPY-H1/`が変更前コード、`results/backtests/20260822-170849-USDJPY-H1/`が変更後コード、両方とも総損益-48,223円・PF0.89・Sharpe-1.10・取引数209で一致）で実証した
+
+## 影響
+
+* `mt5/Include/Signal/SignalResult.mqh`・`mt5/Include/Strategy/TrendFollowingRules.mqh`・`mt5/Include/Strategy/TrendFollowingStrategy.mqh`・`mt5/Include/Core/Config.mqh`・`mt5/Include/Core/EAController.mqh`・`mt5/Include/Logging/TradeLogger.mqh`・`mt5/Experts/CoreEA.mq5`を変更した
+* `python/analysis/trade_breakdown.py`へ`entry_pipeline_funnel_summary()`を追加し、`ENTRY_PIPELINE`ログから段階別棄却件数を集計できるようにした。`python/analysis/reports.py`の`SUPPORTED_AUDIT_EVENTS`へ`ENTRY_PIPELINE`を追加（追加しないと`ENTRY_PIPELINE`が監査ログに含まれる場合に既存の`load_analysis_inputs`が例外を送出する）
+* `contracts/trade-breakdown-report.schema.json`へ任意項目`entry_pipeline_funnel`を追加した
+* 副次的に、既存の`CTradeLogRules::SafeEventType`（`mt5/Include/Logging/TradeLogger.mqh`）に`TIME_STOP_EXIT`が含まれておらず、`InpEnableTimeStop=true`でTime Stop決済が発生しても対応する`TIME_STOP_EXIT`監査イベントが一度も書き込まれていなかった既存不具合を発見し、`ENTRY_PIPELINE`追加と同じ変更で修正した（Strategy Tester実行で、修正前0件→修正後1件以上のTIME_STOP_EXITイベント記録を確認）。Python側`python/analysis/reports.py`の`SUPPORTED_AUDIT_EVENTS`は当初から`TIME_STOP_EXIT`を含んでおり、Python側は対応済みだったがMQL5側だけが書き込みを常に拒否していた
+* `InpEntryUseStagedPipeline=true`にした場合の実際の収益性改善効果（Market Regime方向性一致条件の要否を含む）は未検証。OOS期間（2021-01〜2024-12）での効果検証は、DEC-024/025のIS/OOS分離方針に従い、方針が固まった上で一度だけ行う
+
+# DEC-028: Entry Timing比較分析はプルバックのみを対象とし、実注文を伴わないShadow Tradeとして既存戦略から完全に分離実装する
+
+**状態:** 採用
+
+## 背景
+
+ユーザーから、同一のEntry Setupについて「Setup成立時に即Entry」「1本待ち」「2本待ち」「Trigger成立を待つ」の4方式を比較できる分析機能の依頼があった。目的は最適な待機本数の自動探索ではなく、Entryを早める/遅らせることによる成績・MFE/MAEの変化を分析し仮説を立てられるようにすることであり、過去データへ最も適合する待機時間を自動採用する処理は明示的に禁止されている。
+
+既存の`CTrendFollowingStrategy`はSetup（`IsPullbackSetup`）とTrigger（`IsPullbackTrigger`）を同一の`Evaluate()`呼び出し内で、タッチ足（shift=2）と確認足（shift=1）という固定1本ギャップの関係として評価しており、「Setupは成立したが任意の本数だけEntryを遅らせる」という可変の待機概念を表現できない。また、ブレイクアウトパターンは価格がレンジを突破する事象そのものがSetupとTriggerを兼ねており、両者の間に待機できる中間状態が存在しない。
+
+## 判断
+
+新規`CEntryTimingAnalyzer`（`mt5/Include/Logging/EntryTimingAnalyzer.mqh`）を、既存Strategy/PositionManager/RiskManager/OrderManagerから独立した自己完結モジュールとして実装する。`InpEnableEntryTimingAnalysis`（既定値`false`）で有効化し、`false`の間はIndicatorハンドルさえ作成せずコスト0とする。
+
+対象はプルバックパターンのみとする（ブレイクアウトはSetup/Trigger間に待機できる中間状態がないため対象外、上記背景参照）。Setup検出時、そのbar自身をタッチ足とみなし（既存Strategyのタッチ足=shift2・確認足=shift1という固定ギャップとは異なる、Entry Timing比較専用の再定義）、既存の`CTrendFollowingRules::IsPullbackSetup`/`IsPullbackTrigger`/`TrendDirection`/`MomentumAllowed`をそのまま再利用しつつ、独自のIndicatorハンドル（D1/H4/H1 EMA、H1 ATR/RSI/ADX、H4 ADX）でHTF Bias・ATR/ADX/RSIゲートを独立に再評価する。実際のStrategyの状態・結果は一切参照しない（意図的な重複、下記「理由」参照）。
+
+4方式（IMMEDIATE/WAIT_1_BAR/WAIT_2_BARS/WAIT_TRIGGER）それぞれについて、実際のSL/TP幾何（`InpStopAtrMultiple`・`InpRiskRewardRatio`と同じ計算式）でShadow Position（`MqlTradeRequest`を一切生成しない、内部状態のみ）を生成し、tick粒度でSL/TP到達・MFE/MAE・Entry後1/2/3/5/10/20本時点の価格推移（R倍数）を追跡する。損益はR倍数（Shadow Trade自身の当初SL距離を1R）で記録し、口座通貨建て損益は算出しない（Position SizingはRisk Manager管轄であり、実ポジションを伴わないShadow Tradeには適用対象がないため）。Setup成立からEntry確定までの逆行・順行（`pre_entry_mae_r`・`pre_entry_mfe_r`、到達時刻付き）も記録する。
+
+過去データへ最も適合する待機方式を自動選択・適用する処理は実装しない。4方式は常にすべて並行記録するのみで、優劣判断はユーザーが分析結果（`python.analysis.entry_timing`）を見て行う。
+
+## 理由
+
+* CLAUDE.md「必要最小限の変更」「既存設計を壊さない」の原則と、実注文を一切伴わない分析専用機能という要件を両立するには、既存Strategy/PositionManagerへの侵襲的な変更（Setup/Triggerの本数可変化、複数Entry候補の並行管理）よりも、読み取り専用・自己完結な別モジュールとして実装するほうが安全性への影響がゼロであることを保証しやすい
+* 既存の`CTrendFollowingRules`を再利用することで、Entry Timing比較で使われるSetup/Trigger判定式が実際のStrategyと数式レベルで一致することを保証し、二重実装による定義の乖離リスクを避ける（Indicatorハンドルの重複自体はMQL5 Terminalが同一パラメータで自動的にデデュプリケートするため計算コストの二重化にはならない）
+* R倍数で損益を表現するのは、Shadow Tradeが実ポジションのVolume（Risk Manager・Position Sizingの管轄）を持たないため。口座通貨建て損益を無理に算出すると誤った精度の印象を与える
+* Max Drawdownは基準値10,000Rから開始する相対指標とし、既存`python/analysis/drawdown.py`の`build_drawdown_curve`/`summarize_drawdown`をそのまま再利用した（口座残高を模した恣意的な基準値だが、Variant間の相対比較という目的には十分。当初100Rとしていたが、正式なIS期間での検証時に不具合が判明し10,000Rへ修正した。下記「影響」参照）
+
+## 影響
+
+* 新規`mt5/Include/Logging/EntryTimingAnalyzer.mqh`・`mt5/Tests/TestEntryTimingAnalyzer.mq5`・`mt5/test-config/TestEntryTimingAnalyzer.ini`を追加した
+* `mt5/Include/Core/Config.mqh`・`mt5/Include/Core/EAController.mqh`・`mt5/Include/Logging/TradeLogger.mqh`・`mt5/Experts/CoreEA.mq5`・`tools/compile-mql5.ps1`・`tools/run-mql5-tests.ps1`を変更した
+* 新規`python/analysis/entry_timing.py`・`python/tests/test_entry_timing.py`・`contracts/entry-timing-report.schema.json`を追加し、`python/analysis/reports.py`の`SUPPORTED_AUDIT_EVENTS`へ`ENTRY_TIMING_SETUP`・`ENTRY_TIMING_TRADE`を追加した（DEC-027で発見した「新規イベント型を監査ログに混在させると既存`load_analysis_inputs`が例外を送出する」既知の落とし穴を踏まえ、実装時点で追加済み）
+* 実装後、6か月間（2018-01〜2018-06、`USDJPY_HIST`）のStrategy Tester実行でEntry Timing比較が実際に機能することを検証し、その過程でSetup完了イベントの`trigger_wait_bars`が実際のWAIT_TRIGGER Shadow Tradeの`wait_bars`と食い違う実装バグ（完了イベント出力が後続バーへずれる場合に、Trigger成立時点ではなく出力時点の経過バー数を誤って使っていた）を発見・修正した
+* `InpEnableEntryTimingAnalysis=true`にした場合の実際の分析結果（どのVariantが優れているか）はユーザーの仮説検証に委ねる。本Decisionでは待機方式の推奨・自動選択は一切行わない
+* 実装の妥当性はサンプル期間（2018-01〜2018-06）の実データで検証済みだが、正式なIS期間（2017-09〜2020-12）・OOS期間での分析はまだ実施していない
+* **2026-08-22、正式なIS期間（2017-09〜2020-12）で初めて実行し、`python/analysis/entry_timing.py`の`DRAWDOWN_BASELINE_R`（当時100R）を起点に累積損益（`pnl_r`の累計）がマイナスへ落ちるとequityが0以下になり`drawdown.build_drawdown_curve`が例外を送出する不具合を発見・修正した**。Shadow TradeはMaxOpenPositions等の並行数制限を受けないためSetup数が多く（本IS期間で1,101件）、IMMEDIATE/WAIT_1_BAR/WAIT_2_BARSの累積損失がそれぞれ-99R〜-118Rに達し100Rを超過していた。相対指標という設計意図は変えず、基準値を10,000Rへ引き上げて修正した（`python/tests/test_entry_timing.py`は基準値を直接検証しておらず、修正後も7件全PASS）。この修正を経て、正式なIS期間でのVariant比較を実施した。詳細な分析結果はTASKS.md参照

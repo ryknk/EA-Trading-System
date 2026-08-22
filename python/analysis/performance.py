@@ -158,6 +158,22 @@ def _sharpe(daily_returns: pd.Series, annual_risk_free_rate: float) -> float | N
     return float(excess.mean() / standard_deviation * math.sqrt(365.2425))
 
 
+def aggregate_trade_group(pnl: pd.Series) -> dict[str, Any]:
+    wins = pnl[pnl > 0]
+    losses = pnl[pnl < 0]
+    gross_profit = float(wins.sum())
+    gross_loss = float(losses.sum())
+    return {
+        "number_of_trades": int(len(pnl)),
+        "net_profit": float(pnl.sum()) if len(pnl) else 0.0,
+        "win_rate": float((pnl > 0).sum() / len(pnl)) if len(pnl) else 0.0,
+        "profit_factor": None if gross_loss == 0 else gross_profit / abs(gross_loss),
+        "expectancy": float(pnl.mean()) if len(pnl) else 0.0,
+        "average_win": None if wins.empty else float(wins.mean()),
+        "average_loss": None if losses.empty else float(losses.mean()),
+    }
+
+
 def _max_consecutive_losses(pnl: pd.Series) -> int:
     maximum = current = 0
     for value in pnl:
