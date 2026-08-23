@@ -253,6 +253,10 @@ public:
         { result.reason_code="ATR_TOO_LOW"; result.reason="ATR is below the configured floor."; return true; }
       if(adx<m_config.minimum_adx)
         { result.reason_code="ADX_TOO_LOW"; result.reason="H1 ADX is below the configured trend-strength floor."; return true; }
+      // エグゾーション（過熱）局面の抑制: ADXが極端に高い状態は、健全なトレンド継続ではなく
+      // 伸び切った動きの終盤である可能性がある。maximum_adx<=0.0は無効（既定挙動）。
+      if(m_config.maximum_adx>0.0 && adx>m_config.maximum_adx)
+        { result.reason_code="ADX_TOO_HIGH"; result.reason="H1 ADX exceeds the configured exhaustion ceiling."; return true; }
       if(h4_adx<m_config.minimum_confirmation_adx)
         { result.reason_code="CONFIRMATION_ADX_TOO_LOW"; result.reason="H4 ADX is below the configured trend-strength floor."; return true; }
       if(!CTrendFollowingRules::MomentumAllowed(direction,rsi,m_config.rsi_buy_min,m_config.rsi_buy_max,m_config.rsi_sell_min,m_config.rsi_sell_max))

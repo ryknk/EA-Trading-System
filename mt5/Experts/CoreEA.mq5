@@ -26,6 +26,7 @@ input double          InpMinimumAtrPoints=10.0;
 input int             InpAdxPeriod=14;
 input double          InpMinimumAdx=20.0;
 input double          InpMinimumConfirmationAdx=20.0;
+input double          InpMaximumAdx=0.0;
 input double          InpStopAtrMultiple=2.0;
 input double          InpRiskRewardRatio=2.0;
 input bool            InpEnableBreakout=true;
@@ -112,6 +113,7 @@ int OnInit(void)
    config.adx_period=InpAdxPeriod;
    config.minimum_adx=InpMinimumAdx;
    config.minimum_confirmation_adx=InpMinimumConfirmationAdx;
+   config.maximum_adx=InpMaximumAdx;
    config.stop_atr_multiple=InpStopAtrMultiple;
    config.risk_reward_ratio=InpRiskRewardRatio;
    config.enable_breakout=InpEnableBreakout;

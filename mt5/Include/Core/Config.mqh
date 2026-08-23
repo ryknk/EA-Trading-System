@@ -24,6 +24,7 @@ struct SEaConfig
    int               adx_period;
    double            minimum_adx;
    double            minimum_confirmation_adx;
+   double            maximum_adx;
    double            stop_atr_multiple;
    double            risk_reward_ratio;
    bool              enable_breakout;
@@ -107,6 +108,7 @@ void SetDefaultConfig(SEaConfig &config)
    config.adx_period                = 14;
    config.minimum_adx               = 20.0;
    config.minimum_confirmation_adx  = 20.0;
+   config.maximum_adx               = 0.0;
    config.stop_atr_multiple         = 2.0;
    config.risk_reward_ratio         = 2.0;
    config.enable_breakout           = true;
@@ -203,6 +205,9 @@ bool ValidateConfig(const SEaConfig &config,string &error)
    if(config.adx_period<2 || config.minimum_adx<0.0 || config.minimum_adx>100.0 ||
       config.minimum_confirmation_adx<0.0 || config.minimum_confirmation_adx>100.0)
      { error="INVALID_TREND_STRENGTH_FILTER"; return false; }
+   if(config.maximum_adx<0.0 || config.maximum_adx>100.0 ||
+      (config.maximum_adx>0.0 && config.maximum_adx<=config.minimum_adx))
+     { error="INVALID_MAXIMUM_ADX"; return false; }
    if(!config.enable_breakout && !config.enable_pullback)
      { error="NO_ENTRY_PATTERN_ENABLED"; return false; }
    if(config.regime_trend_adx_min<0.0 || config.regime_trend_adx_min>100.0)
