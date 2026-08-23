@@ -5,6 +5,7 @@
 #include <EaTradingSystem/Filter/SpreadFilter.mqh>
 #include <EaTradingSystem/Risk/ExposureGuard.mqh>
 #include <EaTradingSystem/Risk/OpenRiskGuard.mqh>
+#include <EaTradingSystem/Risk/AdaptiveSizingGuard.mqh>
 
 int g_failures=0;
 
@@ -93,6 +94,35 @@ void OnStart(void)
                  "sell stop loss below entry is invalid and treated as risk-uncalculable");
       AssertTrue(!COpenRiskGuardRules::PositionRiskAmount("USDJPY",POSITION_TYPE_BUY,0.0,150.000,149.500,risk_amount),
                  "zero volume is treated as risk-uncalculable");
+   }
+
+   {
+      // 連続値方式（2026-08-23再設計）: avg_r（直近平均R倍数相当）が負の大きさに比例して
+      // 滑らかに縮小し、floor_multiplierを下限にクランプする。境界での急激な切替を避ける狙い。
+      AssertNear(CAdaptiveSizingRules::RiskMultiplier(10,10,-0.2,1.0,0.5),0.8,1.0e-12,
+                 "adaptive sizing reduces proportionally for a mild negative average R");
+      AssertNear(CAdaptiveSizingRules::RiskMultiplier(10,10,-0.5,1.0,0.5),0.5,1.0e-12,
+                 "adaptive sizing reduces to exactly the floor at avg_r=-0.5 with sensitivity 1.0");
+      AssertNear(CAdaptiveSizingRules::RiskMultiplier(10,10,-1.0,1.0,0.5),0.5,1.0e-12,
+                 "adaptive sizing clamps at the floor for a large negative average R");
+      AssertNear(CAdaptiveSizingRules::RiskMultiplier(10,10,0.0,1.0,0.5),1.0,1.0e-12,
+                 "adaptive sizing does not reduce at zero average R boundary");
+      AssertNear(CAdaptiveSizingRules::RiskMultiplier(10,10,0.5,1.0,0.5),1.0,1.0e-12,
+                 "adaptive sizing does not expand above one for a positive average R");
+      AssertNear(CAdaptiveSizingRules::RiskMultiplier(5,10,-0.5,1.0,0.5),1.0,1.0e-12,
+                 "adaptive sizing does not reduce with insufficient trade history");
+      AssertNear(CAdaptiveSizingRules::RiskMultiplier(0,10,0.0,1.0,0.5),1.0,1.0e-12,
+                 "adaptive sizing does not reduce with zero trade history");
+      AssertNear(CAdaptiveSizingRules::RiskMultiplier(10,0,-0.5,1.0,0.5),1.0,1.0e-12,
+                 "adaptive sizing disabled with invalid lookback trades");
+      AssertNear(CAdaptiveSizingRules::RiskMultiplier(10,10,-0.5,1.0,0.0),1.0,1.0e-12,
+                 "adaptive sizing disabled with zero floor multiplier");
+      AssertNear(CAdaptiveSizingRules::RiskMultiplier(10,10,-0.5,1.0,1.5),1.0,1.0e-12,
+                 "adaptive sizing disabled with floor multiplier above one");
+      AssertNear(CAdaptiveSizingRules::RiskMultiplier(10,10,-0.5,-0.1,0.5),1.0,1.0e-12,
+                 "adaptive sizing disabled with negative sensitivity");
+      AssertNear(CAdaptiveSizingRules::RiskMultiplier(15,10,-0.5,1.0,0.5),0.5,1.0e-12,
+                 "adaptive sizing reduces when trade history exceeds lookback");
    }
 
    if(g_failures==0) Print("TEST_SUITE_PASS TestRiskGuards");

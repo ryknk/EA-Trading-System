@@ -20,6 +20,7 @@ struct SRiskDecision
    double drawdown_rate;
    double open_risk_rate;
    double margin_level;
+   double adaptive_risk_multiplier;
   };
 
 void ResetRiskDecision(SRiskDecision &decision)
@@ -27,6 +28,7 @@ void ResetRiskDecision(SRiskDecision &decision)
    ZeroMemory(decision);
    decision.status=RISK_DECISION_REJECTED;
    decision.reason_code="RISK_NOT_EVALUATED";
+   decision.adaptive_risk_multiplier=1.0;
   }
 
 #endif

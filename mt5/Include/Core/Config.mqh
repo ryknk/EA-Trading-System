@@ -37,6 +37,10 @@ struct SEaConfig
    double            regime_low_volatility_ratio;
    int               regime_ma_slope_lookback;
    int               regime_trend_persistence_bars;
+   bool              enable_adaptive_sizing;
+   int               adaptive_sizing_lookback_trades;
+   double            adaptive_sizing_sensitivity;
+   double            adaptive_sizing_floor_multiplier;
    double            risk_per_trade_rate;
    double            daily_loss_limit_rate;
    double            max_drawdown_rate;
@@ -121,6 +125,10 @@ void SetDefaultConfig(SEaConfig &config)
    config.regime_low_volatility_ratio  = 0.7;
    config.regime_ma_slope_lookback  = 5;
    config.regime_trend_persistence_bars = 1;
+   config.enable_adaptive_sizing    = false;
+   config.adaptive_sizing_lookback_trades = 10;
+   config.adaptive_sizing_sensitivity = 1.0;
+   config.adaptive_sizing_floor_multiplier = 0.5;
    config.risk_per_trade_rate       = 0.005;
    config.daily_loss_limit_rate     = 0.02;
    config.max_drawdown_rate         = 0.10;
@@ -219,6 +227,11 @@ bool ValidateConfig(const SEaConfig &config,string &error)
    if(config.regime_high_volatility_ratio<=1.0 ||
       config.regime_low_volatility_ratio<=0.0 || config.regime_low_volatility_ratio>=1.0)
      { error="INVALID_REGIME_VOLATILITY_RATIO"; return false; }
+   if(config.enable_adaptive_sizing &&
+      (config.adaptive_sizing_lookback_trades<1 ||
+       config.adaptive_sizing_sensitivity<0.0 ||
+       config.adaptive_sizing_floor_multiplier<=0.0 || config.adaptive_sizing_floor_multiplier>1.0))
+     { error="INVALID_ADAPTIVE_SIZING_PARAMETERS"; return false; }
    if(config.risk_per_trade_rate<=0.0 || config.risk_per_trade_rate>0.05)
      { error="INVALID_TRADE_RISK_RATE"; return false; }
    if(config.daily_loss_limit_rate<=0.0 || config.daily_loss_limit_rate>0.20)

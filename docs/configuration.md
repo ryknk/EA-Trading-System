@@ -67,6 +67,10 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
 | 設定 | 初期値 | 意味 |
 |---|---:|---|
 | `InpRiskPerTradePercent` | 0.5% | 1取引の最大リスク |
+| `InpEnableAdaptiveSizing` | false | 直近の実現成績（平均R倍数相当の連続値）に応じてリスク量を滑らかに縮小する機能の有効化（2026-08-23追加、2026-08-23に勝率の二値閾値方式から連続値方式へ再設計）。相場が悪いかを事前予測せず、実際に悪い結果が続いた場合にのみリスク量を縮小する（詳細はTASKS.md参照）。falseでは従来どおり`InpRiskPerTradePercent`をそのまま使用する |
+| `InpAdaptiveSizingLookbackTrades` | 10 | 直近何件の決済済みポジション（部分決済は1件扱い）で平均R倍数相当を算出するか。`InpEnableAdaptiveSizing=false`では未使用。直近の該当件数がこれに満たない場合は縮小なし（1.0倍）として扱う |
+| `InpAdaptiveSizingSensitivity` | 1.0 | 直近平均R（0未満の場合のみ）に乗じて1.0から減算する感度係数。値が大きいほど同じ悪化幅に対して縮小が強くなる。`InpEnableAdaptiveSizing=false`では未使用 |
+| `InpAdaptiveSizingFloorMultiplier` | 0.5 | 縮小倍率の下限（0.5＝最大でも半分まで）。`InpRiskPerTradePercent`へ乗じる倍率は`[InpAdaptiveSizingFloorMultiplier, 1.0]`の範囲でクランプされる。`InpEnableAdaptiveSizing=false`では未使用 |
 | `InpDailyLossLimitPercent` | 2% | 日次新規注文停止閾値 |
 | `InpMaxDrawdownPercent` | 10% | 口座全体のDD停止閾値 |
 | `InpMaxOpenPositions` | 1 | 最大同時ポジション数（口座全体、他EA・手動注文を含む） |

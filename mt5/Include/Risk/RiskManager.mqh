@@ -9,6 +9,7 @@
 #include <EaTradingSystem/Risk/DrawdownGuard.mqh>
 #include <EaTradingSystem/Risk/ExposureGuard.mqh>
 #include <EaTradingSystem/Risk/OpenRiskGuard.mqh>
+#include <EaTradingSystem/Risk/AdaptiveSizingGuard.mqh>
 #include <EaTradingSystem/Filter/SpreadFilter.mqh>
 #include <EaTradingSystem/Trading/OrderCheckRules.mqh>
 
@@ -21,6 +22,7 @@ private:
    CDrawdownGuard     m_drawdown_guard;
    CExposureGuard     m_exposure_guard;
    COpenRiskGuard     m_open_risk_guard;
+   CAdaptiveSizingGuard m_adaptive_sizing_guard;
    CSpreadFilter      m_spread_filter;
    bool               m_initialized;
    bool               m_operational_healthy;
@@ -136,9 +138,28 @@ public:
         { Reject(decision,"INVALID_STOP","Stop loss is invalid at the current market price."); return true; }
 
       const double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+      double risk_rate=m_config.risk_per_trade_rate;
+      if(m_config.enable_adaptive_sizing)
+        {
+         double recent_avg_r=0.0;
+         int recent_trade_count=0;
+         string sizing_error;
+         const double base_risk_amount=equity*m_config.risk_per_trade_rate;
+         // 取得失敗時はfalse-safeでmultiplier=1.0（無効時と同一挙動）のまま候補評価を継続する。
+         // 本ガードはサイズ縮小のみを行う補助的な調整であり、その取得失敗を理由に候補自体を拒否しない。
+         if(m_adaptive_sizing_guard.RecentAverageR(m_config.magic_number,m_config.adaptive_sizing_lookback_trades,
+                                                   base_risk_amount,recent_avg_r,recent_trade_count,sizing_error))
+           {
+            decision.adaptive_risk_multiplier=CAdaptiveSizingRules::RiskMultiplier(
+               recent_trade_count,m_config.adaptive_sizing_lookback_trades,
+               recent_avg_r,m_config.adaptive_sizing_sensitivity,
+               m_config.adaptive_sizing_floor_multiplier);
+            risk_rate=m_config.risk_per_trade_rate*decision.adaptive_risk_multiplier;
+           }
+        }
       double loss_per_lot=0.0;
       if(!m_position_sizer.Calculate(signal.symbol,signal.direction,entry,signal.stop_loss,equity,
-                                     m_config.risk_per_trade_rate,decision.volume,decision.risk_budget,
+                                     risk_rate,decision.volume,decision.risk_budget,
                                      loss_per_lot,error))
         { Reject(decision,error,"Position size calculation rejected the candidate."); return true; }
       decision.estimated_stop_loss=decision.volume*loss_per_lot;
