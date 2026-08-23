@@ -81,6 +81,27 @@ private:
       result.reason=message;
      }
 
+   // レジームフィルタの強化: 直近1本の判定だけでなく、過去persistence_bars本すべてが
+   // 継続してTrend状態（Range/Unknownでない）であることを要求する。トレンドへ切り替わった
+   // 直後の不安定な状態でのEntryを避ける狙い。persistence_bars=1（既定値）では従来の
+   // 単発判定と完全に等価（shift=1のみを確認）。データ取得不能時はfalse-safe（Range/Unknown扱い）。
+   bool IsRegimeTrendPersistent(const int persistence_bars)
+     {
+      for(int shift=1; shift<=persistence_bars; shift++)
+        {
+         double adx_at,ma_at,ma_reference_at;
+         if(!ReadIndicator(m_h1_adx_handle,shift,adx_at) ||
+            !ReadIndicator(m_h1_fast_handle,shift,ma_at) ||
+            !ReadIndicator(m_h1_fast_handle,shift+m_config.regime_ma_slope_lookback,ma_reference_at))
+            return false;
+         const EMarketRegimeTrend regime_at=CMarketRegimeClassifier::ClassifyTrend(
+            adx_at,ma_at,ma_reference_at,m_config.regime_trend_adx_min);
+         if(regime_at==MARKET_REGIME_TREND_RANGE || regime_at==MARKET_REGIME_TREND_UNKNOWN)
+            return false;
+        }
+      return true;
+     }
+
 public:
    CTrendFollowingStrategy(void)
      {
@@ -212,7 +233,8 @@ public:
       result.staged_pipeline_used=m_config.entry_use_staged_pipeline;
       result.stage_market_regime=MarketRegimeTrendToString(result.market_regime_trend);
       result.stage_market_regime_passed=(result.market_regime_trend!=MARKET_REGIME_TREND_RANGE &&
-                                          result.market_regime_trend!=MARKET_REGIME_TREND_UNKNOWN);
+                                          result.market_regime_trend!=MARKET_REGIME_TREND_UNKNOWN) &&
+                                         IsRegimeTrendPersistent(m_config.regime_trend_persistence_bars);
       if(m_config.entry_use_staged_pipeline && m_config.entry_require_market_regime_trend &&
          !result.stage_market_regime_passed)
         {

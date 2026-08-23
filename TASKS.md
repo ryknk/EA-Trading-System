@@ -293,6 +293,30 @@
 
   **次のステップに関する提案**: IS/OOS分離の原則上、この閾値をTest=2019の結果を見て調整することは避けるべきである（本ラウンドはTrain区間のみを使用しており、この点は遵守済み）。採用する場合は、(1) buffer=0.10を暫定候補として固定し、(2) Test=2019で一度だけ確認する、という手順を推奨する。ただし要因1・2が未対応のままでは、Test=2019の大幅な悪化（-80,988円）を覆すほどの改善は期待できない可能性が高い。
 
+* [x] **`InpPullbackTriggerAtrBuffer=0.10`をベースライン（現状の設定）として固定し、「D. レジームフィルタの強化」を実装してTrain区間で再検証する（ユーザー依頼、2026-08-23実施）。** 悪化要因1（TrendUp判定エントリーの0/9勝、Test=2019総損失の87%）へ対応する狙いで、既存の市場レジーム判定（`CMarketRegimeClassifier::ClassifyTrend`、H1 ADX＋EMAスロープに基づく単発判定）を「直近1本だけでなく、過去N本連続でTrend状態（Range/Unknownでない）が継続していること」を要求する形へ強化した。トレンドへ切り替わった直後の不安定な状態（＝まだ持続性が確認できていない状態）でのEntryを避ける狙いで、新規input `InpRegimeTrendPersistenceBars`（既定値`1`＝従来の単発判定と完全等価）で制御する。既存の`stage_market_regime_passed`ゲート（Stage 1、`InpEntryUseStagedPipeline=true`時のみ有効）を拡張する形で実装し、ログ用の`market_regime_trend`フィールド（直近1本の分類、trade_breakdown等で参照）は変更していない。
+
+  変更ファイル: `mt5/Include/Strategy/TrendFollowingStrategy.mqh`（新規private method `IsRegimeTrendPersistent`、Stage 1ゲートへ組み込み）・`mt5/Include/Core/Config.mqh`（新規フィールド`regime_trend_persistence_bars`、既定値1、validation追加）・`mt5/Experts/CoreEA.mq5`（新規input `InpRegimeTrendPersistenceBars`、配線）。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS（既存23アサーション、回帰なし）で確認済み。`IsRegimeTrendPersistent`は既存の`CMarketRegimeClassifier::ClassifyTrend`（`TestMarketRegimeClassifier`で単体テスト済み）を複数本ループで呼び出すのみの薄い集約ロジックであり、単体テストは追加せず、以下のTrain区間フル実行（既存の`ReadAtrBaseline`・`ReadBreakoutRange`等の他の複数本参照ヘルパーと同様、統合テストのみで検証する既存方針を踏襲）で検証した。
+
+  Train区間（2017-09〜2018-12、現行の複数ポジション構成＋`InpPullbackTriggerAtrBuffer=0.10`固定）で`InpRegimeTrendPersistenceBars`を1（無効・従来挙動）/2/3/4/5でスイープした。
+
+  | persistence(本) | 取引数 | 純損益 | PF | Sharpe | 最大DD率 | 勝率 |
+  |---|---|---|---|---|---|---|
+  | 1（無効、従来挙動） | 39 | +30,801円 | 1.174 | +0.369 | 3.96% | 46.2% |
+  | 2 | 28 | -5,249円 | 0.964 | -0.037 | 6.88% | 46.4% |
+  | 3 | 22 | -24,706円 | 0.792 | -0.333 | 5.55% | 45.5% |
+  | 4 | 20 | -4,651円 | 0.954 | -0.044 | 4.59% | 50.0% |
+  | 5 | 19 | 5,626円 | 1.063 | +0.109 | 3.63% | 52.6% |
+
+  **後方互換性の確認**: persistence=1は、先に確認した`InpPullbackTriggerAtrBuffer=0.10`単独のTrain結果（取引数39・純損益+30,801円・PF1.174・Sharpe+0.369・DD率3.96%）と完全一致し、コード変更が既定値で従来挙動を一切変えていないことを確認した。
+
+  **メカニズムの調査**: persistence=1→3で除外された21件を分析したところ、勝ちトレード9件・負けトレード12件が混在し、除外された取引群の純損益合計は**+26,555円（プラス）**だった。すなわちレジーム持続性フィルタは、狙っていた「不安定な状態での負けトレード」だけでなく、それと同程度以上に「トレンド転換直後の初動を捉える質の良い勝ちトレード」も一緒に除外してしまっており、悪化要因1（TrendUp判定の質）の改善という設計意図とは逆方向に作用していた。
+
+  **総合評価: 「D. レジームフィルタの強化」は、本Train区間の実データでは性能を悪化させる結果となり、採用を推奨しない。** persistence=2〜4は純損益・PF・Sharpeのいずれも悪化（PF<1、Sharpeマイナス）し、persistence=5でわずかに回復するものの依然としてpersistence=1（現行ベースライン）を下回る。これは「レジーム転換直後を避ける」という設計仮説が、少なくとも本Train区間・本実装方式では成立しなかったことを示す、明確な反証結果である。B案（ADX上限フィルタ）とは異なりTest=2019データを一切参照していないため、これはIS/OOS分離の原則に沿った正当なTrain内検証の結果であり、過学習ではなく「仮説が誤っていた」という判断ができる。
+
+  **残存課題**: 悪化要因1（TrendUp判定エントリーの0/9勝、Test=2019総損失の87%）は依然として未対応のまま残っている。今回の反証結果を踏まえると、単純な「持続性要求」というアプローチでは対応できない可能性が高く、別のアプローチ（例: HTF Bias側の強化、方向別の追加確認条件、あるいはレジーム判定ロジック自体の見直し）を検討する必要がある。悪化要因2（高ADX局面エントリーの0/7勝）も引き続き未対応。`InpRegimeTrendPersistenceBars`は既定値1（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも1以外の値は適用していない。
+
 * [ ] Fold2〜6（Train2017-09〜2019-12→Test2020、Train2018-2020→Test2021、Train2019-2021→Test2022、Train2020-2022→Test2023、Train2021-2023→Test2024）を同様の手順で実行する。
 
 * [x] 監査ログ汚染バグの影響を受けていた可能性がある分析（Buy/Sell・時間帯・曜日・相場レジーム・ATR帯・ADX帯別の有意差分析）を再検証する（2026-08-22実施。`InpEntryUseStagedPipeline=false`（Buy/Sell等の分析時点の構成）へ一時的に戻し、修正済み`tools/run-strategy-tester.ps1`で同一IS期間を再実行（`results/backtests/20260822-195446-USDJPY-H1/`）。**検証手順**: (1) 純損益-48,223円・PF0.89・Sharpe-1.10・取引数209がベースラインと完全一致することを確認。(2) `InpEntryUseStagedPipeline=false`で実行したにもかかわらず`ENTRY_PIPELINE`イベント（staged pipeline有効時のみ記録されるはずの診断ログ）が0件であることを確認し、前回発見した汚染（他run由来の`ENTRY_PIPELINE`混入）が本runには存在しないことを確認。(3) `trade_breakdown`を再実行し、direction/session/weekday/market_regime_trend/market_regime_volatility/atr_band/adx_bandの全内訳が、既報の値（Buy/Sell・時間帯・曜日別分析および相場レジーム別分析の回でそれぞれ報告した数値）と完全一致することを確認。**結論: Buy/Sell・時間帯・曜日・相場レジーム（トレンド/ボラティリティ）・ATR帯・ADX帯別の分析結果はいずれも汚染の影響を受けておらず、既報の「統計的に有意な勝率差は確認できなかった」という結論は有効**。汚染が実際に混入していたのは`InpRegimeTrendAdxMin`スイープの40番run（`20260822-181739`）のみであり、これは前タスクで既に修正済みツールにより再実行・再評価済み（`20260822-183152`、結果は変化なし）。

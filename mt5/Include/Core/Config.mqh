@@ -35,6 +35,7 @@ struct SEaConfig
    double            regime_high_volatility_ratio;
    double            regime_low_volatility_ratio;
    int               regime_ma_slope_lookback;
+   int               regime_trend_persistence_bars;
    double            risk_per_trade_rate;
    double            daily_loss_limit_rate;
    double            max_drawdown_rate;
@@ -117,6 +118,7 @@ void SetDefaultConfig(SEaConfig &config)
    config.regime_high_volatility_ratio = 1.3;
    config.regime_low_volatility_ratio  = 0.7;
    config.regime_ma_slope_lookback  = 5;
+   config.regime_trend_persistence_bars = 1;
    config.risk_per_trade_rate       = 0.005;
    config.daily_loss_limit_rate     = 0.02;
    config.max_drawdown_rate         = 0.10;
@@ -207,6 +209,8 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_REGIME_TREND_ADX_MIN"; return false; }
    if(config.regime_atr_baseline_period<2 || config.regime_ma_slope_lookback<1)
      { error="INVALID_REGIME_LOOKBACK_PERIOD"; return false; }
+   if(config.regime_trend_persistence_bars<1)
+     { error="INVALID_REGIME_TREND_PERSISTENCE_BARS"; return false; }
    if(config.regime_high_volatility_ratio<=1.0 ||
       config.regime_low_volatility_ratio<=0.0 || config.regime_low_volatility_ratio>=1.0)
      { error="INVALID_REGIME_VOLATILITY_RATIO"; return false; }

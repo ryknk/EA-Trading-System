@@ -37,6 +37,7 @@ input int             InpRegimeAtrBaselinePeriod=50;
 input double          InpRegimeHighVolatilityRatio=1.3;
 input double          InpRegimeLowVolatilityRatio=0.7;
 input int             InpRegimeMaSlopeLookback=5;
+input int             InpRegimeTrendPersistenceBars=1;
 input double          InpRiskPerTradePercent=0.5;
 input double          InpDailyLossLimitPercent=2.0;
 input double          InpMaxDrawdownPercent=10.0;
@@ -122,6 +123,7 @@ int OnInit(void)
    config.regime_high_volatility_ratio=InpRegimeHighVolatilityRatio;
    config.regime_low_volatility_ratio=InpRegimeLowVolatilityRatio;
    config.regime_ma_slope_lookback=InpRegimeMaSlopeLookback;
+   config.regime_trend_persistence_bars=InpRegimeTrendPersistenceBars;
    config.risk_per_trade_rate=InpRiskPerTradePercent/100.0;
    config.daily_loss_limit_rate=InpDailyLossLimitPercent/100.0;
    config.max_drawdown_rate=InpMaxDrawdownPercent/100.0;
