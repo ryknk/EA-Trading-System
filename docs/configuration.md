@@ -67,7 +67,11 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
 | `InpRiskPerTradePercent` | 0.5% | 1取引の最大リスク |
 | `InpDailyLossLimitPercent` | 2% | 日次新規注文停止閾値 |
 | `InpMaxDrawdownPercent` | 10% | 口座全体のDD停止閾値 |
-| `InpMaxOpenPositions` | 1 | 最大同時ポジション数 |
+| `InpMaxOpenPositions` | 1 | 最大同時ポジション数（口座全体、他EA・手動注文を含む） |
+| `InpMaxSameDirectionPositions` | 1 | 同一銘柄・同一方向への最大同時ポジション数（2026-08-23追加）。既定値1は従来どおり同一銘柄への追加を実質禁止する。1より大きい値にすると、`InpMinSameDirectionEntryDistancePoints`・`InpMaxOpenRiskPercent`の範囲内で制限付きピラミッディングを許可する。反対方向の既存ポジションは値に関わらず常に拒否（`OPPOSITE_DIRECTION_POSITION_EXISTS`）。Netting口座（`ACCOUNT_MARGIN_MODE_RETAIL_NETTING`）では複数ポジションを独立したticketとして維持できないため、設定値に関わらず1として扱う |
+| `InpMaxOpenRiskPercent` | 2% | 総オープンリスク上限（2026-08-23追加）。口座全体の既存ポジション（他EA・手動注文を含む）が現在のSLへ到達した場合の損失合計に、新規候補のリスクを加えた額が、有効証拠金のこの割合を超える場合は新規エントリーを拒否（`MAX_OPEN_RISK_EXCEEDED`）。SL未設定など計算不能なポジションが1件でもあれば安全側で新規エントリーを拒否する（`RISK_STATE_UNAVAILABLE`/`OPEN_RISK_UNCALCULABLE`）。`InpRiskPerTradePercent`以上である必要がある |
+| `InpMinSameDirectionEntryDistancePoints` | 0（無効） | 同一銘柄・同一方向への追加エントリー時、直近の同方向ポジションの建値からこのPoint数以上離れていることを要求する（2026-08-23追加、ナンピン的な近接積み増しの防止）。0は無効化（既定挙動） |
+| `InpMinMarginLevelPercent` | 150% | 証拠金維持率（Margin Level）がこの値を下回る場合は新規エントリーを拒否する（2026-08-23追加、`MARGIN_LEVEL_TOO_LOW`）。既存ポジション管理には影響しない。0で無効化。ブローカー固有のロスカット水準は未確認（NOT VERIFIED）のため、実運用前にOANDA証券の実際の水準を確認すること |
 | `InpMaxSpreadPoints` | 30 | 最大spread |
 | `InpMinimumFreeMarginPercent` | 20% | 最低free margin率 |
 | `InpMagicNumber` | 26072001 | EA所有取引の識別子 |

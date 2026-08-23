@@ -6,13 +6,14 @@ param(
     [string]$TerminalData = "$env:APPDATA\MetaQuotes\Terminal\EE0304F13905552AE0B5EAEFB04866EB",
     [int]$TimeoutSeconds = 900,
     [string]$FromDate = "2017.09.01",
-    [string]$ToDate = "2020.12.31"
+    [string]$ToDate = "2020.12.31",
+    [string]$Template = "mt5\test-config\StrategyTester-USDJPY-H1.ini"
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $terminal = Join-Path $InstallPath "terminal64.exe"
-$template = Join-Path $root "mt5\test-config\StrategyTester-USDJPY-H1.ini"
+$template = if ([System.IO.Path]::IsPathRooted($Template)) { $Template } else { Join-Path $root $Template }
 $runId = Get-Date -Format "yyyyMMdd-HHmmss"
 $resultDir = Join-Path $root "results\backtests\$runId-USDJPY-H1"
 $config = Join-Path $resultDir "tester.ini"

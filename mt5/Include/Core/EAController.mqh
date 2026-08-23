@@ -689,7 +689,9 @@ public:
       risk_payload+="\"estimated_stop_loss\":"+JNumber(risk_decision.estimated_stop_loss)+",";
       risk_payload+="\"required_margin\":"+JNumber(risk_decision.required_margin)+",";
       risk_payload+="\"daily_loss_rate\":"+JNumber(risk_decision.daily_loss_rate)+",";
-      risk_payload+="\"drawdown_rate\":"+JNumber(risk_decision.drawdown_rate)+"}";
+      risk_payload+="\"drawdown_rate\":"+JNumber(risk_decision.drawdown_rate)+",";
+      risk_payload+="\"open_risk_rate\":"+JNumber(risk_decision.open_risk_rate)+",";
+      risk_payload+="\"margin_level\":"+JNumber(risk_decision.margin_level)+"}";
       Audit("RISK_DECISION",result.trade_candidate_id,external_decision.request_id,result.symbol,risk_payload,true);
       if(!risk_ok || risk_decision.status!=RISK_DECISION_APPROVED)
         {

@@ -38,6 +38,10 @@ struct SEaConfig
    double            daily_loss_limit_rate;
    double            max_drawdown_rate;
    int               max_open_positions;
+   int               max_same_direction_positions;
+   double            max_open_risk_rate;
+   double            min_same_direction_entry_distance_points;
+   double            min_margin_level_percent;
    double            max_spread_points;
    double            minimum_free_margin_rate;
    ulong             magic_number;
@@ -115,6 +119,12 @@ void SetDefaultConfig(SEaConfig &config)
    config.daily_loss_limit_rate     = 0.02;
    config.max_drawdown_rate         = 0.10;
    config.max_open_positions        = 1;
+   // 既定値は現状の挙動（同一銘柄・同一方向は実質1件まで）を変えない安全側の初期値。
+   // 複数ポジション運用はユーザーが明示的に引き上げた場合のみ有効になる。
+   config.max_same_direction_positions = 1;
+   config.max_open_risk_rate        = 0.02;
+   config.min_same_direction_entry_distance_points = 0.0;
+   config.min_margin_level_percent  = 150.0;
    config.max_spread_points         = 30.0;
    config.minimum_free_margin_rate  = 0.20;
    config.magic_number              = 26072001;
@@ -206,6 +216,15 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_DRAWDOWN_RATE"; return false; }
    if(config.max_open_positions<1 || config.max_spread_points<=0.0)
      { error="INVALID_EXPOSURE_OR_SPREAD_LIMIT"; return false; }
+   if(config.max_same_direction_positions<1 || config.max_same_direction_positions>config.max_open_positions)
+     { error="INVALID_SAME_DIRECTION_POSITION_LIMIT"; return false; }
+   if(config.max_open_risk_rate<=0.0 || config.max_open_risk_rate>0.50 ||
+      config.max_open_risk_rate<config.risk_per_trade_rate)
+     { error="INVALID_MAX_OPEN_RISK_RATE"; return false; }
+   if(config.min_same_direction_entry_distance_points<0.0)
+     { error="INVALID_MIN_ENTRY_DISTANCE"; return false; }
+   if(config.min_margin_level_percent<0.0)
+     { error="INVALID_MIN_MARGIN_LEVEL"; return false; }
    if(config.enable_breakeven_stop && config.breakeven_trigger_r_multiple<=0.0)
      { error="INVALID_BREAKEVEN_TRIGGER"; return false; }
    if(config.enable_signal_invalidation_exit &&

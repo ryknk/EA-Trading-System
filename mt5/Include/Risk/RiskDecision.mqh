@@ -18,6 +18,8 @@ struct SRiskDecision
    double required_margin;
    double daily_loss_rate;
    double drawdown_rate;
+   double open_risk_rate;
+   double margin_level;
   };
 
 void ResetRiskDecision(SRiskDecision &decision)

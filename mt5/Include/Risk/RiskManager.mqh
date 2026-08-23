@@ -8,6 +8,7 @@
 #include <EaTradingSystem/Risk/DailyLossGuard.mqh>
 #include <EaTradingSystem/Risk/DrawdownGuard.mqh>
 #include <EaTradingSystem/Risk/ExposureGuard.mqh>
+#include <EaTradingSystem/Risk/OpenRiskGuard.mqh>
 #include <EaTradingSystem/Filter/SpreadFilter.mqh>
 #include <EaTradingSystem/Trading/OrderCheckRules.mqh>
 
@@ -19,6 +20,7 @@ private:
    CDailyLossGuard    m_daily_guard;
    CDrawdownGuard     m_drawdown_guard;
    CExposureGuard     m_exposure_guard;
+   COpenRiskGuard     m_open_risk_guard;
    CSpreadFilter      m_spread_filter;
    bool               m_initialized;
    bool               m_operational_healthy;
@@ -141,10 +143,19 @@ public:
         { Reject(decision,error,"Position size calculation rejected the candidate."); return true; }
       decision.estimated_stop_loss=decision.volume*loss_per_lot;
 
-      if(!m_exposure_guard.Evaluate(signal.symbol,decision.volume,m_config.max_open_positions,guard_reason,error))
+      const ENUM_POSITION_TYPE proposed_type=(signal.direction==SIGNAL_DIRECTION_BUY ? POSITION_TYPE_BUY : POSITION_TYPE_SELL);
+      if(!m_exposure_guard.Evaluate(signal.symbol,proposed_type,entry,decision.volume,m_config.max_open_positions,
+                                    m_config.max_same_direction_positions,
+                                    m_config.min_same_direction_entry_distance_points,guard_reason,error))
         { Reject(decision,"RISK_STATE_UNAVAILABLE",error); return false; }
       if(StringLen(guard_reason)>0)
         { Reject(decision,guard_reason,"Position or symbol exposure limit is active."); return true; }
+
+      if(!m_open_risk_guard.Evaluate(decision.estimated_stop_loss,equity,m_config.max_open_risk_rate,
+                                    decision.open_risk_rate,guard_reason,error))
+        { Reject(decision,"RISK_STATE_UNAVAILABLE",error); return false; }
+      if(StringLen(guard_reason)>0)
+        { Reject(decision,guard_reason,"Total open risk across existing positions and this candidate is too high."); return true; }
 
       const ENUM_ORDER_TYPE order_type=(signal.direction==SIGNAL_DIRECTION_BUY ? ORDER_TYPE_BUY : ORDER_TYPE_SELL);
       if(!OrderCalcMargin(order_type,signal.symbol,decision.volume,entry,decision.required_margin) ||
@@ -153,6 +164,13 @@ public:
       const double free_margin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
       if(free_margin<=0.0 || decision.required_margin>free_margin*(1.0-m_config.minimum_free_margin_rate))
         { Reject(decision,"MARGIN_INSUFFICIENT","Configured free-margin reserve would be violated."); return true; }
+
+      // Margin Levelは既存ポジション有無で未定義になりうる（ACCOUNT_MARGIN<=0の口座はSymbolInfoの
+      // 仕様上0を返すブローカーが多いため、その場合は判定をスキップする）。
+      decision.margin_level=AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
+      if(m_config.min_margin_level_percent>0.0 && AccountInfoDouble(ACCOUNT_MARGIN)>0.0 &&
+         decision.margin_level<m_config.min_margin_level_percent)
+        { Reject(decision,"MARGIN_LEVEL_TOO_LOW","Account margin level is below the configured safety threshold."); return true; }
 
       MqlTradeRequest request;
       MqlTradeCheckResult check;
