@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0",
+  "purpose": "複数ポジション保有の設計見直し（コミット88baacb）後、Fold1 Train区間（2017-09〜2018-12）でATR2.0/RR2.0/ADX40を基準に、新規リスクパラメータを適用しInpMinSameDirectionEntryDistancePointsをスイープした。",
+  "code_change_context": {
+    "commit": "88baacb [add]複数ポジション保有を許可",
+    "summary": "ExposureGuardを同一シンボル無条件排他（DUPLICATE_POSITION）から、同一方向は複数保有を許可（MaxSameDirectionPositions・MinSameDirectionEntryDistancePointsで制御）・反対方向（両建て）は引き続き常に禁止（OPPOSITE_DIRECTION_POSITION_EXISTS）という設計へ変更。新規にOpenRiskGuard（口座全体の未決済SLリスク合算がMaxOpenRiskPercentを超えないか）とMinMarginLevelPercent（証拠金維持率の安全下限）を追加。Netting口座では同一方向複数ポジションを個別ticketとして維持できないため、EffectiveMaxSameDirectionで1へ自動的に丸める設計。"
+  },
+  "fixed_parameters": {
+    "InpStopAtrMultiple": 2.0,
+    "InpRiskRewardRatio": 2.0,
+    "InpRegimeTrendAdxMin": 40.0,
+    "InpEntryUseStagedPipeline": true,
+    "InpRiskPerTradePercent": 1.0,
+    "InpDailyLossLimitPercent": 3.0,
+    "InpMaxOpenPositions": 2,
+    "InpMaxSameDirectionPositions": 2,
+    "InpMaxOpenRiskPercent": 3.0,
+    "InpMinMarginLevelPercent": 300.0,
+    "note_on_max_open_positions": "ユーザー指定になかったが、Config.mqhのバリデーション制約（max_same_direction_positions<=max_open_positions）を満たすため、MaxSameDirectionPositions=2に合わせてMaxOpenPositions=2へ設定した（推論による補完、ユーザー未確認）。"
+  },
+  "swept_parameter": "InpMinSameDirectionEntryDistancePoints",
+  "sweep_value_rationale": "観測ATR（約145pt）・StopAtrMultiple=2.0時の典型SL距離（約290pt）を参考に、0（距離制約は無効）からSL距離とほぼ同等（300pt）までの範囲を選定した。",
+  "runs": [
+    {"label": "dist=0(距離制約は無効)", "run_id": "20260823-163736-USDJPY-H1", "distance_points": 0, "number_of_trades": 43, "net_profit": -1630, "profit_factor": 0.99, "sharpe_ratio": 0.02, "win_rate": 0.419, "max_drawdown_amount": 63236, "max_drawdown_rate": 0.0605},
+    {"label": "dist=50pt", "run_id": "20260823-163901-USDJPY-H1", "distance_points": 50, "number_of_trades": 42, "net_profit": 7232, "profit_factor": 1.04, "sharpe_ratio": 0.11, "win_rate": 0.429, "max_drawdown_amount": 54043, "max_drawdown_rate": 0.0517},
+    {"label": "dist=100pt", "run_id": "20260823-164033-USDJPY-H1", "distance_points": 100, "number_of_trades": 40, "net_profit": 28882, "profit_factor": 1.16, "sharpe_ratio": 0.35, "win_rate": 0.450, "max_drawdown_amount": 43755, "max_drawdown_rate": 0.0414},
+    {"label": "dist=200pt", "run_id": "20260823-164205-USDJPY-H1", "distance_points": 200, "number_of_trades": 37, "net_profit": 17807, "profit_factor": 1.11, "sharpe_ratio": 0.26, "win_rate": 0.432, "max_drawdown_amount": 43785, "max_drawdown_rate": 0.0419},
+    {"label": "dist=300pt", "run_id": "20260823-164331-USDJPY-H1", "distance_points": 300, "number_of_trades": 36, "net_profit": 17474, "profit_factor": 1.10, "sharpe_ratio": 0.25, "win_rate": 0.417, "max_drawdown_amount": 43785, "max_drawdown_rate": 0.0419}
+  ],
+  "reference_single_position_baseline": {
+    "run_id": "20260823-131654-USDJPY-H1",
+    "description": "複数ポジション設計見直し前・RiskPerTradePercent=0.5%（既定値）・単一ポジション上限での同一Train区間結果",
+    "number_of_trades": 36, "net_profit": 10065, "profit_factor": 1.12, "sharpe_ratio": 0.27, "max_drawdown_amount": 21309, "max_drawdown_rate": 0.0208
+  },
+  "key_findings": [
+    "MIN_ENTRY_DISTANCE拒否件数はdist値に対して単調増加（dist50:1件→dist100:4件→dist200:9件→dist300:11件）し、機構が意図どおり動作していることを監査ログで確認した。",
+    "MAX_OPEN_RISK_EXCEEDED・MARGIN_LEVEL_TOO_LOWは全runで一度も発火しなかった。InpMaxOpenRiskPercent=3%・InpMinMarginLevelPercent=300%は本Train区間・本パラメータ範囲では一度も制約として機能していなかった（2026-08-23、ストレステストで実効性を確認済み。stress_test_resultsフィールド参照）。",
+    "RiskPerTradePercentを0.5%から1.0%へ倍増した影響で、スタッキングをほぼ起こさないdist=300（取引数36、単一ポジション基準と同数）でも、$純利益・$最大DDとも単一ポジション基準のおよそ2倍規模（DD率2.08%→4.19%）になった。これはポジション積み増しの効果ではなくリスク量そのものを倍にした結果であり、両者を混同しないよう分離して評価する必要がある。",
+    "dist=0（距離制約は無効。docs/configuration.md記載どおり「無効化」であり「無制限」ではない）は明確に悪化（PF0.99・Sharpe0.02、DD率6.05%）。無制限の同方向積み増しは既存のCLAUDE.md禁止事項（無制限のポジション追加）が懸念する典型的な劣化パターンを再現しており、距離制約の必要性を裏付けた。",
+    "dist=100ptが本スイープ中最良（PF1.16・Sharpe+0.35・純利益+28,882円、DD率4.14%はdist200/300とほぼ同水準）。RiskPerTradePercent倍増のみの効果（dist=300の結果で近似）と比べても、dist=100は同程度のDDでより高い純利益・PFを達成しており、単なるリスク量増加を超えた効果を示唆する。ただしn=40と少数であり、本Train区間内での単一の山であるため、本セッションで繰り返し確認されてきた過学習パターン（StopAtrMultiple=1.5、ADX=40等）と同様の再現性リスクに留意する必要がある。"
+  ],
+  "stress_test_results": {
+    "purpose": "InpMaxOpenRiskPercent・InpMinMarginLevelPercentが実際に新規エントリーを拒否する（機構が生きている）ことを確認するため、一時的に厳しい値を設定して再実行した（2026-08-23、ユーザー依頼）。他パラメータはdist=100pt runと同一。",
+    "runs": [
+      {
+        "label": "MaxOpenRiskPercentストレステスト（1.5%へ厳格化。RiskPerTradePercent=1.0%以上である必要があるため1.5%が実質的な下限に近い値）",
+        "run_id": "20260823-165435-USDJPY-H1",
+        "InpMaxOpenRiskPercent": 1.5,
+        "InpMinMarginLevelPercent": 300.0,
+        "rejections": {"MAX_OPEN_RISK_EXCEEDED": 6, "MIN_ENTRY_DISTANCE": 4, "RISK_STATE_UNAVAILABLE": 2, "SPREAD_TOO_WIDE": 1},
+        "approved": 37,
+        "number_of_trades": 36,
+        "net_profit": 17474,
+        "profit_factor": 1.1037857999833696,
+        "result": "CONFIRMED_WORKING"
+      },
+      {
+        "label": "MinMarginLevelPercentストレステスト（10000%へ厳格化、通常の証拠金維持率をはるかに上回る水準）",
+        "run_id": "20260823-165615-USDJPY-H1",
+        "InpMaxOpenRiskPercent": 3.0,
+        "InpMinMarginLevelPercent": 10000.0,
+        "rejections": {"MARGIN_LEVEL_TOO_LOW": 6, "MIN_ENTRY_DISTANCE": 4, "RISK_STATE_UNAVAILABLE": 2, "SPREAD_TOO_WIDE": 1},
+        "approved": 37,
+        "number_of_trades": 36,
+        "net_profit": 17474,
+        "profit_factor": 1.1037857999833696,
+        "result": "CONFIRMED_WORKING"
+      }
+    ],
+    "conclusion": "両ガードとも意図どおり拒否として発火することを確認した。MinMarginLevelPercentのチェックはAccountInfoDouble(ACCOUNT_MARGIN)>0（既存ポジションが1件以上ある状態）でのみ評価されるため、10000%という極端な値でも新規ポジションが0件の状態（ACCOUNT_MARGIN=0）の候補は拒否されない。両runとも拒否対象が「2件目以降の同方向積み増し候補」に限られたため、最終的な取引数・純損益（36件・+17,474円・PF1.10）はdist=300pt runと完全一致した（同じ6件がMAX_OPEN_RISK_EXCEEDEDまたはMARGIN_LEVEL_TOO_LOWのいずれかで一貫してブロックされたため）。"
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "purpose": "ローリングWalk Forward検証 Fold1のTest区間（2019年）をブラインド検証する。Train区間（2017-09〜2018-12）で確認した凍結IS最良パラメータセット＋複数ポジション保有再設計後の新規リスクパラメータを、未知データ区間（Test=2019）へそのまま適用した。",
+  "run_id": "20260823-172448-USDJPY-H1",
+  "important_caveat": "TASKS.md 2.1.1節に既記載のとおり、Test=2019は凍結IS最良パラメータセットの元の調整期間（IS=2017-09〜2020-12）の内側にあるため、厳密には完全なブラインド検証ではない。ただしFold1のTrain区間（2017-09〜2018-12）でのパラメータ選定自体は2019年データを見ていないため、Train結果からTest結果への劣化度合いは参考情報として意味を持つ。",
+  "parameters": {
+    "InpRegimeTrendAdxMin": 40.0,
+    "InpStopAtrMultiple": 2.0,
+    "InpRiskRewardRatio": 2.0,
+    "InpRiskPerTradePercent": 1.0,
+    "InpDailyLossLimitPercent": 3.0,
+    "InpMaxOpenPositions": 5,
+    "InpMaxSameDirectionPositions": 2,
+    "InpMaxOpenRiskPercent": 3.0,
+    "InpMinSameDirectionEntryDistancePoints": 100.0,
+    "InpMinMarginLevelPercent": 300.0,
+    "note_on_max_open_positions": "ユーザー指定によりTrain区間の2から5へ変更。Config.mqhの制約(max_same_direction_positions<=max_open_positions)は2<=5で充足。"
+  },
+  "test_period": {"from": "2019-01-01", "to": "2019-12-31"},
+  "metrics": {
+    "number_of_trades": 20,
+    "net_profit": -80988.0,
+    "profit_factor": 0.38587298578199053,
+    "sharpe_ratio": -1.6453249554262164,
+    "win_rate": 0.15,
+    "max_drawdown_amount": 91926.0,
+    "max_drawdown_rate": 0.091926,
+    "expectancy": -4049.4
+  },
+  "reference_train_result": {
+    "run_id": "20260823-131654-USDJPY-H1",
+    "note": "同一パラメータセット（複数ポジション再設計前、単一ポジション）のTrain区間（2017-09〜2018-12）結果",
+    "number_of_trades": 36,
+    "net_profit": 10065.0,
+    "profit_factor": 1.12
+  },
+  "audit_analysis": {
+    "candidates": 32,
+    "direction_breakdown": {"SELL": 13, "BUY": 19},
+    "approved": 20,
+    "reject_reasons": {
+      "MIN_ENTRY_DISTANCE": 7,
+      "RISK_STATE_UNAVAILABLE": 1,
+      "SPREAD_TOO_WIDE": 1,
+      "MAX_SAME_DIRECTION_POSITIONS": 3
+    },
+    "close_reasons": {"SL": 14, "EXPERT": 3, "TP": 3},
+    "note": "MaxOpenPositions=5は拘束条件として一度も発火せず（POSITION_LIMIT拒否は0件）。MaxSameDirectionPositions=2とMinSameDirectionEntryDistancePoints=100ptが実際の制約として機能した。"
+  },
+  "key_findings": [
+    "Test=2019はTrain区間（純損益+10,065円・PF1.12）から一転し、純損益-80,988円・PF0.39・Sharpe-1.65・最大DD9.19%と大幅に悪化した。",
+    "TP到達率が15%（3/20件）と低く、決済の70%（14/20件）がSLヒットで終わっている。取引の大半が損失方向に傾いている。",
+    "InpMaxOpenPositions=5は本区間では一度も制約として機能しなかった（同時複数ポジションの発生自体がMaxSameDirectionPositions=2とMinSameDirectionEntryDistancePoints=100ptの制約下で稀だったため）。",
+    "この結果はTrain区間内での調整がTest区間（未知データ）へ汎化していない可能性を示す、重要な警告シグナルである。ただしTrain区間自体が凍結IS最良パラメータセットの元の調整期間の一部分であるため、「新規に発見した戦略の汎化性能」の検証としては限定的な情報である。"
+  ]
+}

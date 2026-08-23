@@ -17,6 +17,7 @@ input int             InpAtrPeriod=14;
 input int             InpBreakoutLookback=20;
 input double          InpBreakoutBufferPoints=0.0;
 input double          InpPullbackAtrTolerance=0.15;
+input double          InpPullbackTriggerAtrBuffer=0.0;
 input double          InpRsiBuyMin=50.0;
 input double          InpRsiBuyMax=75.0;
 input double          InpRsiSellMin=25.0;
@@ -101,6 +102,7 @@ int OnInit(void)
    config.breakout_lookback=InpBreakoutLookback;
    config.breakout_buffer_points=InpBreakoutBufferPoints;
    config.pullback_atr_tolerance=InpPullbackAtrTolerance;
+   config.pullback_trigger_atr_buffer=InpPullbackTriggerAtrBuffer;
    config.rsi_buy_min=InpRsiBuyMin;
    config.rsi_buy_max=InpRsiBuyMax;
    config.rsi_sell_min=InpRsiSellMin;

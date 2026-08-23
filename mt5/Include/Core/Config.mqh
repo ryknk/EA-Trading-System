@@ -15,6 +15,7 @@ struct SEaConfig
    int               breakout_lookback;
    double            breakout_buffer_points;
    double            pullback_atr_tolerance;
+   double            pullback_trigger_atr_buffer;
    double            rsi_buy_min;
    double            rsi_buy_max;
    double            rsi_sell_min;
@@ -96,6 +97,7 @@ void SetDefaultConfig(SEaConfig &config)
    config.breakout_lookback         = 20;
    config.breakout_buffer_points    = 0.0;
    config.pullback_atr_tolerance    = 0.15;
+   config.pullback_trigger_atr_buffer = 0.0;
    config.rsi_buy_min               = 50.0;
    config.rsi_buy_max               = 75.0;
    config.rsi_sell_min              = 25.0;
@@ -188,7 +190,7 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_EMA_PERIODS"; return false; }
    if(config.rsi_period<2 || config.atr_period<2 || config.breakout_lookback<2)
      { error="INVALID_INDICATOR_PERIOD"; return false; }
-   if(config.breakout_buffer_points<0.0 || config.pullback_atr_tolerance<0.0)
+   if(config.breakout_buffer_points<0.0 || config.pullback_atr_tolerance<0.0 || config.pullback_trigger_atr_buffer<0.0)
      { error="INVALID_ENTRY_TOLERANCE"; return false; }
    if(config.rsi_buy_min<0.0 || config.rsi_buy_max>100.0 || config.rsi_buy_min>config.rsi_buy_max)
      { error="INVALID_BUY_RSI_RANGE"; return false; }

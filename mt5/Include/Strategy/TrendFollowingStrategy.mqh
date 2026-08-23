@@ -250,7 +250,8 @@ public:
          CTrendFollowingRules::IsBreakout(direction,entry_bar.close,previous_high,previous_low,m_config.breakout_buffer_points*point);
       const bool pullback=m_config.enable_pullback &&
          CTrendFollowingRules::IsPullback(direction,entry_bar.open,entry_bar.high,entry_bar.low,entry_bar.close,h1_fast,
-                                           touch_high,touch_low,h1_fast_touch,atr,m_config.pullback_atr_tolerance);
+                                           touch_high,touch_low,h1_fast_touch,atr,m_config.pullback_atr_tolerance,
+                                           m_config.pullback_trigger_atr_buffer);
 
       // Stage 3 Setup / Stage 4 Entry Trigger。IsPullbackをSetup（押し目/戻り成立）とTrigger（再加速）に
       // 分解した診断専用フィールド（既存のbreakout/pullback変数と数式上等価、判定への影響はない）。
@@ -260,7 +261,8 @@ public:
       result.stage_pullback_setup_passed=m_config.enable_pullback &&
          CTrendFollowingRules::IsPullbackSetup(direction,touch_high,touch_low,h1_fast_touch,atr,m_config.pullback_atr_tolerance);
       result.stage_pullback_trigger_passed=m_config.enable_pullback &&
-         CTrendFollowingRules::IsPullbackTrigger(direction,entry_bar.open,entry_bar.close,h1_fast,touch_high,touch_low);
+         CTrendFollowingRules::IsPullbackTrigger(direction,entry_bar.open,entry_bar.close,h1_fast,touch_high,touch_low,
+                                                  atr,m_config.pullback_trigger_atr_buffer);
 
       if(!breakout && !pullback)
         { result.reason_code="ENTRY_PATTERN_NOT_FOUND"; result.reason="No enabled closed-bar entry pattern matched."; return true; }

@@ -20,6 +20,7 @@ EA設定は用途別に管理し、dev、staging・デモ、productionで設定�
 | `InpBreakoutLookback` | 20 | ブレイクアウト参照本数 |
 | `InpBreakoutBufferPoints` | 0 | ブレイク閾値へのbuffer（2026-08-17、効果不十分のため0へ差し戻し、詳細はTASKS.md参照） |
 | `InpPullbackAtrTolerance` | 0.15 | 押し目のATR許容幅（2026-08-17、誤発注抑制のため0.25→0.15へ縮小。押し目判定も1本足からタッチ足(shift2)＋確認足(shift1)の2本足確認へ変更。確認足のEMA近接制約・タッチ足の逆行性制約はいずれも効果不十分のため撤回済み、詳細はTASKS.md参照） |
+| `InpPullbackTriggerAtrBuffer` | 0（無効） | Pullback Entry Trigger（確認足の再加速判定）が、タッチ足高安値を単に上回る/下回るだけでなくATR基準の余裕幅を要求するようにする追加条件。0は無効化（既定挙動、従来のIsPullbackTriggerと完全一致）。2026-08-23追加、詳細はTASKS.md参照 |
 | `InpRsiBuyMin` / `InpRsiBuyMax` | 50 / 75 | BUY RSI範囲（2026-08-17、55への引き上げは逆効果と判明したため50へ差し戻し、詳細はTASKS.md参照） |
 | `InpRsiSellMin` / `InpRsiSellMax` | 25 / 50 | SELL RSI範囲（2026-08-17、45への引き下げは逆効果と判明したため50へ差し戻し、詳細はTASKS.md参照） |
 | `InpMinimumAtrPoints` | 10 | 最低volatility |

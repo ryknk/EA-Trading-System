@@ -216,6 +216,83 @@
   **`InpRiskRewardRatio`は明確な優劣なし**: 1.5/1.75/2.0いずれもPFが1.0近辺で拮抗しており、現行値2.0が3値中では最良。
 
   **総合評価**: 現行のADX=40・RR=2.0は本Train区間でも妥当性が確認できた（変更の根拠なし）。StopAtrMultiple=1.5は魅力的な数値だが、既知の非単調パターンの再現であり単独の根拠として採用しない。追加の調整はユーザーの評価を待つ（本節末尾の対話メッセージ参照）。
+
+* [x] 複数ポジション保有の設計見直し（コミット`88baacb`）後、Fold1のTrain区間でATR2.0/RR2.0/ADX40を基準に新規リスクパラメータを適用し再実施する（2026-08-23実施、ユーザー依頼）。`InpRiskPerTradePercent=1.0`・`InpDailyLossLimitPercent=3.0`・`InpMaxSameDirectionPositions=2`・`InpMaxOpenRiskPercent=3.0`・`InpMinMarginLevelPercent=300.0`を適用（`InpMaxOpenPositions`はユーザー指定になかったが、`Config.mqh`のバリデーション制約`max_same_direction_positions<=max_open_positions`を満たすため2へ設定、推論による補完）。`InpMinSameDirectionEntryDistancePoints`を観測ATR（約145pt）・StopAtrMultiple=2.0時の典型SL距離（約290pt）を参考に0/50/100/200/300ptでスイープした。詳細は`results/backtests/fold1-train-multipos-sweep-20260823-summary.json`参照。
+
+  | dist(pt) | 取引数 | 純損益 | PF | Sharpe | 最大DD率 |
+  |---|---|---|---|---|---|
+  | 0（距離制約は無効） | 43 | -1,630円 | 0.99 | +0.02 | 6.05% |
+  | 50 | 42 | +7,232円 | 1.04 | +0.11 | 5.17% |
+  | **100** | 40 | **+28,882円** | **1.16** | **+0.35** | 4.14% |
+  | 200 | 37 | +17,807円 | 1.11 | +0.26 | 4.19% |
+  | 300 | 36 | +17,474円 | 1.10 | +0.25 | 4.19% |
+  | 参考: 見直し前（単一ポジション、RiskPerTrade0.5%） | 36 | +10,065円 | 1.12 | +0.27 | 2.08% |
+
+  **機構の動作確認**: `MIN_ENTRY_DISTANCE`拒否件数はdist値に対し単調増加（50pt:1件→100pt:4件→200pt:9件→300pt:11件）し、監査ログで意図どおりの動作を確認した。一方`MAX_OPEN_RISK_EXCEEDED`・`MARGIN_LEVEL_TOO_LOW`は全runで一度も発火せず、`InpMaxOpenRiskPercent=3%`・`InpMinMarginLevelPercent=300%`が実際に拒否として機能することは本Train区間では未検証（コードレビューでは正しく実装されていることを確認済み）。
+
+  **リスク量倍増との分離**: `InpRiskPerTradePercent`を0.5%→1.0%へ倍増した影響で、積み増しがほぼ発生しないdist=300（取引数36、単一ポジション基準と同数）でも$純利益・$最大DDとも基準のおよそ2倍規模（DD率2.08%→4.19%）になった。これは積み増し効果ではなくリスク量そのものを倍にした結果であり、混同しないよう分離して評価する必要がある。
+
+  **dist=0（距離制約が無効。`docs/configuration.md`に明記のとおり、これは「制約が無効化される」既定挙動であり「積み増し無制限が有効になる」設定ではない。2026-08-23ユーザー指摘を受け訂正）は明確に悪化**（PF0.99・Sharpe+0.02、DD率6.05%）。距離制約なしでの同方向積み増しは`CLAUDE.md`が禁止する「無制限のポジション追加」に近い劣化パターンを再現しており、距離制約の必要性を裏付けた。
+
+  **dist=100ptが本スイープ中最良**（PF1.16・Sharpe+0.35・純利益+28,882円）で、DD率（4.14%）はdist200/300とほぼ同水準ながらより高い純利益・PFを達成しており、単なるリスク量増加（dist=300で近似）を超える効果を示唆する。ただしn=40と少数であり、本Train区間内での単一の山であるため、本セッションで繰り返し確認されてきた過学習パターン（StopAtrMultiple=1.5、ADX=40等）と同様の再現性リスクに留意が必要。
+
+  **総合評価: `InpMinSameDirectionEntryDistancePoints=100`を有力候補として記録するが、単独のTrain区間内スイープの結果であり採用は保留する。** 残存リスクと追加の調整要否はユーザーの評価を待つ（本節末尾の対話メッセージ参照）。
+
+* [x] `InpMaxOpenRiskPercent`・`InpMinMarginLevelPercent`の実効性をストレステストで確認する（2026-08-23実施、ユーザー依頼）。同一Train区間（2017-09〜2018-12）・dist=100pt構成をベースに、各ガードのみ一時的に厳格化して再実行した。詳細は`results/backtests/fold1-train-multipos-sweep-20260823-summary.json`の`stress_test_results`参照。
+
+  * `InpMaxOpenRiskPercent`を3%→**1.5%**（`InpRiskPerTradePercent`=1%以上という制約上の実質的な下限に近い値）へ厳格化: `MAX_OPEN_RISK_EXCEEDED`が6件発火し、機構が正しく動作することを確認した（`results/backtests/20260823-165435-USDJPY-H1/`）。
+  * `InpMinMarginLevelPercent`を300%→**10000%**（通常の証拠金維持率を大きく上回る極端な値）へ厳格化: `MARGIN_LEVEL_TOO_LOW`が6件発火し、機構が正しく動作することを確認した（`results/backtests/20260823-165615-USDJPY-H1/`）。なお本チェックは`AccountInfoDouble(ACCOUNT_MARGIN)>0`（既存ポジションが1件以上ある状態）でのみ評価されるため、10000%でも新規ポジション0件の候補（最初の1件目）は拒否されない仕様であり、これは意図どおりの挙動。
+  * 両runとも拒否対象は「2件目以降の同方向積み増し候補」に限られ、取引数・純損益（36件・+17,474円・PF1.10）はdist=300pt runと完全一致した。
+
+  **総合評価: 両ガードとも実データで正しく拒否として発火することを確認した。安全機構としての実効性に問題は見つからなかった。** ユーザー指摘（2026-08-23）を受け、`InpMinSameDirectionEntryDistancePoints=0`の挙動説明を「積み増し無制限」から`docs/configuration.md`記載どおりの「距離制約が無効化される」へ訂正した（本節上部のdist=0の記述を修正済み）。
+
+* [x] Fold1のTest区間（2019年）でブラインド検証を実施する（2026-08-23実施、ユーザー依頼）。Train区間で確認した構成（ADX40/StopATR2.0/RR2.0、dist=100pt、`InpMaxOpenRiskPercent`=3%、`InpMinMarginLevelPercent`=300%）に、ユーザー指定で`InpMaxOpenPositions`を2から**5**へ変更して適用した（`Config.mqh`の制約`max_same_direction_positions<=max_open_positions`は2<=5で充足）。詳細は`results/backtests/fold1-test2019-20260823-summary.json`参照（`results/backtests/20260823-172448-USDJPY-H1/`）。
+
+  | 区間 | 取引数 | 純損益 | PF | Sharpe | 最大DD率 |
+  |---|---|---|---|---|---|
+  | Train（2017-09〜2018-12、単一ポジション構成の参考値） | 36 | +10,065円 | 1.12 | +0.27 | 2.08% |
+  | **Test（2019、本run）** | 20 | **-80,988円** | **0.39** | **-1.65** | 9.19% |
+
+  **重要な警告シグナル**: Test区間はTrain区間から一転して大幅に悪化した。TP到達率は15%（3/20件）に留まり、決済の70%（14/20件）がSLヒットで終わっている。`InpMaxOpenPositions=5`は本区間では一度も制約として機能せず（`POSITION_LIMIT`拒否0件）、実際の制約は`InpMaxSameDirectionPositions=2`（3件拒否）と`InpMinSameDirectionEntryDistancePoints=100`（7件拒否）だった。
+
+  **解釈上の留意点（本節冒頭の限界と合わせて評価する必要がある）**: Test=2019は凍結IS最良パラメータセットの元の調整期間（IS=2017-09〜2020-12）の内側にあるため、厳密な意味でのブラインド検証ではない。ただしFold1のTrain区間自体（2017-09〜2018-12）は2019年データを一切参照していないため、「Train区間での調整結果が、その直後の未知期間へ汎化するか」という観点では意味のある悪化シグナルである。CLAUDE.mdの原則（推測で実装しない、危険な状態で動くことを避ける）に照らし、この結果を無視して次のFoldへ進むべきではない。
+
+* [x] Test=2019の悪化要因を`python.analysis.trade_breakdown`で分析する（2026-08-23実施、ユーザー依頼）。詳細は`results/backtests/20260823-172448-USDJPY-H1/breakdown/trade-breakdown-report.md`参照。
+
+  **主要因1: TrendUp判定エントリーの壊滅的失敗が損失の87%を占める**。`market_regime_trend=TrendUp`の9件は勝率0%・純損益-70,630円（総損失-80,988円の87%）。対する`TrendDown`の11件は勝率27.3%・純損益-10,358円と相対的に軽微。2019年のUSDJPYは1〜4月に108→112へ上昇後、5〜8月に106近辺まで下落し11〜12月に109台へ戻すという往復相場で、持続的な一方向トレンドが乏しかったことと整合する。
+
+  **主要因2: 高ADX（エグゾーション圏）エントリーの全滅**。`adx_band=ADX_47.36-60.35`の7件は勝率0%・純損益-52,247円。ADXが極端に高い局面（既にトレンドが伸び切った状態）でのエントリーが軒並み失敗しており、順張りの「高値掴み・安値掴み」に近いパターンが疑われる。
+
+  **主要因3: 大多数の負けトレードはエントリー直後にほぼ含み益を作れずSLへ直行**。負け17件中12件はMFE_R<0.5（含み益が最大リスクの半分未満）で反転しており、決済管理（Breakeven等）では救えない「エントリー精度」の問題。残り5件はMFE_R 0.6〜1.4まで到達後に反転しており、うち大半は既存のBreakeven機構（`InpBreakevenTriggerR=1.0`）で小損失に抑えられていたが、1件（2019-01-22、MFE_R0.91で僅かに閾値未達）はBreakeven発動直前で反転し-1.12Rの損失となった。
+
+  **総合評価**: 2019年はGiveback比率が極端に高く（平均546%・中央値279%、負けトレード全17件が一度含み益化してから反転）、Train区間（2017-09〜2018-12）と異なり持続的トレンドが乏しい往復相場だったことが、トレンドフォロー戦略の構造的な不利として表れたと考えられる。
+
+* [x] **「C. Setup/Trigger条件の強化」を実装し、Train区間で再検証する（ユーザー依頼、2026-08-23実施）。** 悪化要因3（負け17件中12件がMFE_R<0.5でSLへ直行）へ対応するため、Pullback Entry Trigger（`CTrendFollowingRules::IsPullbackTrigger`）に、タッチ足高安値を単に上回る/下回るだけでなくATR基準の余裕幅を要求する追加条件`trigger_atr_buffer`を導入した。既存の`IsBreakout`が持つbuffer機構（`breakout_buffer_points`）と同じ設計パターンを踏襲し、新規input `InpPullbackTriggerAtrBuffer`（既定値`0.0`＝無効、従来挙動と完全一致）で制御する。B案（高ADX局面での新規エントリー抑制）・D案（レジームフィルタ強化）は、今回のTest=2019で観測された具体的な閾値をそのまま使うと後付け最適化になるリスクが高いため対象外とし、ユーザー指定どおりC案のみに絞った。
+
+  変更ファイル: `mt5/Include/Strategy/TrendFollowingRules.mqh`（`IsPullbackTrigger`・`IsPullback`にデフォルト引数`atr`・`trigger_atr_buffer`を追加、既定値0.0で数式上従来と完全等価）・`mt5/Include/Strategy/TrendFollowingStrategy.mqh`（呼び出し2箇所に`m_config.pullback_trigger_atr_buffer`を追加）・`mt5/Include/Core/Config.mqh`（新規フィールド`pullback_trigger_atr_buffer`、既定値0.0、validation追加）・`mt5/Experts/CoreEA.mq5`（新規input `InpPullbackTriggerAtrBuffer`、配線）・`mt5/Tests/TestTrendFollowingRules.mq5`（新規4アサーション）・`docs/configuration.md`。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS（`TestTrendFollowingRules`は新規4アサーション含む23件全PASS、他は既知事象と同じTerminal Exit Code 1のみ）で確認済み。
+
+  Train区間（2017-09〜2018-12、現行の複数ポジション構成: ADX40/StopATR2.0/RR2.0/dist=100pt/`InpMaxOpenPositions=5`/`InpMaxSameDirectionPositions=2`/`InpMaxOpenRiskPercent=3%`/`InpMinMarginLevelPercent=300%`）で`InpPullbackTriggerAtrBuffer`を0.00/0.05/0.10/0.15/0.20でスイープした。
+
+  | buffer | 取引数 | 純損益 | PF | Sharpe | 最大DD率 | 勝率 |
+  |---|---|---|---|---|---|---|
+  | 0.00（無効、従来挙動） | 40 | +28,882円 | 1.161 | +0.348 | 4.14% | 45.0% |
+  | 0.05 | 39 | +30,801円 | 1.174 | +0.369 | 3.96% | 46.2% |
+  | 0.10 | 39 | +30,801円 | 1.174 | +0.369 | 3.96% | 46.2% |
+  | 0.15 | 39 | +30,801円 | 1.174 | +0.369 | 3.96% | 46.2% |
+  | 0.20 | 38 | +40,535円 | 1.239 | +0.478 | 4.00% | 47.4% |
+
+  **後方互換性の確認**: buffer=0.00は、この節で先に確認したdist=100pt構成のTrain結果（取引数40・純損益+28,882円・PF1.16・Sharpe+0.35・DD率4.14%）と完全一致し、コード変更が既定値で従来挙動を一切変えていないことを実データで確認した。
+
+  **機構の動作確認**: buffer引き上げにより除外された取引は、0.00→0.05で1件（2018-09-07 BUY、-1,919円）、0.05→0.20で1件（2017-09-27 BUY、-9,826円）のみで、いずれも負けトレードだった。「弱いTrigger（タッチ足高安値を僅かに超えるだけの再加速）を除外する」という設計意図どおりに機能しており、除外対象が偶然ではなく損失トレードに偏っていることを確認した。
+
+  **総合評価: 方向性としては改善が見られ、設計意図（弱いTriggerの除外）どおりに機能していることも確認できたが、効果の実体はTrain区間40件中わずか1〜2件の除外に留まる薄いサンプルであり、本セッションで繰り返し指摘してきた過学習リスク（StopAtrMultiple=1.5、ADX=40等の単一区間内での「山」）と同様の注意が必要**。特にbuffer=0.20が最良となっているのは、スイープ範囲の端点で1件を追加除外した結果であり、単独の根拠として採用すべきではない。0.05〜0.15が同一取引セットで安定していることから、採用する場合はプラトーの中間である0.10を候補とするのが0.20の端点选択より穏当と考える。
+
+  **未対応の残存課題**: 本変更は悪化要因3（エントリー直後の即時反転）の一部にのみ対応するものであり、悪化要因1（TrendUp判定エントリーの0/9勝、総損失の87%）・悪化要因2（高ADX局面エントリーの0/7勝）には一切対応していない（ユーザー指定によりC案のみに限定したため）。Test=2019の悪化を包括的に説明・改善する変更ではなく、部分的な改善候補である。
+
+  **次のステップに関する提案**: IS/OOS分離の原則上、この閾値をTest=2019の結果を見て調整することは避けるべきである（本ラウンドはTrain区間のみを使用しており、この点は遵守済み）。採用する場合は、(1) buffer=0.10を暫定候補として固定し、(2) Test=2019で一度だけ確認する、という手順を推奨する。ただし要因1・2が未対応のままでは、Test=2019の大幅な悪化（-80,988円）を覆すほどの改善は期待できない可能性が高い。
+
 * [ ] Fold2〜6（Train2017-09〜2019-12→Test2020、Train2018-2020→Test2021、Train2019-2021→Test2022、Train2020-2022→Test2023、Train2021-2023→Test2024）を同様の手順で実行する。
 
 * [x] 監査ログ汚染バグの影響を受けていた可能性がある分析（Buy/Sell・時間帯・曜日・相場レジーム・ATR帯・ADX帯別の有意差分析）を再検証する（2026-08-22実施。`InpEntryUseStagedPipeline=false`（Buy/Sell等の分析時点の構成）へ一時的に戻し、修正済み`tools/run-strategy-tester.ps1`で同一IS期間を再実行（`results/backtests/20260822-195446-USDJPY-H1/`）。**検証手順**: (1) 純損益-48,223円・PF0.89・Sharpe-1.10・取引数209がベースラインと完全一致することを確認。(2) `InpEntryUseStagedPipeline=false`で実行したにもかかわらず`ENTRY_PIPELINE`イベント（staged pipeline有効時のみ記録されるはずの診断ログ）が0件であることを確認し、前回発見した汚染（他run由来の`ENTRY_PIPELINE`混入）が本runには存在しないことを確認。(3) `trade_breakdown`を再実行し、direction/session/weekday/market_regime_trend/market_regime_volatility/atr_band/adx_bandの全内訳が、既報の値（Buy/Sell・時間帯・曜日別分析および相場レジーム別分析の回でそれぞれ報告した数値）と完全一致することを確認。**結論: Buy/Sell・時間帯・曜日・相場レジーム（トレンド/ボラティリティ）・ATR帯・ADX帯別の分析結果はいずれも汚染の影響を受けておらず、既報の「統計的に有意な勝率差は確認できなかった」という結論は有効**。汚染が実際に混入していたのは`InpRegimeTrendAdxMin`スイープの40番run（`20260822-181739`）のみであり、これは前タスクで既に修正済みツールにより再実行・再評価済み（`20260822-183152`、結果は変化なし）。

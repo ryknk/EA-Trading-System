@@ -68,6 +68,17 @@ void OnStart(void)
                                                 1.1015,1.0995,1.1000,0.0100,0.15),
               "setup AND trigger equals composed IsPullback for rejected buy case");
 
+   // Trigger ATR余裕幅（trigger_atr_buffer）: 弱いTrigger（タッチ足高安値を僅かに超えるのみ）を
+   // 追加で棄却できることを検証する。既定0.0では従来どおり合格し続ける（後方互換）。
+   AssertTrue(CTrendFollowingRules::IsPullbackTrigger(SIGNAL_DIRECTION_BUY,1.1002,1.1010,1.1006,1.1005,1.0995,0.0100,0.0),
+              "buy pullback trigger unaffected by default zero buffer");
+   AssertTrue(!CTrendFollowingRules::IsPullbackTrigger(SIGNAL_DIRECTION_BUY,1.1002,1.1010,1.1006,1.1005,1.0995,0.0100,0.15),
+              "buy pullback trigger rejected when close fails to clear touch high by ATR buffer");
+   AssertTrue(CTrendFollowingRules::IsPullbackTrigger(SIGNAL_DIRECTION_BUY,1.1002,1.1010,1.1006,1.1005,1.0995,0.0100,0.02),
+              "buy pullback trigger accepted when close clears touch high by a small ATR buffer");
+   AssertTrue(!CTrendFollowingRules::IsPullbackTrigger(SIGNAL_DIRECTION_SELL,1.0993,1.0985,1.0994,1.1005,1.0995,0.0100,0.15),
+              "sell pullback trigger rejected when close fails to clear touch low by ATR buffer");
+
    if(g_failures==0)
       Print("TEST_SUITE_PASS TestTrendFollowingRules");
    else
