@@ -15,7 +15,13 @@ enum EMeanReversionTakeProfitMode
 // レンジ端からの平均回帰を狙う第二の候補生成ロジック。Choppiness Index（レンジの往復効率性）と
 // ADX（トレンド強度）の両方でレンジ相場と確認できた場合のみ活動する。Band外側へのブレイク後、
 // 確定足で内側へ復帰したタイミングのみをEntryとする（タッチのみでは反応しない）。
-class CMeanReversionRules
+//
+// エントリー条件（本クラス）と保有中ポジションの強制決済条件（CMeanReversionExitRules）は、
+// 目的も判定基準も異なるためコード上も明確に分離する（2026-08-24追記）。Range Filter（CI/ADX閾値）は
+// 新規エントリーの成立条件としてのみ用い、保有中ポジションの決済判断には使わない。CI/ADXの
+// 一時的な閾値跨ぎだけで決済すると過剰反応（ホイッスル）になるため、強制決済はレンジ崩壊を
+// 示すより強い条件（CMeanReversionExitRules参照）でのみ発動する。
+class CMeanReversionEntryRules
   {
 public:
    // Range Filter: Choppiness IndexがCI閾値以上、かつADXがADX上限未満の場合のみレンジ相場と判定する。
@@ -107,15 +113,33 @@ public:
       return basis;
      }
 
-   // レンジ上限/下限（Band）を確定足Closeで明確にブレイクしたか（保有ポジション方向への逆行）。
+  };
+
+// 保有中のレンジポジションに対する強制決済条件専用（エントリー条件のCMeanReversionEntryRulesとは
+// 意図的に別クラスへ分離、2026-08-24追記）。CI/ADXの一時的な閾値跨ぎのような弱いシグナルでは
+// 反応せず、レンジ崩壊を示す強い条件（実際の価格構造ブレイク、またはADX急伸）でのみ決済する。
+class CMeanReversionExitRules
+  {
+public:
+   // レンジ高値/安値（直近N本の実際のスイング高安値、Bollinger Bandのような統計的構成物ではない）を
+   // 確定足Closeで明確にブレイクしたか（保有ポジション方向への逆行）。
    static bool IsRangeBreak(const ESignalDirection position_direction,const double confirmed_close,
-                            const double lower_band,const double upper_band)
+                            const double recent_range_low,const double recent_range_high)
      {
-      if(!MathIsValidNumber(confirmed_close) || !MathIsValidNumber(lower_band) || !MathIsValidNumber(upper_band))
+      if(!MathIsValidNumber(confirmed_close) || !MathIsValidNumber(recent_range_low) || !MathIsValidNumber(recent_range_high))
          return false;
-      if(position_direction==SIGNAL_DIRECTION_BUY) return confirmed_close<lower_band;
-      if(position_direction==SIGNAL_DIRECTION_SELL) return confirmed_close>upper_band;
+      if(position_direction==SIGNAL_DIRECTION_BUY) return confirmed_close<recent_range_low;
+      if(position_direction==SIGNAL_DIRECTION_SELL) return confirmed_close>recent_range_high;
       return false;
+     }
+
+   // ADXがadx_thresholdを超え、かつ直近確定足間で上昇中（強いトレンドの急発生を示す）。
+   // 単純な閾値跨ぎ（一時的な上下動）では反応しないよう、上昇方向であることも同時に要求する。
+   static bool IsAdxSurging(const double current_adx,const double previous_adx,const double adx_threshold)
+     {
+      if(!MathIsValidNumber(current_adx) || !MathIsValidNumber(previous_adx) || adx_threshold<=0.0)
+         return false;
+      return current_adx>adx_threshold && current_adx>previous_adx;
      }
 
    // BB Widthが過去N本平均のexpansion_ratio倍以上に急拡大したか（レンジ状態からの逸脱）。
@@ -328,7 +352,7 @@ public:
                                                             m_config.mean_reversion_choppiness_period);
       result.adx=adx;
 
-      if(!CMeanReversionRules::IsRangeFilterActive(choppiness,adx,m_config.mean_reversion_choppiness_min,
+      if(!CMeanReversionEntryRules::IsRangeFilterActive(choppiness,adx,m_config.mean_reversion_choppiness_min,
                                                     m_config.mean_reversion_adx_max))
         {
          result.reason_code="NOT_RANGE_MARKET";
@@ -355,7 +379,7 @@ public:
       const double close=entry_bar[0].close;
       const double entry_lower=window_lower_bands[0];
       const double entry_upper=window_upper_bands[0];
-      const ESignalDirection direction=CMeanReversionRules::EntryDirectionWithReentry(
+      const ESignalDirection direction=CMeanReversionEntryRules::EntryDirectionWithReentry(
          window_closes,window_lower_bands,window_upper_bands,max_reentry_bars);
       if(direction==SIGNAL_DIRECTION_NONE)
         { result.reason_code="RANGE_REVERSAL_PATTERN_NOT_FOUND"; result.reason="No band break-and-return pattern matched within the reentry window."; return true; }
@@ -376,16 +400,16 @@ public:
       if(direction==SIGNAL_DIRECTION_BUY)
         {
          result.stop_loss=NormalizeDouble(
-            CMeanReversionRules::StopLossBuy(entry_lower,recent_low,atr,m_config.mean_reversion_stop_atr_multiple),digits);
+            CMeanReversionEntryRules::StopLossBuy(entry_lower,recent_low,atr,m_config.mean_reversion_stop_atr_multiple),digits);
          result.take_profit=NormalizeDouble(
-            CMeanReversionRules::TakeProfit(direction,m_config.mean_reversion_take_profit_mode,basis,entry_upper,entry_lower),digits);
+            CMeanReversionEntryRules::TakeProfit(direction,m_config.mean_reversion_take_profit_mode,basis,entry_upper,entry_lower),digits);
         }
       else
         {
          result.stop_loss=NormalizeDouble(
-            CMeanReversionRules::StopLossSell(entry_upper,recent_high,atr,m_config.mean_reversion_stop_atr_multiple),digits);
+            CMeanReversionEntryRules::StopLossSell(entry_upper,recent_high,atr,m_config.mean_reversion_stop_atr_multiple),digits);
          result.take_profit=NormalizeDouble(
-            CMeanReversionRules::TakeProfit(direction,m_config.mean_reversion_take_profit_mode,basis,entry_upper,entry_lower),digits);
+            CMeanReversionEntryRules::TakeProfit(direction,m_config.mean_reversion_take_profit_mode,basis,entry_upper,entry_lower),digits);
         }
       if(result.stop_loss<=0.0 || result.take_profit<=0.0 ||
          (direction==SIGNAL_DIRECTION_BUY && !(result.stop_loss<result.entry_price && result.take_profit>result.entry_price)) ||
@@ -400,8 +424,11 @@ public:
       return true;
      }
 
-   // 保有中のレンジポジションについて、Range Filter解除・レンジブレイク・BB Width急拡大の
-   // いずれかを検知したら決済すべきと判断する（保有継続の前提が崩れたかどうかの再検証専用）。
+   // 保有中のレンジポジションについて、レンジ崩壊を示す「強い」条件（レンジ高値/安値の確定足
+   // ブレイク、またはADX急伸）、あるいはBB Width急拡大のいずれかを検知したら決済すべきと判断する
+   // （保有継続の前提が崩れたかどうかの再検証専用）。エントリー条件のRange Filter（CI/ADX閾値）は
+   // 新規エントリーの成立条件としてのみ用いており、保有中ポジションの決済判断には使わない
+   // （CI/ADXの一時的な閾値跨ぎ1本だけを理由に決済すると過剰反応になるため、2026-08-24仕様変更）。
    // トレンドフォロー戦略のIsTrendStillValidと同じ考え方: データ取得不能時はfalse-safe（true=保有継続）。
    bool IsRangeStillValid(const ESignalDirection position_direction,string &reason_code)
      {
@@ -409,28 +436,25 @@ public:
       if(!m_initialized)
         { reason_code="STRATEGY_NOT_INITIALIZED"; return true; }
 
-      double adx;
-      double atr_sum,choppiness_high,choppiness_low;
-      if(!ReadIndicator(m_adx_handle,1,adx) || !ReadChoppinessInputs(atr_sum,choppiness_high,choppiness_low))
-        { reason_code="MARKET_DATA_UNAVAILABLE"; return true; }
-      const double choppiness=CChoppinessIndex::Calculate(atr_sum,choppiness_high,choppiness_low,
-                                                            m_config.mean_reversion_choppiness_period);
-      if(!CMeanReversionRules::IsRangeFilterActive(choppiness,adx,m_config.mean_reversion_choppiness_min,
-                                                    m_config.mean_reversion_adx_max))
-        { reason_code="RANGE_FILTER_RELEASED"; return false; }
-
-      double upper,lower;
       const double close=iClose(m_config.symbol,m_config.entry_timeframe,1);
-      if(close<=0.0 || !ReadBandBuffer(1,1,upper) || !ReadBandBuffer(2,1,lower))
+      double recent_high,recent_low;
+      if(close<=0.0 || !ReadRecentRange(m_config.mean_reversion_bb_period,recent_high,recent_low))
         { reason_code="MARKET_DATA_UNAVAILABLE"; return true; }
-      if(CMeanReversionRules::IsRangeBreak(position_direction,close,lower,upper))
+      if(CMeanReversionExitRules::IsRangeBreak(position_direction,close,recent_low,recent_high))
         { reason_code="RANGE_BREAK"; return false; }
 
-      double average_width;
-      if(!ReadBbWidthBaseline(m_config.mean_reversion_bb_width_lookback,average_width))
+      double adx_now,adx_previous;
+      if(!ReadIndicator(m_adx_handle,1,adx_now) || !ReadIndicator(m_adx_handle,2,adx_previous))
+        { reason_code="MARKET_DATA_UNAVAILABLE"; return true; }
+      if(CMeanReversionExitRules::IsAdxSurging(adx_now,adx_previous,m_config.mean_reversion_forced_exit_adx_threshold))
+        { reason_code="ADX_SURGE"; return false; }
+
+      double upper,lower,average_width;
+      if(!ReadBandBuffer(1,1,upper) || !ReadBandBuffer(2,1,lower) ||
+         !ReadBbWidthBaseline(m_config.mean_reversion_bb_width_lookback,average_width))
         { reason_code="MARKET_DATA_UNAVAILABLE"; return true; }
       const double current_width=upper-lower;
-      if(CMeanReversionRules::IsBbWidthExpanded(current_width,average_width,m_config.mean_reversion_bb_width_expansion_ratio))
+      if(CMeanReversionExitRules::IsBbWidthExpanded(current_width,average_width,m_config.mean_reversion_bb_width_expansion_ratio))
         { reason_code="BB_WIDTH_EXPANSION"; return false; }
 
       return true;

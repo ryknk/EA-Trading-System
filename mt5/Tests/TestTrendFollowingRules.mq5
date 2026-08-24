@@ -109,13 +109,13 @@ void OnStart(void)
               "sell pullback trigger rejected when close fails to clear touch low by ATR buffer");
 
    // レンジ相場逆張りロジック（2026-08-24仕様変更）: Range Filter（Choppiness Index+ADX）の単体テスト。
-   AssertTrue(CMeanReversionRules::IsRangeFilterActive(70.0,20.0,60.0,25.0),
+   AssertTrue(CMeanReversionEntryRules::IsRangeFilterActive(70.0,20.0,60.0,25.0),
               "range filter active when choppiness high and ADX low");
-   AssertTrue(!CMeanReversionRules::IsRangeFilterActive(50.0,20.0,60.0,25.0),
+   AssertTrue(!CMeanReversionEntryRules::IsRangeFilterActive(50.0,20.0,60.0,25.0),
               "range filter inactive when choppiness below threshold");
-   AssertTrue(!CMeanReversionRules::IsRangeFilterActive(70.0,30.0,60.0,25.0),
+   AssertTrue(!CMeanReversionEntryRules::IsRangeFilterActive(70.0,30.0,60.0,25.0),
               "range filter inactive when ADX at or above ceiling");
-   AssertTrue(!CMeanReversionRules::IsRangeFilterActive(70.0,MathSqrt(-1.0),60.0,25.0),
+   AssertTrue(!CMeanReversionEntryRules::IsRangeFilterActive(70.0,MathSqrt(-1.0),60.0,25.0),
               "range filter inactive on NaN ADX");
 
    // Entry（Reentry Window対応、2026-08-24追加）: Band外側へのブレイク後、最大max_reentry_bars本
@@ -128,7 +128,7 @@ void OnStart(void)
                      149.600,149.500,151.000,   // shift1: entryがLower Band内へ復帰
                      149.400,149.500,151.000,   // shift2: touchがLower Bandを下抜け
                      149.600,149.450,150.950);  // shift3: ブレイク以前はBand内側
-   AssertTrue(CMeanReversionRules::EntryDirectionWithReentry(w_closes,w_lower,w_upper,1)==SIGNAL_DIRECTION_BUY,
+   AssertTrue(CMeanReversionEntryRules::EntryDirectionWithReentry(w_closes,w_lower,w_upper,1)==SIGNAL_DIRECTION_BUY,
               "reentry bars=1: buy equivalent to the legacy single-bar break-and-return");
 
    // MaxReentryBars=1: shift3もBand外側（ブレイクが1本より前から継続）なら期限切れで不成立。
@@ -136,7 +136,7 @@ void OnStart(void)
                      149.600,149.500,151.000,
                      149.400,149.500,151.000,
                      149.350,149.480,150.980);  // shift3もLower Band外側のまま
-   AssertTrue(CMeanReversionRules::EntryDirectionWithReentry(w_closes,w_lower,w_upper,1)==SIGNAL_DIRECTION_NONE,
+   AssertTrue(CMeanReversionEntryRules::EntryDirectionWithReentry(w_closes,w_lower,w_upper,1)==SIGNAL_DIRECTION_NONE,
               "reentry bars=1: rejected when the break already lasted more than 1 bar (expired)");
 
    // touchがBandを一度も割っていない場合は不成立（復帰は既に成立済みで新規事象ではない）。
@@ -144,7 +144,7 @@ void OnStart(void)
                      149.600,149.500,151.000,
                      149.600,149.500,151.000,   // shift2もBand内側＝ブレイクなし
                      149.600,149.500,151.000);
-   AssertTrue(CMeanReversionRules::EntryDirectionWithReentry(w_closes,w_lower,w_upper,1)==SIGNAL_DIRECTION_NONE,
+   AssertTrue(CMeanReversionEntryRules::EntryDirectionWithReentry(w_closes,w_lower,w_upper,1)==SIGNAL_DIRECTION_NONE,
               "reentry: rejected when the touch bar never broke the band");
 
    // MaxReentryBars=3: ブレイク開始からちょうど3本目での復帰（窓の境界）は成立する。
@@ -154,7 +154,7 @@ void OnStart(void)
                      149.250,149.460,150.960,   // shift3: ブレイク継続
                      149.200,149.440,150.940,   // shift4: ブレイク開始（gap=3）
                      149.600,149.400,150.900);  // shift5: ブレイク以前はBand内側
-   AssertTrue(CMeanReversionRules::EntryDirectionWithReentry(w5_closes,w5_lower,w5_upper,3)==SIGNAL_DIRECTION_BUY,
+   AssertTrue(CMeanReversionEntryRules::EntryDirectionWithReentry(w5_closes,w5_lower,w5_upper,3)==SIGNAL_DIRECTION_BUY,
               "reentry bars=3: buy accepted when return happens exactly at the window boundary (gap=3)");
 
    // MaxReentryBars=3: ブレイクが4本以上前から継続していた場合は期限切れで不成立。
@@ -164,7 +164,7 @@ void OnStart(void)
                      149.250,149.460,150.960,
                      149.200,149.440,150.940,
                      149.150,149.400,150.900);  // shift5もLower Band外側のまま（ブレイクは4本以上前から）
-   AssertTrue(CMeanReversionRules::EntryDirectionWithReentry(w5_closes,w5_lower,w5_upper,3)==SIGNAL_DIRECTION_NONE,
+   AssertTrue(CMeanReversionEntryRules::EntryDirectionWithReentry(w5_closes,w5_lower,w5_upper,3)==SIGNAL_DIRECTION_NONE,
               "reentry bars=3: rejected when the break started more than 3 bars before the return");
 
    // MaxReentryBars=3: SELL方向（Upper Band）も同様に窓内の復帰で成立する。
@@ -174,50 +174,65 @@ void OnStart(void)
                      151.250,149.540,151.040,   // shift3: ブレイク継続
                      151.300,149.560,151.060,   // shift4: ブレイク開始
                      150.900,149.600,151.100);  // shift5: ブレイク以前はBand内側
-   AssertTrue(CMeanReversionRules::EntryDirectionWithReentry(w5_closes,w5_lower,w5_upper,3)==SIGNAL_DIRECTION_SELL,
+   AssertTrue(CMeanReversionEntryRules::EntryDirectionWithReentry(w5_closes,w5_lower,w5_upper,3)==SIGNAL_DIRECTION_SELL,
               "reentry bars=3: sell accepted when return happens within the window (upper band)");
 
    // 不正なmax_reentry_bars・配列サイズ不足は不成立。
-   AssertTrue(CMeanReversionRules::EntryDirectionWithReentry(w_closes,w_lower,w_upper,0)==SIGNAL_DIRECTION_NONE,
+   AssertTrue(CMeanReversionEntryRules::EntryDirectionWithReentry(w_closes,w_lower,w_upper,0)==SIGNAL_DIRECTION_NONE,
               "reentry: rejected when max_reentry_bars is non-positive");
    double w_short_closes[]={149.600,149.400};
    double w_short_lower[]={149.500,149.500};
    double w_short_upper[]={151.000,151.000};
-   AssertTrue(CMeanReversionRules::EntryDirectionWithReentry(w_short_closes,w_short_lower,w_short_upper,1)==SIGNAL_DIRECTION_NONE,
+   AssertTrue(CMeanReversionEntryRules::EntryDirectionWithReentry(w_short_closes,w_short_lower,w_short_upper,1)==SIGNAL_DIRECTION_NONE,
               "reentry: rejected when the supplied window array is smaller than max_reentry_bars+2");
 
    // SL: BandまたはRecent Rangeのうち保守的な方の外側にATR×バッファを設ける。
-   AssertTrue(MathAbs(CMeanReversionRules::StopLossBuy(149.500,149.300,0.100,1.0)-149.200)<1.0e-9,
+   AssertTrue(MathAbs(CMeanReversionEntryRules::StopLossBuy(149.500,149.300,0.100,1.0)-149.200)<1.0e-9,
               "buy stop loss uses the more conservative of band and recent range low, minus ATR buffer");
-   AssertTrue(MathAbs(CMeanReversionRules::StopLossBuy(149.500,149.700,0.100,1.0)-149.400)<1.0e-9,
+   AssertTrue(MathAbs(CMeanReversionEntryRules::StopLossBuy(149.500,149.700,0.100,1.0)-149.400)<1.0e-9,
               "buy stop loss uses the band when it is lower than the recent range low");
-   AssertTrue(MathAbs(CMeanReversionRules::StopLossSell(151.000,151.300,0.100,1.0)-151.400)<1.0e-9,
+   AssertTrue(MathAbs(CMeanReversionEntryRules::StopLossSell(151.000,151.300,0.100,1.0)-151.400)<1.0e-9,
               "sell stop loss uses the more conservative of band and recent range high, plus ATR buffer");
-   AssertTrue(CMeanReversionRules::StopLossBuy(149.500,149.300,0.0,1.0)==0.0,
+   AssertTrue(CMeanReversionEntryRules::StopLossBuy(149.500,149.300,0.0,1.0)==0.0,
               "buy stop loss rejected on non-positive ATR");
 
    // TP: 既定はBB Middle、反対側Bandも選択可能。
-   AssertTrue(CMeanReversionRules::TakeProfit(SIGNAL_DIRECTION_BUY,MEAN_REVERSION_TP_BB_MIDDLE,150.000,151.000,149.500)==150.000,
+   AssertTrue(CMeanReversionEntryRules::TakeProfit(SIGNAL_DIRECTION_BUY,MEAN_REVERSION_TP_BB_MIDDLE,150.000,151.000,149.500)==150.000,
               "buy take profit defaults to BB middle");
-   AssertTrue(CMeanReversionRules::TakeProfit(SIGNAL_DIRECTION_BUY,MEAN_REVERSION_TP_OPPOSITE_BAND,150.000,151.000,149.500)==151.000,
+   AssertTrue(CMeanReversionEntryRules::TakeProfit(SIGNAL_DIRECTION_BUY,MEAN_REVERSION_TP_OPPOSITE_BAND,150.000,151.000,149.500)==151.000,
               "buy take profit can target the opposite (upper) band");
-   AssertTrue(CMeanReversionRules::TakeProfit(SIGNAL_DIRECTION_SELL,MEAN_REVERSION_TP_OPPOSITE_BAND,150.000,151.000,149.500)==149.500,
+   AssertTrue(CMeanReversionEntryRules::TakeProfit(SIGNAL_DIRECTION_SELL,MEAN_REVERSION_TP_OPPOSITE_BAND,150.000,151.000,149.500)==149.500,
               "sell take profit can target the opposite (lower) band");
 
-   // 強制決済: レンジ上限/下限の確定足Closeブレイク。
-   AssertTrue(CMeanReversionRules::IsRangeBreak(SIGNAL_DIRECTION_BUY,149.400,149.500,151.000),
-              "buy position force-exits when confirmed close breaks below the lower band");
-   AssertTrue(!CMeanReversionRules::IsRangeBreak(SIGNAL_DIRECTION_BUY,149.600,149.500,151.000),
-              "buy position does not force-exit while close stays inside the band");
-   AssertTrue(CMeanReversionRules::IsRangeBreak(SIGNAL_DIRECTION_SELL,151.200,149.500,151.000),
-              "sell position force-exits when confirmed close breaks above the upper band");
+   // 強制決済（2026-08-24仕様変更）: レンジ高値/安値（実際のスイング高安値）の確定足Closeブレイク。
+   // Range Filter（CI/ADX閾値）の一時的な跨ぎでは反応しない、独立した価格構造ベースの条件。
+   AssertTrue(CMeanReversionExitRules::IsRangeBreak(SIGNAL_DIRECTION_BUY,149.400,149.500,151.000),
+              "buy position force-exits when confirmed close breaks below the recent range low");
+   AssertTrue(!CMeanReversionExitRules::IsRangeBreak(SIGNAL_DIRECTION_BUY,149.600,149.500,151.000),
+              "buy position does not force-exit while close stays inside the recent range");
+   AssertTrue(CMeanReversionExitRules::IsRangeBreak(SIGNAL_DIRECTION_SELL,151.200,149.500,151.000),
+              "sell position force-exits when confirmed close breaks above the recent range high");
+   AssertTrue(!CMeanReversionExitRules::IsRangeBreak(SIGNAL_DIRECTION_NONE,149.400,149.500,151.000),
+              "range break check rejects an undirected position");
+
+   // 強制決済: ADXが閾値を超え、かつ上昇中（強いトレンドの急発生）。単純な閾値跨ぎだけでは反応しない。
+   AssertTrue(CMeanReversionExitRules::IsAdxSurging(31.0,29.0,30.0),
+              "adx surge force-exits when above threshold and rising");
+   AssertTrue(!CMeanReversionExitRules::IsAdxSurging(31.0,32.0,30.0),
+              "adx surge does not force-exit when above threshold but falling");
+   AssertTrue(!CMeanReversionExitRules::IsAdxSurging(29.0,20.0,30.0),
+              "adx surge does not force-exit when rising but still below threshold");
+   AssertTrue(!CMeanReversionExitRules::IsAdxSurging(31.0,29.0,0.0),
+              "adx surge rejected on non-positive threshold");
+   AssertTrue(!CMeanReversionExitRules::IsAdxSurging(MathSqrt(-1.0),29.0,30.0),
+              "adx surge rejected on NaN current ADX");
 
    // 強制決済: BB Widthの急拡大（過去N本平均比）。
-   AssertTrue(CMeanReversionRules::IsBbWidthExpanded(3.0,2.0,1.5),
+   AssertTrue(CMeanReversionExitRules::IsBbWidthExpanded(3.0,2.0,1.5),
               "bb width force-exits when current width is at least the expansion ratio times the average");
-   AssertTrue(!CMeanReversionRules::IsBbWidthExpanded(2.5,2.0,1.5),
+   AssertTrue(!CMeanReversionExitRules::IsBbWidthExpanded(2.5,2.0,1.5),
               "bb width does not force-exit below the expansion ratio");
-   AssertTrue(!CMeanReversionRules::IsBbWidthExpanded(3.0,2.0,1.0),
+   AssertTrue(!CMeanReversionExitRules::IsBbWidthExpanded(3.0,2.0,1.0),
               "bb width expansion check rejects a non-expansive ratio configuration");
 
    if(g_failures==0)

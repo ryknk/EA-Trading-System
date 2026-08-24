@@ -15,6 +15,7 @@ private:
      };
    SPositionExtreme m_extremes[];
    ulong            m_magic_number;
+   ulong            m_secondary_magic_number;
    bool             m_initialized;
 
    int Find(const ulong ticket)
@@ -25,11 +26,14 @@ private:
      }
 
 public:
-   CTradeAnalyticsTracker(void) { m_magic_number=0; m_initialized=false; }
+   CTradeAnalyticsTracker(void) { m_magic_number=0; m_secondary_magic_number=0; m_initialized=false; }
 
-   void Initialize(const ulong magic_number)
+   // secondary_magic_number=0（既定）は「セカンダリ戦略なし」を意味し、primaryのみを追跡する
+   // （レンジ戦略追加、2026-08-24。PositionManager::IsManagedPositionと同じ考え方）。
+   void Initialize(const ulong magic_number,const ulong secondary_magic_number=0)
      {
       m_magic_number=magic_number;
+      m_secondary_magic_number=secondary_magic_number;
       ArrayResize(m_extremes,0);
       m_initialized=true;
      }
@@ -42,7 +46,11 @@ public:
       for(int index=0; index<total; index++)
         {
          const ulong ticket=PositionGetTicket(index);
-         if(ticket==0 || PositionGetInteger(POSITION_MAGIC)!=(long)m_magic_number) continue;
+         if(ticket==0) continue;
+         const long magic=PositionGetInteger(POSITION_MAGIC);
+         if(magic!=(long)m_magic_number &&
+            (m_secondary_magic_number==0 || magic!=(long)m_secondary_magic_number))
+            continue;
          const double profit=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
          int slot=Find(ticket);
          if(slot<0)

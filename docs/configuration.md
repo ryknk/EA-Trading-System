@@ -112,10 +112,12 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
 
 **SL**: Lower/Upper Bandまたは直近レンジ高安値（`InpMeanReversionBbPeriod`本）のうち保守的な方の外側に、ATR×`InpMeanReversionStopAtrMultiple`のバッファを設ける。
 
-**強制決済**（トレンド戦略へは引き継がず、レンジポジションを決済したうえで新規エントリーのみ停止する。その後はトレンド戦略が通常どおり独立してエントリー判定を行う）: 以下のいずれかで確定足ベースに決済する。
-1. Range Filterが解除された（Choppiness低下またはADX上昇）
-2. レンジ上限/下限（Band）を確定足Closeで明確にブレイク
+**強制決済**（トレンド戦略へは引き継がず、レンジポジションを決済したうえで新規エントリーのみ停止する。その後はトレンド戦略が通常どおり独立してエントリー判定を行う。2026-08-24仕様変更: エントリー条件のRange Filter（CI/ADX閾値）は新規エントリーの成立条件としてのみ用い、保有中ポジションの決済判断には使わない。CI/ADXの一時的な閾値跨ぎ1本だけを理由に決済すると過剰反応になるため、強制決済はレンジ崩壊を示すより強い条件に限定する）: 以下のいずれかで確定足ベースに決済する。
+1. レンジ高値/安値（直近`InpMeanReversionBbPeriod`本の実際のスイング高安値。Bollinger Bandではない）を確定足Closeで明確にブレイク
+2. ADXが`InpMeanReversionForcedExitAdxThreshold`を超え、かつ直近確定足間で上昇中（強いトレンドの急発生）
 3. BB Widthが過去`InpMeanReversionBbWidthLookback`本平均の`InpMeanReversionBbWidthExpansionRatio`倍以上に急拡大
+
+エントリー条件（`CMeanReversionEntryRules`）と強制決済条件（`CMeanReversionExitRules`）はコード上も別クラスへ分離している。
 
 **時間切れ決済**: `InpMeanReversionMaxHoldingBars`本（entry_timeframe換算）を経過したら無条件で成行決済する（トレンド戦略のTime Stopとはパラメータ・判断ロジックとも独立）。
 
@@ -132,6 +134,7 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
 | `InpMeanReversionTakeProfitMode` | `MEAN_REVERSION_TP_BB_MIDDLE` | TP方式。既定はBB Middle（中心線）到達。`MEAN_REVERSION_TP_OPPOSITE_BAND`で反対側Band到達に切替可能（将来比較用） |
 | `InpMeanReversionBbWidthLookback` | 20 | BB Width急拡大判定の平均算出本数 |
 | `InpMeanReversionBbWidthExpansionRatio` | 1.5 | 現在のBB Widthが過去平均の何倍以上で強制決済するか |
+| `InpMeanReversionForcedExitAdxThreshold` | 30.0 | 強制決済: このADXを超え、かつ上昇中の場合に決済する（Range Filterの`InpMeanReversionAdxMax`より高い、強いトレンド発生を示す閾値） |
 | `InpMeanReversionMaxHoldingBars` | 20 | 時間切れ決済が発動する経過バー数の上限（entry_timeframe換算） |
 | `InpMeanReversionMagicNumber` | 26072002 | レンジ戦略ポジション識別用のMagic Number（`InpMagicNumber`とは別値が必須） |
 

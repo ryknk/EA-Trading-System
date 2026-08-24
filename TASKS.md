@@ -488,6 +488,12 @@
 
   **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・MQL5 Script Test 9件全PASS（新規Reentry Windowアサーション含む、ログで個別PASS確認済み）・`.\tools\release-gate.ps1 -Mode Development`全体PASS。**未実施**: Strategy Tester実データ検証（`InpEnableMeanReversionStrategy`は既定値false据え置き）。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する。
 
+* [x] **保有中レンジポジションの強制決済条件を、ユーザー指示によりRange Filter（CI/ADX閾値）の一時的な跨ぎで反応しない設計へ修正する（2026-08-24実施）。** それまでの`IsRangeStillValid`は、新規エントリー用のRange Filter（CI>60かつADX<25）が保有中に1バーでも解除されると即座に決済していたが、CI/ADXは指標のノイズで閾値付近を頻繁に跨ぐため過剰反応（ホイッスル）の懸念があった。ユーザー指示により、Range Filterは新規エントリー条件としてのみ用い、保有中ポジションの決済判断からは完全に除去した。代わりに、レンジ崩壊を示すより強い2条件（(a)レンジ高値/安値の確定足ブレイク、(b)ADX急伸）を新設し、既存のBB Width急拡大と合わせた3条件で強制決済を判定する構成へ変更した。(a)は従来Bollinger Bandを参照していた`IsRangeBreak`を、実際の直近スイング高安値（`ReadRecentRange`、SL算出と同じ参照）を参照するよう変更（統計的な構成物であるBandではなく価格構造そのものを見る、より強い条件への変更）。(b)は新設`CMeanReversionExitRules::IsAdxSurging`（ADXが`InpMeanReversionForcedExitAdxThreshold`＝既定30.0を超え、かつ直近確定足間で上昇中の両方を要求、単純な閾値跨ぎでは反応しない）。あわせて、エントリー条件とポジション強制決済条件をコード上も明確に分離するというユーザー指示に従い、`CMeanReversionRules`を`CMeanReversionEntryRules`（Range Filter・Reentry Window付きEntry判定・SL/TP算出）と`CMeanReversionExitRules`（レンジブレイク・ADX急伸・BB Width急拡大）の2クラスへ分割した。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`（`CMeanReversionRules`を`CMeanReversionEntryRules`/`CMeanReversionExitRules`へ分割、`IsRangeBreak`の参照をBandから直近スイング高安値へ変更、`IsAdxSurging`新設、`IsRangeStillValid`からRange Filterチェックを除去しADX急伸チェックを追加）・`mt5/Include/Core/Config.mqh`（`mean_reversion_forced_exit_adx_threshold`追加、既定30.0、`ValidateConfig`に0<x<=100の制約追加）・`mt5/Experts/CoreEA.mq5`（`InpMeanReversionForcedExitAdxThreshold`追加）・`mt5/Tests/TestTrendFollowingRules.mq5`（`CMeanReversionRules::`参照を`CMeanReversionEntryRules::`/`CMeanReversionExitRules::`へ更新、`IsAdxSurging`のアサーション5件・`IsRangeBreak`の未方向ケース1件を追加）・`docs/configuration.md`。エントリー条件（Range Filter・Reentry Window・SL/TP算出）・時間切れ決済・Magic Number識別・他の安全機構は一切変更していない。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・MQL5 Script Test 9件全PASS（新規`IsAdxSurging`アサーション含む、ログで個別PASS確認済み）・`.\tools\release-gate.ps1 -Mode Development`全体PASS。**未実施**: Strategy Tester実データ検証（`InpEnableMeanReversionStrategy`は既定値false据え置き）。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する。
+
 * [x] **上記の新仕様（Band外側ブレイク→Reentry Window内復帰、Choppiness＋ADX複合Range Filter、専用Magic Number、強制決済・独立Time Stop）について、未実施だったStrategy Tester実データ検証をTrain区間で実施する（ユーザー依頼「レンジ相場逆張りロジックを変更したため、再度検証してください」、2026-08-24実施）。** 検証対象はコミット`4391801`（`git status`はクリーン、作業ツリーはコミット済み状態と完全一致）の既定パラメータ（`InpMeanReversionChoppinessMin=60.0`・`InpMeanReversionAdxMax=25.0`・`InpMeanReversionMaxReentryBars=3`・`InpMeanReversionStopAtrMultiple=1.0`・`InpMeanReversionTakeProfitMode=0`・`InpMeanReversionBbWidthLookback=20`・`InpMeanReversionBbWidthExpansionRatio=1.5`・`InpMeanReversionMaxHoldingBars=20`・`InpMeanReversionMagicNumber=26072002`）。
 
   **後方互換性の確認**: `InpEnableMeanReversionStrategy=false`（既定）でTrain区間を再実行し、直前結果（取引数39・純損益+30,801円・PF1.173543）と完全一致することを確認した（`results/backtests/20260824-201301-USDJPY-H1/`）。
@@ -524,6 +530,58 @@
   **発火理由の内訳が判明**: 前ラウンドで残存課題としていた「5件の強制決済の内訳が不明」という点が解消された。5件中**4件が`RANGE_FILTER_RELEASED`**（Choppiness≥60かつADX<25という複合条件が、エントリー成立直後の0〜2本以内に再び満たされなくなった）、**1件が`RANGE_BREAK`**（確定足Closeがレンジ外へ明確にブレイク）で、`BB_WIDTH_EXPANSION`・`MEAN_REVERSION_MAX_HOLDING_BARS`の発火は0件だった。これは前ラウンドで立てた仮説（「エントリーが成立するほど厳格なレンジ状態は、その状態自体が長続きしにくい」）を実データで裏付ける結果であり、**Range Filterの条件自体（特にADX上限25という閾値）が、成立から解除までの継続時間を極端に短くしている主因である可能性が高い**。
 
   **残存課題**: (1) `RANGE_FILTER_RELEASED`が支配的要因と判明したため、次の調整候補はADX上限（`InpMeanReversionAdxMax`、既定25）またはChoppiness閾値（`InpMeanReversionChoppinessMin`、既定60）の緩和検討だが、これは単一Train区間の観測に基づく後付け調整になりやすく、過学習リスクに注意が必要（本セッションで繰り返し確認された罠と同種）。(2) n=5と極めて少数のサンプルのままであり、発火理由の内訳（4:1:0:0）も統計的に脆弱。(3) `InpEnableMeanReversionStrategy`は既定値false（無効）のまま据え置き。
+
+* [x] **上記残存課題(1)を受け、Choppiness閾値（`InpMeanReversionChoppinessMin`）を緩める方向でスイープする（ユーザー依頼、2026-08-24実施）。** Fold1 Train（16か月、n=5と少数）だけではサンプル不足が懸念されたため、ユーザー指定によりFold5 Train（2020〜2022、3年間、既存ベースラインで93取引）も追加で用いた。
+
+  **Fold1 Train（2017-09〜2018-12）でのスイープ結果**（`InpMeanReversionAdxMax`等は既定値のまま、Choppiness閾値のみ変更）:
+
+  | Choppiness閾値 | 合算取引数 | 合算純損益 | 合算PF | MR取引数 | MR純損益 | MR PF | MR勝率 |
+  |---|---|---|---|---|---|---|---|
+  | 30（大幅に緩和） | 87 | -55,231円 | 0.802 | 48 | -85,957円 | 0.187 | 17% |
+  | 35 | 81 | -59,197円 | 0.787 | 42 | -89,923円 | 0.141 | 17% |
+  | 40 | 74 | -52,907円 | 0.805 | 35 | -82,322円 | 0.148 | 17% |
+  | 45 | 61 | -25,948円 | 0.895 | 22 | -57,307円 | 0.156 | 18% |
+  | 50 | 52 | +2,138円 | 1.010 | 13 | -28,615円 | 0.116 | 15% |
+  | 55（既定60に近い） | 46 | +18,377円 | 1.095 | 7 | -12,224円 | 0.290 | 29% |
+
+  **Fold5 Train（2020〜2022）での追試結果**（3点のみ、傾向確認目的）:
+
+  | Choppiness閾値 | 合算取引数 | 合算純損益 | 合算PF | MR取引数 | MR純損益 | MR PF | MR勝率 |
+  |---|---|---|---|---|---|---|---|
+  | 40（緩和） | 96 | -166,809円 | 0.604 | 46 | -178,902円 | 0.019 | 4% |
+  | 50 | 47 | -45,486円 | 0.762 | 19 | -74,444円 | 0.007 | 5% |
+  | 60（既定） | 107 | +127,869円 | 1.294 | 14 | -40,988円 | 0.049 | 14% |
+
+  **総合評価: 「緩める方向」は完全に反証された。二つの独立したTrain区間（Fold1・Fold5）の両方で、Choppiness閾値を下げるほど取引数は増えるが、勝率・PF・純損益のいずれも一貫して悪化するという、極めて明瞭な単調悪化パターンが再現した。** Fold5では閾値40でMR勝率がわずか4%（46件中2件未満の勝ち）まで落ち込み、既定値60（勝率14%）と比べても著しく悪い。これはユーザーが当初想定した仮説（「厳格すぎる条件がRANGE_FILTER_RELEASEDを招くなら、緩めれば改善するはず」）とは逆の結果であり、**既定の厳格な閾値（Choppiness≥60）は、たとえ早期強制決済を頻発させているとしても、緩めた場合よりも損失を抑える方向に機能している**ことを示す。2つの独立した区間で同一方向の結果が再現しているため、単一区間の過学習という通常の懸念は低いと判断できる。
+
+  **残存課題**: (1) 「緩める」方向の調整は明確に否定されたが、「さらに厳しくする」方向（閾値65・70等）や、ADX上限側の調整（`InpMeanReversionAdxMax`を25より厳格化）は未検証。(2) MEAN_REVERSIONのPF・勝率はどの閾値でも1.0/50%を大きく下回っており、閾値調整だけでは正のエッジを作れない可能性が高い。エントリー条件・SL/TP設計自体の再考が必要かもしれない。(3) `InpEnableMeanReversionStrategy`は既定値false（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。
+
+* [x] **閾値を下げた場合の損失原因の内訳分析を実施する（ユーザー依頼、2026-08-24実施）。** 分析の過程で、`CTradeAnalyticsTracker`（MFE・MAE追跡）が`m_config.magic_number`（トレンド戦略の主Magic Number）のみでポジションをフィルタしており、専用Magic Numberを使うレンジ戦略のポジションを一切追跡していなかった（レンジ戦略追加時の見落とし）ため、`mfe`/`mae`/`mfe_r`/`mae_r`が全件NaNになる不具合を発見・修正した。`PositionManager::IsManagedPosition`の3引数オーバーロードと同じ設計（`secondary_magic_number`引数、既定0＝セカンダリなし）で`CTradeAnalyticsTracker::Initialize`を拡張し、`EAController`の初期化呼び出しへ`m_config.mean_reversion_magic_number`を渡すよう変更した。
+
+  変更ファイル: `mt5/Include/Logging/TradeAnalyticsTracker.mqh`（`Initialize`にsecondary_magic_number引数追加、`Update`のフィルタ条件拡張）・`mt5/Include/Core/EAController.mqh`（初期化呼び出しの引数追加）。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS。既定値でTrain区間を再実行し、直前結果（取引数39・純損益+30,801円・PF1.173543）と完全一致することを確認し、後方互換性を実証した（`results/backtests/20260824-212459-USDJPY-H1/`）。
+
+  **損失原因の内訳（`RANGE_EXIT`理由コード別、Fold1 Train）**:
+
+  | Choppiness閾値 | RANGE_FILTER_RELEASED | RANGE_BREAK | BB_WIDTH_EXPANSION | Time Stop |
+  |---|---|---|---|---|
+  | 30（緩） | 23（48%） | 13（27%） | **11（23%）** | 1（2%） |
+  | 40（緩） | 19（54%） | 11（31%） | **4（11%）** | 1（3%） |
+  | 45 | 14（64%） | 8（36%） | 0（0%） | 0（0%） |
+  | 50 | 10（77%） | 3（23%） | 0（0%） | 0（0%） |
+  | 55（既定60に近い） | 5（71%） | 2（29%） | 0（0%） | 0（0%） |
+
+  `RANGE_FILTER_RELEASED`はどの閾値でも支配的要因（48〜77%）で構成比は大きく変わらないが、**`BB_WIDTH_EXPANSION`（BB幅の急拡大）が閾値45以上では一度も発生しないのに対し、閾値30・40では11〜23%を占める新規の失敗モードとして出現する**。
+
+  **MFE・MAE分析（Choppiness閾値40 vs 55、Fold1 Train）**: 修正済みのMFE/MAE追跡データを用いて比較したところ、閾値40（緩、n=35）は平均MFE_R **0.205**（リスクの20.5%相当まで含み益が伸びた時点で反転）に対し、閾値55（厳、n=7）は平均MFE_R **0.317**と、より大きく含み益を伸ばせていた（MAE_Rは両者ともほぼ同水準、-0.41前後）。負けトレードのうち一度でも含み益になった割合は、閾値40で82.8%、閾値55で100%。
+
+  **総合評価: 閾値を緩めると、単に「弱い」平均回帰セットアップ（反発の伸びが小さい、MFE_Rが低い）が大量に混入し、さらにBB幅急拡大という閾値45以上では存在しなかった新しい失敗モードまで発生するようになる。** Choppiness Indexが高いほど、レンジの「往復の純度」が高く、真の平均回帰が起きやすい条件であることを裏付ける結果であり、閾値の緩和はこの「純度」を犠牲にする方向の変更であるため、単純な緩和では改善しない。
+
+  **「閾値を下げつつ損失を回避する方法」の検討（未検証の仮説、提案のみ）**:
+  1. **BB幅の急拡大を事前に排除する**: エントリー時点でのBB幅が過去平均に対して既に拡大傾向にある場合は候補から除外する（現在は決済側の`IsBbWidthExpanded`しか使っていないが、同じ判定をEntry側のフィルタとしても使う）。閾値30・40で新たに出現した`BB_WIDTH_EXPANSION`（11〜23%）を狙い撃ちで防げる可能性がある。
+  2. **MFE_Rに応じた早期の部分利確・建値化**: 閾値を緩めた場合の平均MFE_Rが0.2程度に留まることを踏まえ、より小さいR（例: 0.15〜0.2R）で部分利確または建値ストップへ移行する仕組みを追加すれば、反転前に一部の含み益を確定できる可能性がある。ただし現在は5〜35件という少数サンプルからの推定であり、この対策の効果自体を別途検証する必要がある。
+  3. **どちらも未検証の仮説であり、本ラウンドでは提案に留める**。過去の類似ケース（B案・D案・I案）と同様、新しい仮説をTrain区間で検証してから採用可否を判断する必要がある。閾値を緩めること自体を単独で採用する根拠は、本ラウンドの分析でも得られなかった。
 
 * [x] 監査ログ汚染バグの影響を受けていた可能性がある分析（Buy/Sell・時間帯・曜日・相場レジーム・ATR帯・ADX帯別の有意差分析）を再検証する（2026-08-22実施。`InpEntryUseStagedPipeline=false`（Buy/Sell等の分析時点の構成）へ一時的に戻し、修正済み`tools/run-strategy-tester.ps1`で同一IS期間を再実行（`results/backtests/20260822-195446-USDJPY-H1/`）。**検証手順**: (1) 純損益-48,223円・PF0.89・Sharpe-1.10・取引数209がベースラインと完全一致することを確認。(2) `InpEntryUseStagedPipeline=false`で実行したにもかかわらず`ENTRY_PIPELINE`イベント（staged pipeline有効時のみ記録されるはずの診断ログ）が0件であることを確認し、前回発見した汚染（他run由来の`ENTRY_PIPELINE`混入）が本runには存在しないことを確認。(3) `trade_breakdown`を再実行し、direction/session/weekday/market_regime_trend/market_regime_volatility/atr_band/adx_bandの全内訳が、既報の値（Buy/Sell・時間帯・曜日別分析および相場レジーム別分析の回でそれぞれ報告した数値）と完全一致することを確認。**結論: Buy/Sell・時間帯・曜日・相場レジーム（トレンド/ボラティリティ）・ATR帯・ADX帯別の分析結果はいずれも汚染の影響を受けておらず、既報の「統計的に有意な勝率差は確認できなかった」という結論は有効**。汚染が実際に混入していたのは`InpRegimeTrendAdxMin`スイープの40番run（`20260822-181739`）のみであり、これは前タスクで既に修正済みツールにより再実行・再評価済み（`20260822-183152`、結果は変化なし）。
 

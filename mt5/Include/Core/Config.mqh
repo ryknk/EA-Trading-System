@@ -52,6 +52,7 @@ struct SEaConfig
    int               mean_reversion_take_profit_mode;
    int               mean_reversion_bb_width_lookback;
    double            mean_reversion_bb_width_expansion_ratio;
+   double            mean_reversion_forced_exit_adx_threshold;
    int               mean_reversion_max_holding_bars;
    ulong             mean_reversion_magic_number;
    double            risk_per_trade_rate;
@@ -153,6 +154,7 @@ void SetDefaultConfig(SEaConfig &config)
    config.mean_reversion_take_profit_mode = 0; // MEAN_REVERSION_TP_BB_MIDDLE
    config.mean_reversion_bb_width_lookback = 20;
    config.mean_reversion_bb_width_expansion_ratio = 1.5;
+   config.mean_reversion_forced_exit_adx_threshold = 30.0;
    config.mean_reversion_max_holding_bars = 20;
    config.mean_reversion_magic_number = 26072002;
    config.risk_per_trade_rate       = 0.005;
@@ -266,6 +268,7 @@ bool ValidateConfig(const SEaConfig &config,string &error)
        config.mean_reversion_stop_atr_multiple<=0.0 || config.mean_reversion_max_reentry_bars<1 ||
        config.mean_reversion_take_profit_mode<0 || config.mean_reversion_take_profit_mode>1 ||
        config.mean_reversion_bb_width_lookback<2 || config.mean_reversion_bb_width_expansion_ratio<=1.0 ||
+       config.mean_reversion_forced_exit_adx_threshold<=0.0 || config.mean_reversion_forced_exit_adx_threshold>100.0 ||
        config.mean_reversion_max_holding_bars<1 ||
        config.mean_reversion_magic_number==0 || config.mean_reversion_magic_number==config.magic_number))
      { error="INVALID_MEAN_REVERSION_PARAMETERS"; return false; }

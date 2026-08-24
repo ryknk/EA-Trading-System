@@ -526,7 +526,7 @@ public:
       string telemetry_error;
       if(!m_telemetry_client.Initialize(m_config,telemetry_error))
          PrintFormat("TELEMETRY_INIT_FAILED code=%s trading_impact=none",telemetry_error);
-      m_analytics_tracker.Initialize(m_config.magic_number);
+      m_analytics_tracker.Initialize(m_config.magic_number,m_config.mean_reversion_magic_number);
       if(!m_strategy.Initialize(m_config,error))
          return false;
       if(!m_signal_engine.Initialize(GetPointer(m_strategy),m_config.symbol,m_config.entry_timeframe,error))
