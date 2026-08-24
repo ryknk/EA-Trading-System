@@ -137,6 +137,11 @@ public:
          stop_distance+1.0e-12<stops_level*point)
         { Reject(decision,"INVALID_STOP","Stop loss is invalid at the current market price."); return true; }
 
+      // レンジ戦略の候補はentry_patternで識別し、専用のMagic Numberを使う（Magic Numberで
+      // トレンド/レンジのポジションを区別できるようにする、2026-08-24仕様変更）。
+      const ulong effective_magic=(signal.entry_pattern==ENTRY_PATTERN_MEAN_REVERSION ?
+                                   m_config.mean_reversion_magic_number : m_config.magic_number);
+
       const double equity=AccountInfoDouble(ACCOUNT_EQUITY);
       double risk_rate=m_config.risk_per_trade_rate;
       if(m_config.enable_adaptive_sizing)
@@ -147,7 +152,7 @@ public:
          const double base_risk_amount=equity*m_config.risk_per_trade_rate;
          // 取得失敗時はfalse-safeでmultiplier=1.0（無効時と同一挙動）のまま候補評価を継続する。
          // 本ガードはサイズ縮小のみを行う補助的な調整であり、その取得失敗を理由に候補自体を拒否しない。
-         if(m_adaptive_sizing_guard.RecentAverageR(m_config.magic_number,m_config.adaptive_sizing_lookback_trades,
+         if(m_adaptive_sizing_guard.RecentAverageR(effective_magic,m_config.adaptive_sizing_lookback_trades,
                                                    base_risk_amount,recent_avg_r,recent_trade_count,sizing_error))
            {
             decision.adaptive_risk_multiplier=CAdaptiveSizingRules::RiskMultiplier(
@@ -198,7 +203,7 @@ public:
       ZeroMemory(request);
       ZeroMemory(check);
       request.action=TRADE_ACTION_DEAL;
-      request.magic=m_config.magic_number;
+      request.magic=effective_magic;
       request.symbol=signal.symbol;
       request.volume=decision.volume;
       request.type=order_type;

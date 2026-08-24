@@ -102,6 +102,39 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
 
 `InpEnableTradeMutations` は最後に有効化する。Risk Manager、Decision API、LLMがALLOWでも、この値がfalseなら新規発注しない。本番ゲート未達の状態でtrueにしてはならない。
 
+## レンジ相場逆張り戦略設定（2026-08-24仕様変更）
+
+トレンドフォロー戦略とは独立した第二の候補生成源。レンジ端（Bollinger Band外側）からの平均回帰を狙う。トレンドフォロー戦略が本確定足で候補を生成しなかった場合のみ評価され（両戦略が同一口座へ同時発注することを避ける排他制御）、既存のRisk Manager・PositionManager・監査ログ基盤をそのまま共有するが、`InpMeanReversionMagicNumber`により別のMagic Numberでポジションを識別する（トレンドフォロー戦略のポジションと混同しない）。`InpEnableMeanReversionStrategy=false`（既定）では初期化も評価も一切行われず、既存挙動を変えない。
+
+**Range Filter**: Choppiness Index（`InpMeanReversionChoppinessMin`以上）かつADX（`InpMeanReversionAdxMax`未満）の両方を満たす場合のみレンジ相場と判定する。
+
+**Entry**: 確定足のCloseがBand外側へブレイクした場合（Reentry待ち開始）、その後`InpMeanReversionMaxReentryBars`本以内に確定足のCloseがBand内側へ復帰した最初の確定足でのみ成立する（タッチのみでは反応しない。期限内に復帰しなければシグナル破棄。同一ブレイクから複数回エントリーしない）。
+
+**SL**: Lower/Upper Bandまたは直近レンジ高安値（`InpMeanReversionBbPeriod`本）のうち保守的な方の外側に、ATR×`InpMeanReversionStopAtrMultiple`のバッファを設ける。
+
+**強制決済**（トレンド戦略へは引き継がず、レンジポジションを決済したうえで新規エントリーのみ停止する。その後はトレンド戦略が通常どおり独立してエントリー判定を行う）: 以下のいずれかで確定足ベースに決済する。
+1. Range Filterが解除された（Choppiness低下またはADX上昇）
+2. レンジ上限/下限（Band）を確定足Closeで明確にブレイク
+3. BB Widthが過去`InpMeanReversionBbWidthLookback`本平均の`InpMeanReversionBbWidthExpansionRatio`倍以上に急拡大
+
+**時間切れ決済**: `InpMeanReversionMaxHoldingBars`本（entry_timeframe換算）を経過したら無条件で成行決済する（トレンド戦略のTime Stopとはパラメータ・判断ロジックとも独立）。
+
+| 設定 | 初期値 | 意味 |
+|---|---:|---|
+| `InpEnableMeanReversionStrategy` | false | レンジ相場逆張り戦略の有効化 |
+| `InpMeanReversionBbPeriod` | 20 | Bollinger Bandの期間。SL算出の直近レンジ高安値の参照本数としても使う |
+| `InpMeanReversionBbDeviation` | 2.0 | Bollinger Bandの標準偏差倍率 |
+| `InpMeanReversionChoppinessPeriod` | 14 | Choppiness Index（`CChoppinessIndex`）の算出期間 |
+| `InpMeanReversionChoppinessMin` | 60.0 | Range Filter: この値以上のChoppiness Indexでのみレンジ相場とみなす |
+| `InpMeanReversionAdxMax` | 25.0 | Range Filter: このADX未満でのみレンジ相場とみなす（`InpAdxPeriod`を共用） |
+| `InpMeanReversionStopAtrMultiple` | 1.0 | SLのBand/直近レンジ高安値からのATRバッファ倍率 |
+| `InpMeanReversionMaxReentryBars` | 3 | Band外側へのブレイクから、Band内側への復帰を待つ最大本数（Reentry Window）。1の場合は「次の1本で復帰」のみを許可する従来相当の挙動になる |
+| `InpMeanReversionTakeProfitMode` | `MEAN_REVERSION_TP_BB_MIDDLE` | TP方式。既定はBB Middle（中心線）到達。`MEAN_REVERSION_TP_OPPOSITE_BAND`で反対側Band到達に切替可能（将来比較用） |
+| `InpMeanReversionBbWidthLookback` | 20 | BB Width急拡大判定の平均算出本数 |
+| `InpMeanReversionBbWidthExpansionRatio` | 1.5 | 現在のBB Widthが過去平均の何倍以上で強制決済するか |
+| `InpMeanReversionMaxHoldingBars` | 20 | 時間切れ決済が発動する経過バー数の上限（entry_timeframe換算） |
+| `InpMeanReversionMagicNumber` | 26072002 | レンジ戦略ポジション識別用のMagic Number（`InpMagicNumber`とは別値が必須） |
+
 ## Decision API・ML設定
 
 | 設定 | 初期値 | 意味 |

@@ -41,6 +41,19 @@ struct SEaConfig
    int               adaptive_sizing_lookback_trades;
    double            adaptive_sizing_sensitivity;
    double            adaptive_sizing_floor_multiplier;
+   bool              enable_mean_reversion_strategy;
+   int               mean_reversion_bb_period;
+   double            mean_reversion_bb_deviation;
+   int               mean_reversion_choppiness_period;
+   double            mean_reversion_choppiness_min;
+   double            mean_reversion_adx_max;
+   double            mean_reversion_stop_atr_multiple;
+   int               mean_reversion_max_reentry_bars;
+   int               mean_reversion_take_profit_mode;
+   int               mean_reversion_bb_width_lookback;
+   double            mean_reversion_bb_width_expansion_ratio;
+   int               mean_reversion_max_holding_bars;
+   ulong             mean_reversion_magic_number;
    double            risk_per_trade_rate;
    double            daily_loss_limit_rate;
    double            max_drawdown_rate;
@@ -129,6 +142,19 @@ void SetDefaultConfig(SEaConfig &config)
    config.adaptive_sizing_lookback_trades = 10;
    config.adaptive_sizing_sensitivity = 1.0;
    config.adaptive_sizing_floor_multiplier = 0.5;
+   config.enable_mean_reversion_strategy = false;
+   config.mean_reversion_bb_period  = 20;
+   config.mean_reversion_bb_deviation = 2.0;
+   config.mean_reversion_choppiness_period = 14;
+   config.mean_reversion_choppiness_min = 60.0;
+   config.mean_reversion_adx_max    = 25.0;
+   config.mean_reversion_stop_atr_multiple = 1.0;
+   config.mean_reversion_max_reentry_bars = 3;
+   config.mean_reversion_take_profit_mode = 0; // MEAN_REVERSION_TP_BB_MIDDLE
+   config.mean_reversion_bb_width_lookback = 20;
+   config.mean_reversion_bb_width_expansion_ratio = 1.5;
+   config.mean_reversion_max_holding_bars = 20;
+   config.mean_reversion_magic_number = 26072002;
    config.risk_per_trade_rate       = 0.005;
    config.daily_loss_limit_rate     = 0.02;
    config.max_drawdown_rate         = 0.10;
@@ -232,6 +258,17 @@ bool ValidateConfig(const SEaConfig &config,string &error)
        config.adaptive_sizing_sensitivity<0.0 ||
        config.adaptive_sizing_floor_multiplier<=0.0 || config.adaptive_sizing_floor_multiplier>1.0))
      { error="INVALID_ADAPTIVE_SIZING_PARAMETERS"; return false; }
+   if(config.enable_mean_reversion_strategy &&
+      (config.mean_reversion_bb_period<2 || config.mean_reversion_bb_deviation<=0.0 ||
+       config.mean_reversion_choppiness_period<2 ||
+       config.mean_reversion_choppiness_min<0.0 || config.mean_reversion_choppiness_min>100.0 ||
+       config.mean_reversion_adx_max<=0.0 || config.mean_reversion_adx_max>100.0 ||
+       config.mean_reversion_stop_atr_multiple<=0.0 || config.mean_reversion_max_reentry_bars<1 ||
+       config.mean_reversion_take_profit_mode<0 || config.mean_reversion_take_profit_mode>1 ||
+       config.mean_reversion_bb_width_lookback<2 || config.mean_reversion_bb_width_expansion_ratio<=1.0 ||
+       config.mean_reversion_max_holding_bars<1 ||
+       config.mean_reversion_magic_number==0 || config.mean_reversion_magic_number==config.magic_number))
+     { error="INVALID_MEAN_REVERSION_PARAMETERS"; return false; }
    if(config.risk_per_trade_rate<=0.0 || config.risk_per_trade_rate>0.05)
      { error="INVALID_TRADE_RISK_RATE"; return false; }
    if(config.daily_loss_limit_rate<=0.0 || config.daily_loss_limit_rate>0.20)

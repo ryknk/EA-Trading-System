@@ -56,6 +56,16 @@ void OnStart(void)
    AssertTrue(CPositionProtectionRules::IsManagedPosition(26072001,26072001),"matching magic managed");
    AssertTrue(!CPositionProtectionRules::IsManagedPosition(0,26072001),"manual position not managed");
 
+   // 複数戦略Magic Number対応（レンジ戦略追加、2026-08-24）。
+   AssertTrue(CPositionProtectionRules::IsManagedPosition(26072001,26072001,26072002),
+              "primary magic managed under secondary-aware overload");
+   AssertTrue(CPositionProtectionRules::IsManagedPosition(26072002,26072001,26072002),
+              "secondary (range) magic managed under secondary-aware overload");
+   AssertTrue(!CPositionProtectionRules::IsManagedPosition(0,26072001,26072002),
+              "manual position not managed under secondary-aware overload");
+   AssertTrue(!CPositionProtectionRules::IsManagedPosition(26072002,26072001,0),
+              "secondary magic not managed when secondary is disabled (zero)");
+
    AssertTrue(CPositionProtectionRules::HasValidMarketData(150.00,150.02),"normal bid/ask accepted");
    AssertTrue(!CPositionProtectionRules::HasValidMarketData(0.0,150.02),"zero bid rejected");
    AssertTrue(!CPositionProtectionRules::HasValidMarketData(150.00,0.0),"zero ask rejected");

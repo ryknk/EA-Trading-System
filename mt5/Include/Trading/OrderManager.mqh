@@ -99,12 +99,17 @@ public:
          return false;
         }
 
+      // レンジ戦略の候補はentry_patternで識別し、専用のMagic Numberを使う（Magic Numberで
+      // トレンド/レンジのポジションを区別できるようにする、2026-08-24仕様変更）。
+      const ulong effective_magic=(signal.entry_pattern==ENTRY_PATTERN_MEAN_REVERSION ?
+                                   m_config.mean_reversion_magic_number : m_config.magic_number);
+
       MqlTradeRequest request;
       MqlTradeCheckResult check;
       ZeroMemory(request);
       ZeroMemory(check);
       request.action=TRADE_ACTION_DEAL;
-      request.magic=m_config.magic_number;
+      request.magic=effective_magic;
       request.symbol=signal.symbol;
       request.volume=risk_decision.volume;
       request.type=(signal.direction==SIGNAL_DIRECTION_BUY ? ORDER_TYPE_BUY : ORDER_TYPE_SELL);

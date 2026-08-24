@@ -3,6 +3,7 @@
 
 #include <EaTradingSystem/Core/Config.mqh>
 #include <EaTradingSystem/Strategy/TrendFollowingStrategy.mqh>
+#include <EaTradingSystem/Strategy/MeanReversionStrategy.mqh>
 #include <EaTradingSystem/Signal/SignalEngine.mqh>
 #include <EaTradingSystem/Risk/RiskManager.mqh>
 #include <EaTradingSystem/Trading/OrderManager.mqh>
@@ -33,6 +34,10 @@ private:
    SEaConfig                   m_config;
    CTrendFollowingStrategy     m_strategy;
    CSignalEngine               m_signal_engine;
+   // II案（平均回帰、2026-08-24追加）: トレンドフォロー戦略とは独立した第二の候補生成源。
+   // InpEnableMeanReversionStrategy=false（既定）では初期化も評価も行われず、既存挙動を一切変えない。
+   CMeanReversionStrategy      m_mean_reversion_strategy;
+   CSignalEngine               m_mean_reversion_signal_engine;
    CRiskManager                m_risk_manager;
    COrderManager               m_order_manager;
    CPositionManager            m_position_manager;
@@ -373,6 +378,62 @@ private:
         }
      }
 
+   // レンジ戦略のポジションについて、Range Filter解除・レンジブレイク・BB Width急拡大のいずれかを
+   // 検知したら満期を待たず市場成行で決済する。判断（Strategy参照）はここで行い、メカニズム
+   // （決済実行）はPositionManagerへ委ねる（EvaluateSignalInvalidationExitsと同じ責務境界）。
+   // トレンド戦略のポジション監視（EvaluateSignalInvalidationExits/EvaluateTimeStopExits）とは
+   // 完全に独立しており、レンジポジションがそのままトレンドポジションへ引き継がれることはない。
+   void EvaluateMeanReversionForcedExits(void)
+     {
+      if(!m_config.enable_mean_reversion_strategy || !m_config.enable_trade_mutations)
+         return;
+      const int total=PositionsTotal();
+      for(int index=0; index<total; index++)
+        {
+         const ulong ticket=PositionGetTicket(index);
+         if(ticket==0) continue;
+         if(!CPositionProtectionRules::IsManagedPosition(PositionGetInteger(POSITION_MAGIC),m_config.mean_reversion_magic_number))
+            continue;
+         const ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         const ESignalDirection direction=(type==POSITION_TYPE_BUY ? SIGNAL_DIRECTION_BUY : SIGNAL_DIRECTION_SELL);
+         string reason_code;
+         if(!m_mean_reversion_strategy.IsRangeStillValid(direction,reason_code))
+           {
+            string close_error;
+            if(!m_position_manager.CloseOnSignalInvalidation(ticket,reason_code,close_error))
+               PrintFormat("RANGE_EXIT_FAILED position=%I64u code=%s",ticket,close_error);
+           }
+        }
+     }
+
+   // レンジ戦略のポジションについて、経過バー数（entry_timeframe換算）が独立した上限
+   // （max_holding_bars、既定20本）へ達したら無条件で成行決済する。トレンド戦略のTime Stop
+   // （最低MFE要求等）とはパラメータ・判断ロジックとも独立している。
+   void EvaluateMeanReversionTimeStopExits(void)
+     {
+      if(!m_config.enable_mean_reversion_strategy || !m_config.enable_trade_mutations)
+         return;
+      const int total=PositionsTotal();
+      for(int index=0; index<total; index++)
+        {
+         const ulong ticket=PositionGetTicket(index);
+         if(ticket==0) continue;
+         if(!CPositionProtectionRules::IsManagedPosition(PositionGetInteger(POSITION_MAGIC),m_config.mean_reversion_magic_number))
+            continue;
+         const double stop_loss=PositionGetDouble(POSITION_SL);
+         if(stop_loss<=0.0) continue; // 保護SL未確定のpositionはPositionManager::Monitorの緊急決済側の責務
+         const string symbol=PositionGetString(POSITION_SYMBOL);
+         const datetime open_time=(datetime)PositionGetInteger(POSITION_TIME);
+         const int elapsed_bars=ElapsedClosedBars(symbol,m_config.entry_timeframe,open_time);
+         if(!CTimeStopRules::HasExceededMaxHoldingBars(elapsed_bars,m_config.mean_reversion_max_holding_bars))
+            continue;
+         string close_error;
+         if(!m_position_manager.CloseOnTimeStop(ticket,"MEAN_REVERSION_MAX_HOLDING_BARS",close_error))
+           { PrintFormat("RANGE_TIME_STOP_EXIT_FAILED position=%I64u code=%s",ticket,close_error); continue; }
+         PrintFormat("RANGE_TIME_STOP_EXIT_SUBMITTED position=%I64u elapsed_bars=%d",ticket,elapsed_bars);
+        }
+     }
+
    void AuditDailySnapshots(void)
      {
       const datetime now=TimeGMT();
@@ -393,7 +454,9 @@ private:
       for(int index=0; index<total; index++)
         {
          const ulong ticket=PositionGetTicket(index);
-         if(ticket==0 || PositionGetInteger(POSITION_MAGIC)!=(long)m_config.magic_number) continue;
+         if(ticket==0 || !CPositionProtectionRules::IsManagedPosition(
+               PositionGetInteger(POSITION_MAGIC),m_config.magic_number,m_config.mean_reversion_magic_number))
+            continue;
          const string symbol=PositionGetString(POSITION_SYMBOL);
          const ulong identifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
          const ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
@@ -463,6 +526,21 @@ public:
          m_strategy.Shutdown();
          return false;
         }
+      if(m_config.enable_mean_reversion_strategy)
+        {
+         if(!m_mean_reversion_strategy.Initialize(m_config,error))
+           {
+            m_strategy.Shutdown();
+            return false;
+           }
+         if(!m_mean_reversion_signal_engine.Initialize(GetPointer(m_mean_reversion_strategy),m_config.symbol,
+                                                        m_config.entry_timeframe,error))
+           {
+            m_strategy.Shutdown();
+            m_mean_reversion_strategy.Shutdown();
+            return false;
+           }
+        }
       m_initialized=true;
       PrintFormat("KILL_SWITCH_STATE emergency_stop=%s strategy_enabled=%s new_orders=%s existing_position_management=true",
                   (m_config.emergency_stop ? "enabled" : "disabled"),
@@ -485,6 +563,7 @@ public:
       m_mock_decision_provider.Shutdown();
       m_entry_timing_analyzer.Shutdown();
       m_strategy.Shutdown();
+      m_mean_reversion_strategy.Shutdown();
      }
 
    void OnTick(void)
@@ -527,6 +606,10 @@ public:
       // 既存ポジション管理の一部。Entry後の経過バー数が上限を超えたポジションを、シグナルの
       // 有効期限切れとみなし早期決済する（必要に応じ最低MFE到達判定を伴う）。
       EvaluateTimeStopExits();
+      // レンジ戦略のポジション管理（トレンド戦略とは独立）。Range Filter解除・レンジブレイク・
+      // BB Width急拡大での早期決済、および独立した時間切れ決済。
+      EvaluateMeanReversionForcedExits();
+      EvaluateMeanReversionTimeStopExits();
 
       string risk_lock_code,risk_monitor_error;
       if(!m_risk_manager.Monitor(risk_lock_code,risk_monitor_error))
@@ -591,6 +674,28 @@ public:
          pipeline_payload+="\"reason_code\":"+JString(result.reason_code)+",";
          pipeline_payload+="\"reason\":"+JString(result.reason)+"}";
          Audit("ENTRY_PIPELINE",pipeline_id,"",result.symbol,pipeline_payload,false);
+        }
+
+      // II案（平均回帰、2026-08-24追加）: トレンドフォロー戦略が本確定足で候補を生成しなかった
+      // 場合のみ、独立した第二の候補生成源として平均回帰戦略を評価する。トレンドフォロー戦略が
+      // 候補を出した場合は評価しない（両戦略が同一口座へ同時に発注することを避ける単純な排他制御）。
+      // InpEnableMeanReversionStrategy=false（既定）では従来どおり本ブロックは一切実行されない。
+      if(result.status!=SIGNAL_STATUS_CANDIDATE && m_config.enable_mean_reversion_strategy)
+        {
+         SSignalResult mr_result;
+         bool mr_evaluated=false;
+         const bool mr_ok=m_mean_reversion_signal_engine.Poll(mr_result,mr_evaluated);
+         if(mr_evaluated)
+           {
+            if(!mr_ok || mr_result.status==SIGNAL_STATUS_ERROR)
+              {
+               PrintFormat("SIGNAL_ERROR code=%s bar=%s reason=%s",mr_result.reason_code,
+                           TimeToString(mr_result.signal_bar_time,TIME_DATE|TIME_MINUTES),mr_result.reason);
+               AuditSystemError("MEAN_REVERSION_SIGNAL_ENGINE",mr_result.reason_code,mr_result.reason);
+              }
+            else if(mr_result.status==SIGNAL_STATUS_CANDIDATE)
+               result=mr_result;
+           }
         }
 
       if(result.status!=SIGNAL_STATUS_CANDIDATE)

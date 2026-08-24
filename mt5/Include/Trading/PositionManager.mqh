@@ -29,6 +29,14 @@ public:
      {
       return position_magic==(long)configured_magic;
      }
+
+   // 複数戦略が異なるMagic Numberでポジションを識別する場合の判定（レンジ戦略追加、2026-08-24）。
+   // secondary_magic=0は「セカンダリ戦略なし」を意味し、primaryのみで判定する。
+   static bool IsManagedPosition(const long position_magic,const ulong configured_magic,const ulong secondary_magic)
+     {
+      if(position_magic==(long)configured_magic) return true;
+      return secondary_magic!=0 && position_magic==(long)secondary_magic;
+     }
   };
 
 class CBreakevenStopRules
@@ -316,7 +324,7 @@ public:
          if(ticket==0)
            { error="POSITION_ENUMERATION_FAILED"; return false; }
          const long magic=PositionGetInteger(POSITION_MAGIC);
-         if(!CPositionProtectionRules::IsManagedPosition(magic,m_config.magic_number))
+         if(!CPositionProtectionRules::IsManagedPosition(magic,m_config.magic_number,m_config.mean_reversion_magic_number))
             continue;
          const string symbol=PositionGetString(POSITION_SYMBOL);
          const ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
@@ -471,7 +479,7 @@ public:
       if(!HistoryDealSelect(transaction.deal))
          return;
       const long magic=HistoryDealGetInteger(transaction.deal,DEAL_MAGIC);
-      if(!CPositionProtectionRules::IsManagedPosition(magic,m_config.magic_number))
+      if(!CPositionProtectionRules::IsManagedPosition(magic,m_config.magic_number,m_config.mean_reversion_magic_number))
          return;
       const ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(transaction.deal,DEAL_ENTRY);
       const string symbol=HistoryDealGetString(transaction.deal,DEAL_SYMBOL);
