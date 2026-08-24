@@ -488,6 +488,43 @@
 
   **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・MQL5 Script Test 9件全PASS（新規Reentry Windowアサーション含む、ログで個別PASS確認済み）・`.\tools\release-gate.ps1 -Mode Development`全体PASS。**未実施**: Strategy Tester実データ検証（`InpEnableMeanReversionStrategy`は既定値false据え置き）。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する。
 
+* [x] **上記の新仕様（Band外側ブレイク→Reentry Window内復帰、Choppiness＋ADX複合Range Filter、専用Magic Number、強制決済・独立Time Stop）について、未実施だったStrategy Tester実データ検証をTrain区間で実施する（ユーザー依頼「レンジ相場逆張りロジックを変更したため、再度検証してください」、2026-08-24実施）。** 検証対象はコミット`4391801`（`git status`はクリーン、作業ツリーはコミット済み状態と完全一致）の既定パラメータ（`InpMeanReversionChoppinessMin=60.0`・`InpMeanReversionAdxMax=25.0`・`InpMeanReversionMaxReentryBars=3`・`InpMeanReversionStopAtrMultiple=1.0`・`InpMeanReversionTakeProfitMode=0`・`InpMeanReversionBbWidthLookback=20`・`InpMeanReversionBbWidthExpansionRatio=1.5`・`InpMeanReversionMaxHoldingBars=20`・`InpMeanReversionMagicNumber=26072002`）。
+
+  **後方互換性の確認**: `InpEnableMeanReversionStrategy=false`（既定）でTrain区間を再実行し、直前結果（取引数39・純損益+30,801円・PF1.173543）と完全一致することを確認した（`results/backtests/20260824-201301-USDJPY-H1/`）。
+
+  **Train区間での検証結果**（`InpEnableMeanReversionStrategy=true`、既定パラメータ、`results/backtests/20260824-201448-USDJPY-H1/`）:
+
+  | 構成 | 取引数 | 純損益 | PF | Sharpe |
+  |---|---|---|---|---|
+  | 平均回帰無効（参考、既存ベースライン） | 39 | +30,801円 | 1.174 | +0.369 |
+  | **平均回帰有効・新仕様・既定パラメータ** | 44 | **+20,780円** | **1.111** | **+0.324** |
+
+  戦略別内訳: BREAKOUT 28件・+49,514円・PF1.40（トレンドフォロー、既存とほぼ同水準）／PULLBACK 11件・-18,693円・PF0.65（トレンドフォロー、既存とほぼ同水準）／**MEAN_REVERSION 5件・-10,041円・PF0.07・勝率20%**（新規）。
+
+  **旧仕様との比較**: 旧仕様（RSI＋Band接触のみ、Choppiness単独Filter）は13件全敗・-32,574円だった。新仕様は5件・1勝4敗・-10,041円で、**取引数・損失額とも大幅に縮小し、合算結果への悪影響は明確に軽減された**（合算純損益: 旧-1,472円→新+20,780円）。ただし依然として平均回帰単体は正味マイナスであり、既存トレンドフォロー戦略の収益を目減りさせている状態は変わらない。
+
+  **機構の動作確認**: 5件全ての`close_reason`が`EXPERT`（EA発の強制決済）であり、SL・TPいずれの到達でもなかった。保有時間は全件1〜2時間（H1で1〜2本）と極めて短く、新設の`EvaluateMeanReversionForcedExits`（Range Filter解除／レンジブレイク／BB Width急拡大）が意図どおり発火していることを確認した。個別にどの条件が発火したかは監査JSONLへ構造化記録されておらず（`PrintFormat`のコンソールログのみ）、本ラウンドでは判別していない（残存課題として後述）。`SYSTEM_ERROR`が1件（`INVALID_TRADE_GEOMETRY`）記録されたが、これはSL/TP幾何整合性チェックによるfail-safeな候補拒否であり、発注や既存ポジション管理には影響していない。
+
+  **総合評価: 新仕様は旧仕様からの明確な改善だが、平均回帰単体としては依然として収益に寄与していない。** 全5件がSL・TP到達前にRange Filter解除等の強制決済で切り上げられていることから、**「Entry条件（Choppiness≥60かつADX<25という厳格な複合条件）が成立する瞬間は、その状態自体が長続きしにくい」**という構造的な問題が示唆される。エントリーが成立するほど厳格なレンジ状態を要求すると、その状態はほぼ同時に終わりやすく、平均回帰が効果を発揮する前に強制決済されてしまう可能性が高い。
+
+  **残存課題**:
+  1. Entry条件とExit条件（強制決済）の厳格さのバランスが取れておらず、エントリー直後に強制決済される構造的パターンが疑われる。強制決済側の条件（特にBB Width Expansion Ratio=1.5、比較的厳しい）を緩めるか、Entry条件を緩めて母数を増やすか、いずれかの検討が必要。
+  2. 強制決済の発火理由（RANGE_FILTER_RELEASED/RANGE_BREAK/BB_WIDTH_EXPANSION）が監査JSONLに構造化記録されておらず、5件それぞれの正確な原因を機械的に特定できなかった。原因分析を今後も行う場合は、`TIME_STOP_EXIT`と同様の専用監査イベント追加を検討する必要がある。
+  3. n=5と極めて少数のサンプルであり、本セッションで繰り返し指摘してきたとおり単一Train区間・少数サンプルからの結論は過学習リスクを伴う。良化・悪化どちらの方向についても断定は避けるべき。
+  4. `InpEnableMeanReversionStrategy`は既定値false（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。
+
+* [x] **レンジ戦略の強制決済（`EvaluateMeanReversionForcedExits`/`EvaluateMeanReversionTimeStopExits`）の発火理由を判別できるよう、専用監査イベント`RANGE_EXIT`を追加する（ユーザー依頼、2026-08-24実施）。** 既存の`TIME_STOP_EXIT`（トレンド戦略のTime Stop専用診断イベント）と同じ設計パターンを踏襲し、ローカル監査のみ（Telemetry契約は変更しない）で`position_ticket`・`reason_code`（`RANGE_FILTER_RELEASED`/`RANGE_BREAK`/`BB_WIDTH_EXPANSION`/`MEAN_REVERSION_MAX_HOLDING_BARS`のいずれか）・`elapsed_bars`を記録する。
+
+  実装過程で2件の不具合を発見・修正した。(1) `mt5/Include/Logging/TradeLogger.mqh`の`CTradeLogRules::SafeEventType`（監査イベント種別の許可リスト）に`RANGE_EXIT`を追加しないと、ローカル監査ログへの書き込み自体が黙って失敗する構造だった（2026-08-17に`TIME_STOP_EXIT`で発生した既知の不具合パターンと同種、TASKS.md該当節参照）。(2) 決済実行（`CloseOnSignalInvalidation`/`CloseOnTimeStop`）の**後**に`PositionGetString`/`PositionGetInteger`で`symbol`・`position_identifier`を取得しようとしていた箇所が2か所あり、決済済みポジションに対する取得順序として不安全だったため、既存の`EvaluateTimeStopExits`と同じ安全な順序（決済実行**前**に必要な識別子を確保する）へ修正した。(3) `python/analysis/reports.py`の`SUPPORTED_AUDIT_EVENTS`（監査JSONLの許可イベント種別、厳格な集合一致チェック）に`RANGE_EXIT`が含まれておらず、`RANGE_EXIT`イベントを含む監査ログに対し`python.analysis.reports`の実行が`ValueError: unsupported audit event type`で失敗することを実行時に発見・修正した（`python/analysis/trade_breakdown.py`は許容的な実装のため影響なし）。
+
+  変更ファイル: `mt5/Include/Core/EAController.mqh`（`EvaluateMeanReversionForcedExits`・`EvaluateMeanReversionTimeStopExits`へ`RANGE_EXIT`監査呼び出しと識別子取得順序の修正）・`mt5/Include/Logging/TradeLogger.mqh`（許可リストへ追加）・`python/analysis/reports.py`（`SUPPORTED_AUDIT_EVENTS`へ追加）。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS。既定値（`InpEnableMeanReversionStrategy=false`）でTrain区間を再実行し、直前結果（取引数39・純損益+30,801円・PF1.173543）と完全一致することを確認し、後方互換性を実証した（`results/backtests/20260824-202925-USDJPY-H1/`）。`InpEnableMeanReversionStrategy=true`・既定パラメータでTrain区間を再実行し（`results/backtests/20260824-203106-USDJPY-H1/`）、取引数・純損益（44件・+20,780円）が前回ラウンドと完全一致すること（純粋加算のみで挙動に影響しないことの確認）、および`RANGE_EXIT`イベントが5件正しく記録されることを確認した。`.\tools\release-gate.ps1 -Mode Development`全体（必須文書チェック・秘密情報スキャン・JSON contracts検証・Python Phase12テスト119件・MQL5コンパイル・MQL5 Script Test）もPASSした。
+
+  **発火理由の内訳が判明**: 前ラウンドで残存課題としていた「5件の強制決済の内訳が不明」という点が解消された。5件中**4件が`RANGE_FILTER_RELEASED`**（Choppiness≥60かつADX<25という複合条件が、エントリー成立直後の0〜2本以内に再び満たされなくなった）、**1件が`RANGE_BREAK`**（確定足Closeがレンジ外へ明確にブレイク）で、`BB_WIDTH_EXPANSION`・`MEAN_REVERSION_MAX_HOLDING_BARS`の発火は0件だった。これは前ラウンドで立てた仮説（「エントリーが成立するほど厳格なレンジ状態は、その状態自体が長続きしにくい」）を実データで裏付ける結果であり、**Range Filterの条件自体（特にADX上限25という閾値）が、成立から解除までの継続時間を極端に短くしている主因である可能性が高い**。
+
+  **残存課題**: (1) `RANGE_FILTER_RELEASED`が支配的要因と判明したため、次の調整候補はADX上限（`InpMeanReversionAdxMax`、既定25）またはChoppiness閾値（`InpMeanReversionChoppinessMin`、既定60）の緩和検討だが、これは単一Train区間の観測に基づく後付け調整になりやすく、過学習リスクに注意が必要（本セッションで繰り返し確認された罠と同種）。(2) n=5と極めて少数のサンプルのままであり、発火理由の内訳（4:1:0:0）も統計的に脆弱。(3) `InpEnableMeanReversionStrategy`は既定値false（無効）のまま据え置き。
+
 * [x] 監査ログ汚染バグの影響を受けていた可能性がある分析（Buy/Sell・時間帯・曜日・相場レジーム・ATR帯・ADX帯別の有意差分析）を再検証する（2026-08-22実施。`InpEntryUseStagedPipeline=false`（Buy/Sell等の分析時点の構成）へ一時的に戻し、修正済み`tools/run-strategy-tester.ps1`で同一IS期間を再実行（`results/backtests/20260822-195446-USDJPY-H1/`）。**検証手順**: (1) 純損益-48,223円・PF0.89・Sharpe-1.10・取引数209がベースラインと完全一致することを確認。(2) `InpEntryUseStagedPipeline=false`で実行したにもかかわらず`ENTRY_PIPELINE`イベント（staged pipeline有効時のみ記録されるはずの診断ログ）が0件であることを確認し、前回発見した汚染（他run由来の`ENTRY_PIPELINE`混入）が本runには存在しないことを確認。(3) `trade_breakdown`を再実行し、direction/session/weekday/market_regime_trend/market_regime_volatility/atr_band/adx_bandの全内訳が、既報の値（Buy/Sell・時間帯・曜日別分析および相場レジーム別分析の回でそれぞれ報告した数値）と完全一致することを確認。**結論: Buy/Sell・時間帯・曜日・相場レジーム（トレンド/ボラティリティ）・ATR帯・ADX帯別の分析結果はいずれも汚染の影響を受けておらず、既報の「統計的に有意な勝率差は確認できなかった」という結論は有効**。汚染が実際に混入していたのは`InpRegimeTrendAdxMin`スイープの40番run（`20260822-181739`）のみであり、これは前タスクで既に修正済みツールにより再実行・再評価済み（`20260822-183152`、結果は変化なし）。
 
   **副次的な重要発見（バグではなく仕様どおりの安全機構）**: 本re-verification中、監査ログの`TRADE_CLOSED`/`DEAL`/`ORDER_SUBMISSION`が2019-04-29で止まる一方、`CANDIDATE`/`RISK_DECISION`はIS期間全体（〜2020-12-30）にわたって記録され続けている現象を発見。調査したところ、2019-05-01以降の`RISK_DECISION`391件はすべて`REJECTED`/`reason_code=DD_LIMIT`（最大ドローダウン制限）であり、Risk Managerの安全機構が正しく発動し、以降の新規注文を意図どおり永続的に拒否し続けていたことが判明した（`InpMaxDrawdownPercent`既定10%、多くのrunのTester .htmレポートで`max_drawdown_pct=10%`と一致）。**これはバグではなく設計どおりの安全動作**だが、本セッションで報告してきたIS期間の各種指標（取引数・純損益等）の一部は、実際には2017-09〜2020-12の全期間ではなく、DD_LIMIT発動までの実質的なより短い期間（現行最良状態の場合は2017-09〜2019-04の約1.6年）における結果である可能性がある。ADX≥40のような高収益設定ではDD_LIMITが発動せず全期間（2017-09〜2020-12）にわたって取引が継続していることを別途確認済み（`results/backtests/20260822-183152-USDJPY-H1/`のTRADE_CLOSEDタイムスタンプ範囲）。この点はWalk Forward各Fold実行時・OOS検証時に留意する必要がある（DD_LIMIT発動の有無・時期をFoldごとに確認することを推奨）。

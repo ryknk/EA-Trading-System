@@ -399,9 +399,27 @@ private:
          string reason_code;
          if(!m_mean_reversion_strategy.IsRangeStillValid(direction,reason_code))
            {
+            // 決済実行（CloseOnSignalInvalidation）で本ポジションが消滅する前に、監査ログ用の
+            // 識別子を確保しておく（EvaluateTimeStopExitsと同じ安全な取得順序）。
+            const string symbol=PositionGetString(POSITION_SYMBOL);
+            const datetime open_time=(datetime)PositionGetInteger(POSITION_TIME);
+            const ulong position_identifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
             string close_error;
             if(!m_position_manager.CloseOnSignalInvalidation(ticket,reason_code,close_error))
+              {
                PrintFormat("RANGE_EXIT_FAILED position=%I64u code=%s",ticket,close_error);
+               continue;
+              }
+            // 監査ログの粒度不足対応（2026-08-24追加、ユーザー依頼）: 強制決済の発火理由
+            // （RANGE_FILTER_RELEASED/RANGE_BREAK/BB_WIDTH_EXPANSION）を専用イベントへ記録する。
+            // TIME_STOP_EXITと同じくローカル監査のみ、既存TRADE_CLOSEDの契約は変更しない。
+            const int elapsed_bars=ElapsedClosedBars(symbol,m_config.entry_timeframe,open_time);
+            const string candidate_id=CandidateForPosition(position_identifier,symbol);
+            string payload="{";
+            payload+="\"position_ticket\":"+JString(StringFormat("%I64u",ticket))+",";
+            payload+="\"reason_code\":"+JString(reason_code)+",";
+            payload+="\"elapsed_bars\":"+IntegerToString(elapsed_bars)+"}";
+            Audit("RANGE_EXIT",candidate_id,"",symbol,payload,false);
            }
         }
      }
@@ -427,10 +445,21 @@ private:
          const int elapsed_bars=ElapsedClosedBars(symbol,m_config.entry_timeframe,open_time);
          if(!CTimeStopRules::HasExceededMaxHoldingBars(elapsed_bars,m_config.mean_reversion_max_holding_bars))
             continue;
+         // 決済実行（CloseOnTimeStop）で本ポジションが消滅する前に、監査ログ用の識別子を確保しておく
+         // （EvaluateTimeStopExitsと同じ安全な取得順序、決済後のPositionGetInteger呼び出しを避ける）。
+         const ulong position_identifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
          string close_error;
          if(!m_position_manager.CloseOnTimeStop(ticket,"MEAN_REVERSION_MAX_HOLDING_BARS",close_error))
            { PrintFormat("RANGE_TIME_STOP_EXIT_FAILED position=%I64u code=%s",ticket,close_error); continue; }
          PrintFormat("RANGE_TIME_STOP_EXIT_SUBMITTED position=%I64u elapsed_bars=%d",ticket,elapsed_bars);
+         // 監査ログの粒度不足対応（2026-08-24追加、ユーザー依頼）。EvaluateMeanReversionForcedExits
+         // と同一のRANGE_EXITイベントへ統一し、reason_codeで発火理由を区別できるようにする。
+         const string candidate_id=CandidateForPosition(position_identifier,symbol);
+         string payload="{";
+         payload+="\"position_ticket\":"+JString(StringFormat("%I64u",ticket))+",";
+         payload+="\"reason_code\":"+JString("MEAN_REVERSION_MAX_HOLDING_BARS")+",";
+         payload+="\"elapsed_bars\":"+IntegerToString(elapsed_bars)+"}";
+         Audit("RANGE_EXIT",candidate_id,"",symbol,payload,false);
         }
      }
 
