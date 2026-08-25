@@ -54,7 +54,7 @@ input int             InpMeanReversionMaxReentryBars=3;
 input EMeanReversionTakeProfitMode InpMeanReversionTakeProfitMode=MEAN_REVERSION_TP_BB_MIDDLE;
 input int             InpMeanReversionBbWidthLookback=20;
 input double          InpMeanReversionBbWidthExpansionRatio=1.5;
-input double          InpMeanReversionForcedExitAdxThreshold=30.0;
+input int             InpMeanReversionRangeExitGraceBars=3;
 input int             InpMeanReversionMaxHoldingBars=20;
 input ulong           InpMeanReversionMagicNumber=26072002;
 input double          InpRiskPerTradePercent=0.5;
@@ -159,7 +159,7 @@ int OnInit(void)
    config.mean_reversion_take_profit_mode=(int)InpMeanReversionTakeProfitMode;
    config.mean_reversion_bb_width_lookback=InpMeanReversionBbWidthLookback;
    config.mean_reversion_bb_width_expansion_ratio=InpMeanReversionBbWidthExpansionRatio;
-   config.mean_reversion_forced_exit_adx_threshold=InpMeanReversionForcedExitAdxThreshold;
+   config.mean_reversion_range_exit_grace_bars=InpMeanReversionRangeExitGraceBars;
    config.mean_reversion_max_holding_bars=InpMeanReversionMaxHoldingBars;
    config.mean_reversion_magic_number=InpMeanReversionMagicNumber;
    config.risk_per_trade_rate=InpRiskPerTradePercent/100.0;

@@ -378,11 +378,13 @@ private:
         }
      }
 
-   // レンジ戦略のポジションについて、Range Filter解除・レンジブレイク・BB Width急拡大のいずれかを
-   // 検知したら満期を待たず市場成行で決済する。判断（Strategy参照）はここで行い、メカニズム
-   // （決済実行）はPositionManagerへ委ねる（EvaluateSignalInvalidationExitsと同じ責務境界）。
-   // トレンド戦略のポジション監視（EvaluateSignalInvalidationExits/EvaluateTimeStopExits）とは
-   // 完全に独立しており、レンジポジションがそのままトレンドポジションへ引き継がれることはない。
+   // レンジ戦略のポジションについて、BB Width急拡大、またはRange Filter解除後の警戒状態中に
+   // レンジ高値/安値の確定足ブレイクを検知したら満期を待たず市場成行で決済する（Range Filter解除
+   // 単独では即決済しない、2026-08-25仕様変更。詳細はCMeanReversionStrategy::IsRangeStillValid参照）。
+   // 判断（Strategy参照）はここで行い、メカニズム（決済実行）はPositionManagerへ委ねる
+   // （EvaluateSignalInvalidationExitsと同じ責務境界）。トレンド戦略のポジション監視
+   // （EvaluateSignalInvalidationExits/EvaluateTimeStopExits）とは完全に独立しており、
+   // レンジポジションがそのままトレンドポジションへ引き継がれることはない。
    void EvaluateMeanReversionForcedExits(void)
      {
       if(!m_config.enable_mean_reversion_strategy || !m_config.enable_trade_mutations)
@@ -397,7 +399,7 @@ private:
          const ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
          const ESignalDirection direction=(type==POSITION_TYPE_BUY ? SIGNAL_DIRECTION_BUY : SIGNAL_DIRECTION_SELL);
          string reason_code;
-         if(!m_mean_reversion_strategy.IsRangeStillValid(direction,reason_code))
+         if(!m_mean_reversion_strategy.IsRangeStillValid(ticket,direction,reason_code))
            {
             // 決済実行（CloseOnSignalInvalidation）で本ポジションが消滅する前に、監査ログ用の
             // 識別子を確保しておく（EvaluateTimeStopExitsと同じ安全な取得順序）。
@@ -873,7 +875,12 @@ public:
          return;
       m_position_manager.OnTradeTransaction(transaction);
       if(transaction.type!=TRADE_TRANSACTION_DEAL_ADD || transaction.deal==0 || !HistoryDealSelect(transaction.deal)) return;
-      if(HistoryDealGetInteger(transaction.deal,DEAL_MAGIC)!=(long)m_config.magic_number) return;
+      // レンジ戦略（mean_reversion_magic_number）のポジションがSL/TP等のブローカー側自動決済で
+      // 決済された場合にDEAL/TRADE_CLOSED/TRADE_ANALYTICSが監査ログへ一切記録されない不具合を修正
+      // （初回コミットから存在、レンジ戦略追加時に未更新。2026-08-24修正）。他のMagic Number判定
+      // （IsManagedPosition 3引数版）と同じ設計に統一する。
+      if(!CPositionProtectionRules::IsManagedPosition(HistoryDealGetInteger(transaction.deal,DEAL_MAGIC),
+         m_config.magic_number,m_config.mean_reversion_magic_number)) return;
       const string symbol=HistoryDealGetString(transaction.deal,DEAL_SYMBOL);
       const ulong position_identifier=(ulong)HistoryDealGetInteger(transaction.deal,DEAL_POSITION_ID);
       const string candidate_id=CandidateForPosition(position_identifier,symbol);

@@ -12,6 +12,7 @@ from python.analysis.trade_breakdown import (
     build_trade_context,
     entry_pipeline_funnel_summary,
     giveback_summary,
+    range_exit_summary,
     reversal_from_profit_summary,
     time_stop_summary,
     write_report,
@@ -34,7 +35,8 @@ TRADES = [
          regime_trend="Range", regime_volatility="LowVolatility", close_reason="TP"),
     dict(id="c2", direction="SELL", open="2025-01-07T10:00:00Z", close="2025-01-07T13:00:00Z",
          pnl=-50.0, atr=0.08, adx=18.0, spread=12.0, mfe=80.0, mae=-60.0,
-         regime_trend="TrendDown", regime_volatility="NormalVolatility", close_reason="SL"),
+         regime_trend="TrendDown", regime_volatility="NormalVolatility", close_reason="SL",
+         range_exit_reason_code="RANGE_BREAK"),
     dict(id="c3", direction="BUY", open="2025-01-08T15:00:00Z", close="2025-01-08T20:00:00Z",
          pnl=-100.0, atr=0.10, adx=22.0, spread=9.0, mfe=-20.0, mae=-110.0,
          regime_trend="TrendUp", regime_volatility="NormalVolatility", close_reason="SL"),
@@ -80,6 +82,12 @@ def write_audit_file(directory: Path) -> Path:
             records.append(audit_event("TIME_STOP_EXIT", trade["id"], trade["close"], {
                 "position_ticket": str(1000 + index), "reason_code": time_stop_reason_code,
                 "elapsed_bars": 20, "mfe_r_multiple": 0.1,
+            }))
+        range_exit_reason_code = trade.get("range_exit_reason_code")
+        if range_exit_reason_code is not None:
+            records.append(audit_event("RANGE_EXIT", trade["id"], trade["close"], {
+                "position_ticket": str(1000 + index), "reason_code": range_exit_reason_code,
+                "elapsed_bars": 5,
             }))
     path = directory / "audit-20250106.jsonl"
     path.write_text("\n".join(json.dumps(row) for row in records), encoding="utf-8")
@@ -199,6 +207,28 @@ class TradeBreakdownTests(unittest.TestCase):
         self.assertAlmostEqual(-30.0, summary["net_profit"])
         self.assertAlmostEqual(0.0, summary["win_rate"])
 
+    def test_build_trade_context_flags_range_exit_triggered_trades(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_audit_file(Path(directory))
+            trades = build_trade_context([path])
+        by_id = trades.set_index("trade_candidate_id")
+        self.assertEqual("RANGE_BREAK", by_id.loc["c2", "range_exit_reason_code"])
+        self.assertTrue(bool(by_id.loc["c2", "range_exit_triggered"]))
+        for candidate_id in ("c1", "c3", "c4", "c5"):
+            self.assertFalse(bool(by_id.loc[candidate_id, "range_exit_triggered"]))
+            self.assertTrue(pd.isna(by_id.loc[candidate_id, "range_exit_reason_code"]))
+
+    def test_range_exit_summary_counts_trades_and_pnl_by_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_audit_file(Path(directory))
+            trades = build_trade_context([path])
+        summary = range_exit_summary(trades)
+        self.assertEqual(1, summary["trades_closed_by_range_exit"])
+        self.assertAlmostEqual(-50.0, summary["net_profit"])
+        self.assertAlmostEqual(0.0, summary["win_rate"])
+        self.assertIn("RANGE_BREAK", summary["by_reason_code"])
+        self.assertEqual(1, summary["by_reason_code"]["RANGE_BREAK"]["number_of_trades"])
+
     def test_entry_pipeline_funnel_summary_counts_stages_when_events_present(self) -> None:
         records = [
             audit_event("ENTRY_PIPELINE", "p1", "2025-01-06T00:00:00Z", {
@@ -291,6 +321,7 @@ class TradeBreakdownTests(unittest.TestCase):
             self.assertEqual(set(BREAKDOWN_COLUMNS), set(report["breakdowns"].keys()))
             self.assertIn("reversal_from_profit", report)
             self.assertEqual(1, report["time_stop"]["trades_closed_by_time_stop"])
+            self.assertEqual(1, report["range_exit"]["trades_closed_by_range_exit"])
             self.assertTrue(paths["markdown"].exists())
             self.assertTrue(paths["trades"].exists())
 

@@ -116,8 +116,15 @@ public:
   };
 
 // 保有中のレンジポジションに対する強制決済条件専用（エントリー条件のCMeanReversionEntryRulesとは
-// 意図的に別クラスへ分離、2026-08-24追記）。CI/ADXの一時的な閾値跨ぎのような弱いシグナルでは
-// 反応せず、レンジ崩壊を示す強い条件（実際の価格構造ブレイク、またはADX急伸）でのみ決済する。
+// 意図的に別クラスへ分離、2026-08-24追記）。
+//
+// 2026-08-25仕様変更（ユーザー指示）: Range Filter解除だけを理由とした即時決済（旧IsRangeQualityLost、
+// 強制決済専用の別閾値によるCI/ADX判定）は、レンジが一時的に崩れただけでもTP到達前に決済される
+// 頻度が高すぎたため廃止した。Range Filterの判定条件自体（CMeanReversionEntryRules::
+// IsRangeFilterActive、エントリーと完全に同一の閾値）は変更せず、保有ポジションの状態機械
+// （CMeanReversionStrategy::IsRangeStillValid、警戒状態＋猶予期間`InpMeanReversionRangeExitGraceBars`）
+// が、Range Filter解除を「即決済」ではなく「警戒状態への移行」として扱う。警戒状態中に本クラスの
+// IsRangeBreak（実際のレンジ高値/安値ブレイク）が成立した場合のみ強制決済する。
 class CMeanReversionExitRules
   {
 public:
@@ -133,15 +140,6 @@ public:
       return false;
      }
 
-   // ADXがadx_thresholdを超え、かつ直近確定足間で上昇中（強いトレンドの急発生を示す）。
-   // 単純な閾値跨ぎ（一時的な上下動）では反応しないよう、上昇方向であることも同時に要求する。
-   static bool IsAdxSurging(const double current_adx,const double previous_adx,const double adx_threshold)
-     {
-      if(!MathIsValidNumber(current_adx) || !MathIsValidNumber(previous_adx) || adx_threshold<=0.0)
-         return false;
-      return current_adx>adx_threshold && current_adx>previous_adx;
-     }
-
    // BB Widthが過去N本平均のexpansion_ratio倍以上に急拡大したか（レンジ状態からの逸脱）。
    static bool IsBbWidthExpanded(const double current_width,const double average_width,const double expansion_ratio)
      {
@@ -149,6 +147,55 @@ public:
          current_width<0.0 || average_width<=0.0 || expansion_ratio<=1.0)
          return false;
       return current_width>=average_width*expansion_ratio;
+     }
+  };
+
+// 保有中レンジポジションの「警戒状態」（Range Filter解除を検知してから、猶予期間中）をticket単位で
+// 追跡する（2026-08-25追加）。レコードが存在する＝警戒状態、存在しない＝通常状態という単純な設計とし、
+// 状態フラグを別途持たない。CTimeStopTracker（PositionManager.mqh）と同じ考え方だが、Strategy層が
+// Trading層へ依存する構成を避けるため、レンジ戦略専用としてこのファイル内に定義する。
+class CRangeExitGraceTracker
+  {
+private:
+   struct SState
+     {
+      ulong    ticket;
+      datetime alert_start_bar_time; // Range Filter解除を最初に検知した確定足の時刻
+     };
+   SState m_states[];
+
+   int Find(const ulong ticket)
+     {
+      for(int index=0; index<ArraySize(m_states); index++)
+         if(m_states[index].ticket==ticket) return index;
+      return -1;
+     }
+
+public:
+   bool IsInAlert(const ulong ticket,datetime &alert_start_bar_time)
+     {
+      const int slot=Find(ticket);
+      if(slot<0) return false;
+      alert_start_bar_time=m_states[slot].alert_start_bar_time;
+      return true;
+     }
+
+   void EnterAlert(const ulong ticket,const datetime alert_start_bar_time)
+     {
+      if(Find(ticket)>=0) return; // 既に警戒状態。開始時刻は上書きしない。
+      const int last=ArraySize(m_states);
+      ArrayResize(m_states,last+1);
+      m_states[last].ticket=ticket;
+      m_states[last].alert_start_bar_time=alert_start_bar_time;
+     }
+
+   void ClearAlert(const ulong ticket)
+     {
+      const int slot=Find(ticket);
+      if(slot<0) return;
+      const int last=ArraySize(m_states)-1;
+      m_states[slot]=m_states[last];
+      ArrayResize(m_states,last);
      }
   };
 
@@ -160,6 +207,7 @@ private:
    int m_atr_handle;
    int m_adx_handle;
    bool m_initialized;
+   CRangeExitGraceTracker m_grace_tracker;
 
    bool ReadIndicator(const int handle,const int shift,double &value)
      {
@@ -273,6 +321,14 @@ private:
         }
       average_width=sum/period;
       return true;
+     }
+
+   // 警戒状態開始からの経過本数（entry_timeframe換算、確定足のみ）。EAController::ElapsedClosedBars
+   // と同じ考え方（look-ahead biasを避けるため未確定足を含めない、境界を含むBars()の-1補正）。
+   int ElapsedGraceBars(const datetime alert_start_bar_time)
+     {
+      const int bars=Bars(m_config.symbol,m_config.entry_timeframe,alert_start_bar_time,TimeCurrent());
+      return bars>0 ? bars-1 : 0;
      }
 
    void SetDataError(SSignalResult &result,const string code,const string message)
@@ -424,30 +480,22 @@ public:
       return true;
      }
 
-   // 保有中のレンジポジションについて、レンジ崩壊を示す「強い」条件（レンジ高値/安値の確定足
-   // ブレイク、またはADX急伸）、あるいはBB Width急拡大のいずれかを検知したら決済すべきと判断する
-   // （保有継続の前提が崩れたかどうかの再検証専用）。エントリー条件のRange Filter（CI/ADX閾値）は
-   // 新規エントリーの成立条件としてのみ用いており、保有中ポジションの決済判断には使わない
-   // （CI/ADXの一時的な閾値跨ぎ1本だけを理由に決済すると過剰反応になるため、2026-08-24仕様変更）。
-   // トレンドフォロー戦略のIsTrendStillValidと同じ考え方: データ取得不能時はfalse-safe（true=保有継続）。
-   bool IsRangeStillValid(const ESignalDirection position_direction,string &reason_code)
+   // 保有中のレンジポジションについて、決済すべきかを判断する（保有継続の前提が崩れたかどうかの
+   // 再検証専用）。トレンドフォロー戦略のIsTrendStillValidと同じ考え方: データ取得不能時は
+   // false-safe（true=保有継続）。
+   //
+   // 2026-08-25仕様変更（ユーザー指示）: Range Filter（CI>60かつADX<25、エントリーと完全に同一の
+   // 判定・閾値、変更しない）が解除されただけでは即決済しない。解除を検知したら「警戒状態」へ
+   // 移行し、その後最大`mean_reversion_range_exit_grace_bars`本（既定3）以内に確定足Closeが
+   // 直近レンジ高値/安値を明確にブレイクした場合のみ強制決済する。猶予期間内にRange Filterが
+   // 再成立すれば通常状態へ復帰し、猶予期間を超過した場合は決済せず既存SL/TP等の管理へ委ねる
+   // （ticket単位のm_grace_trackerで状態を保持）。BB Width急拡大は警戒状態と独立した、
+   // 常時有効なボラティリティベースの強制決済条件として維持する（変更なし）。
+   bool IsRangeStillValid(const ulong ticket,const ESignalDirection position_direction,string &reason_code)
      {
       reason_code="";
       if(!m_initialized)
         { reason_code="STRATEGY_NOT_INITIALIZED"; return true; }
-
-      const double close=iClose(m_config.symbol,m_config.entry_timeframe,1);
-      double recent_high,recent_low;
-      if(close<=0.0 || !ReadRecentRange(m_config.mean_reversion_bb_period,recent_high,recent_low))
-        { reason_code="MARKET_DATA_UNAVAILABLE"; return true; }
-      if(CMeanReversionExitRules::IsRangeBreak(position_direction,close,recent_low,recent_high))
-        { reason_code="RANGE_BREAK"; return false; }
-
-      double adx_now,adx_previous;
-      if(!ReadIndicator(m_adx_handle,1,adx_now) || !ReadIndicator(m_adx_handle,2,adx_previous))
-        { reason_code="MARKET_DATA_UNAVAILABLE"; return true; }
-      if(CMeanReversionExitRules::IsAdxSurging(adx_now,adx_previous,m_config.mean_reversion_forced_exit_adx_threshold))
-        { reason_code="ADX_SURGE"; return false; }
 
       double upper,lower,average_width;
       if(!ReadBandBuffer(1,1,upper) || !ReadBandBuffer(2,1,lower) ||
@@ -455,7 +503,54 @@ public:
         { reason_code="MARKET_DATA_UNAVAILABLE"; return true; }
       const double current_width=upper-lower;
       if(CMeanReversionExitRules::IsBbWidthExpanded(current_width,average_width,m_config.mean_reversion_bb_width_expansion_ratio))
-        { reason_code="BB_WIDTH_EXPANSION"; return false; }
+        { m_grace_tracker.ClearAlert(ticket); reason_code="BB_WIDTH_EXPANSION"; return false; }
+
+      double adx;
+      double atr_sum,choppiness_high,choppiness_low;
+      if(!ReadIndicator(m_adx_handle,1,adx) || !ReadChoppinessInputs(atr_sum,choppiness_high,choppiness_low))
+        { reason_code="MARKET_DATA_UNAVAILABLE"; return true; }
+      const double choppiness=CChoppinessIndex::Calculate(atr_sum,choppiness_high,choppiness_low,
+                                                            m_config.mean_reversion_choppiness_period);
+      const bool range_filter_active=CMeanReversionEntryRules::IsRangeFilterActive(
+         choppiness,adx,m_config.mean_reversion_choppiness_min,m_config.mean_reversion_adx_max);
+
+      if(range_filter_active)
+        {
+         // Range Filterが再成立。警戒状態であれば解除し、通常状態へ復帰する。
+         m_grace_tracker.ClearAlert(ticket);
+         return true;
+        }
+
+      const datetime current_bar_time=iTime(m_config.symbol,m_config.entry_timeframe,1);
+      if(current_bar_time<=0)
+        { reason_code="MARKET_DATA_UNAVAILABLE"; return true; }
+
+      datetime alert_start_bar_time;
+      if(!m_grace_tracker.IsInAlert(ticket,alert_start_bar_time))
+        {
+         // Range Filter解除を検知した最初の確定足。ここでは決済せず警戒状態を開始する。
+         m_grace_tracker.EnterAlert(ticket,current_bar_time);
+         alert_start_bar_time=current_bar_time;
+        }
+
+      const int elapsed_grace_bars=ElapsedGraceBars(alert_start_bar_time);
+      if(elapsed_grace_bars>=m_config.mean_reversion_range_exit_grace_bars)
+        {
+         // 猶予期間を超過。これ以上はRange Filterベースの監視をせず、既存SL/TP等の管理に委ねる。
+         m_grace_tracker.ClearAlert(ticket);
+         return true;
+        }
+
+      const double close=iClose(m_config.symbol,m_config.entry_timeframe,1);
+      double recent_high,recent_low;
+      if(close<=0.0 || !ReadRecentRange(m_config.mean_reversion_bb_period,recent_high,recent_low))
+        { reason_code="MARKET_DATA_UNAVAILABLE"; return true; }
+      if(CMeanReversionExitRules::IsRangeBreak(position_direction,close,recent_low,recent_high))
+        {
+         m_grace_tracker.ClearAlert(ticket);
+         reason_code="RANGE_BREAK";
+         return false;
+        }
 
       return true;
      }

@@ -215,17 +215,12 @@ void OnStart(void)
    AssertTrue(!CMeanReversionExitRules::IsRangeBreak(SIGNAL_DIRECTION_NONE,149.400,149.500,151.000),
               "range break check rejects an undirected position");
 
-   // 強制決済: ADXが閾値を超え、かつ上昇中（強いトレンドの急発生）。単純な閾値跨ぎだけでは反応しない。
-   AssertTrue(CMeanReversionExitRules::IsAdxSurging(31.0,29.0,30.0),
-              "adx surge force-exits when above threshold and rising");
-   AssertTrue(!CMeanReversionExitRules::IsAdxSurging(31.0,32.0,30.0),
-              "adx surge does not force-exit when above threshold but falling");
-   AssertTrue(!CMeanReversionExitRules::IsAdxSurging(29.0,20.0,30.0),
-              "adx surge does not force-exit when rising but still below threshold");
-   AssertTrue(!CMeanReversionExitRules::IsAdxSurging(31.0,29.0,0.0),
-              "adx surge rejected on non-positive threshold");
-   AssertTrue(!CMeanReversionExitRules::IsAdxSurging(MathSqrt(-1.0),29.0,30.0),
-              "adx surge rejected on NaN current ADX");
+   // 強制決済（2026-08-25仕様変更、ユーザー指示）: Range Filter解除だけを理由とした即時決済
+   // （旧IsRangeQualityLost）は廃止し、「警戒状態＋猶予期間」の状態機械
+   // （CMeanReversionStrategy::IsRangeStillValid、ticket単位の状態を要するため本ファイルでの
+   // 静的関数テストの対象外。IsTrendStillValidと同じ理由）へ置き換えた。Range Filter自体の
+   // 判定（IsRangeFilterActive）とレンジブレイク判定（IsRangeBreak）は変更しておらず、
+   // 上記のテストがそのまま引き続き有効。
 
    // 強制決済: BB Widthの急拡大（過去N本平均比）。
    AssertTrue(CMeanReversionExitRules::IsBbWidthExpanded(3.0,2.0,1.5),

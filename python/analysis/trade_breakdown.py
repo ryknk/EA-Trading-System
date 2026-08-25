@@ -21,6 +21,11 @@ EvaluateTimeStopExitsが送出）のreason_codeで識別する。同イベント
 time_stop_triggered=Falseとなる。close_reasonはMT5のDEAL_REASONをそのまま文字列化した
 ものであり、EA発注による決済（Emergency Close・シグナル失効Exit・Time Stop等）はすべて
 "EXPERT"として一括りになるため、Time Stopの識別にはTIME_STOP_EXITイベントを別途用いる。
+
+レンジ相場逆張り戦略（II案）の強制決済（RANGE_BREAK/BB_WIDTH_EXPANSION/
+MEAN_REVERSION_MAX_HOLDING_BARS）はRANGE_EXITイベント（EA側CEAController::
+EvaluateMeanReversionForcedExits/EvaluateMeanReversionTimeStopExitsが送出）のreason_codeで
+識別する。TIME_STOP_EXITと同じ理由でclose_reasonだけでは区別できないため、別イベントを用いる。
 """
 
 from __future__ import annotations
@@ -53,7 +58,7 @@ BREAKDOWN_COLUMNS = [
     "hold_time_band", "mfe_band", "mae_band",
     "market_regime_trend", "market_regime_volatility",
     "close_reason", "close_session", "close_weekday", "giveback_band",
-    "time_stop_reason_code",
+    "time_stop_reason_code", "range_exit_reason_code",
 ]
 
 
@@ -134,6 +139,21 @@ def _extract_time_stop_context(records: list[dict[str, Any]]) -> pd.DataFrame:
         seen.add(candidate_id)
         rows.append({"trade_candidate_id": candidate_id, "time_stop_reason_code": payload.get("reason_code")})
     return pd.DataFrame(rows, columns=["trade_candidate_id", "time_stop_reason_code"])
+
+
+def _extract_range_exit_context(records: list[dict[str, Any]]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        if record.get("event_type") != "RANGE_EXIT":
+            continue
+        candidate_id = record.get("trade_candidate_id")
+        payload = record.get("payload")
+        if not isinstance(candidate_id, str) or candidate_id in seen or not isinstance(payload, dict):
+            continue
+        seen.add(candidate_id)
+        rows.append({"trade_candidate_id": candidate_id, "range_exit_reason_code": payload.get("reason_code")})
+    return pd.DataFrame(rows, columns=["trade_candidate_id", "range_exit_reason_code"])
 
 
 # ENTRY_PIPELINEのreason_codeを、段階的Entry判定パイプラインの4段階
@@ -232,6 +252,7 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
         "market_regime_trend", "market_regime_volatility",
         "close_reason", "close_weekday", "close_session", "giveback_ratio", "giveback_band",
         "time_stop_reason_code", "time_stop_triggered",
+        "range_exit_reason_code", "range_exit_triggered",
         "exit_spread_points", "point_value",
     ]
     if trades.empty:
@@ -249,6 +270,7 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
     enriched = enriched.merge(_extract_analytics_context(records), on="trade_candidate_id", how="left")
     enriched = enriched.merge(_extract_closed_context(records), on="trade_candidate_id", how="left")
     enriched = enriched.merge(_extract_time_stop_context(records), on="trade_candidate_id", how="left")
+    enriched = enriched.merge(_extract_range_exit_context(records), on="trade_candidate_id", how="left")
     for column in (
         "entry_atr", "entry_adx", "entry_spread_points", "risk_budget", "mfe", "mae",
         "exit_spread_points", "point_value",
@@ -274,6 +296,7 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
     enriched["giveback_ratio"] = ((mfe - enriched["net_pnl"]) / mfe).where(mfe > 0.0)
 
     enriched["time_stop_triggered"] = enriched["time_stop_reason_code"].notna()
+    enriched["range_exit_triggered"] = enriched["range_exit_reason_code"].notna()
 
     enriched["atr_band"] = _quantile_band(enriched["entry_atr"], "ATR")
     enriched["adx_band"] = _quantile_band(enriched["entry_adx"], "ADX")
@@ -339,11 +362,31 @@ def time_stop_summary(trades: pd.DataFrame) -> dict[str, Any]:
     return {"trades_closed_by_time_stop": summary.pop("number_of_trades"), **summary}
 
 
+def range_exit_summary(trades: pd.DataFrame) -> dict[str, Any]:
+    """レンジ相場逆張り戦略（II案）の強制決済（RANGE_EXIT）で決済されたトレードの件数・損益を、
+    reason_code別（RANGE_BREAK/BB_WIDTH_EXPANSION/MEAN_REVERSION_MAX_HOLDING_BARS）に要約する。
+    InpEnableMeanReversionStrategy=falseのバックテストではtrades_closed_by_range_exitが常に0になる。
+    強制決済回数・TP到達率・SL到達率をclose_reason（TP/SL）と組み合わせて比較する際の入口として使う。
+    """
+    triggered = trades[trades["range_exit_triggered"]]
+    summary = aggregate_trade_group(triggered["net_pnl"])
+    by_reason = {
+        str(reason_code): aggregate_trade_group(part["net_pnl"])
+        for reason_code, part in triggered.groupby("range_exit_reason_code", sort=True, observed=True)
+    }
+    return {
+        "trades_closed_by_range_exit": summary.pop("number_of_trades"),
+        **summary,
+        "by_reason_code": by_reason,
+    }
+
+
 def _markdown(
     breakdowns: dict[str, list[dict[str, Any]]],
     reversal: dict[str, Any],
     giveback: dict[str, Any],
     time_stop: dict[str, Any],
+    range_exit: dict[str, Any],
     entry_pipeline_funnel: dict[str, Any] | None = None,
 ) -> str:
     lines = [
@@ -384,6 +427,19 @@ def _markdown(
     lines.append(f"- 勝率: {time_stop['win_rate']:.2%}" if time_stop["trades_closed_by_time_stop"] else "- 勝率: 算出不能")
     lines.append(f"- 期待値: {time_stop['expectancy']:.2f}")
     lines.append("")
+    lines += [
+        "## レンジ相場逆張り強制決済（RANGE_EXIT）", "",
+        f"- 強制決済件数: {range_exit['trades_closed_by_range_exit']}",
+        f"- 純損益: {range_exit['net_profit']:.2f}",
+    ]
+    range_exit_pf = range_exit["profit_factor"]
+    lines.append(f"- プロフィットファクター: {'算出不能' if range_exit_pf is None else f'{range_exit_pf:.4f}'}")
+    lines.append(f"- 勝率: {range_exit['win_rate']:.2%}" if range_exit["trades_closed_by_range_exit"] else "- 勝率: 算出不能")
+    lines.append(f"- 期待値: {range_exit['expectancy']:.2f}")
+    if range_exit["by_reason_code"]:
+        lines += ["", "理由コード別:", "```json",
+                  json.dumps(range_exit["by_reason_code"], ensure_ascii=False, indent=2), "```"]
+    lines.append("")
     if entry_pipeline_funnel is not None:
         lines += [
             "## 段階的Entry判定パイプライン（InpEntryUseStagedPipeline=true時のみ記録）", "",
@@ -413,6 +469,7 @@ def write_report(
     reversal = reversal_from_profit_summary(trades)
     giveback = giveback_summary(trades)
     time_stop = time_stop_summary(trades)
+    range_exit = range_exit_summary(trades)
     entry_pipeline_funnel: dict[str, Any] | None = None
     if input_paths:
         records: list[dict[str, Any]] = []
@@ -441,10 +498,13 @@ def write_report(
             "giveback_band": "giveback_ratioの実データ分位点による帯",
             "time_stop_reason_code": "Time Stop（時間切れ決済）で決済された場合の理由コード（MAX_HOLDING_BARS/MAX_HOLDING_BARS_MIN_MFE_NOT_REACHED）。Time Stop以外の決済ではNaN",
             "time_stop_triggered": "time_stop_reason_codeがNaNでないトレードはTrue。InpEnableTimeStop=falseのバックテストでは常にFalse",
+            "range_exit_reason_code": "レンジ相場逆張り戦略の強制決済で決済された場合の理由コード（RANGE_BREAK/BB_WIDTH_EXPANSION/MEAN_REVERSION_MAX_HOLDING_BARS）。該当しない決済ではNaN",
+            "range_exit_triggered": "range_exit_reason_codeがNaNでないトレードはTrue。InpEnableMeanReversionStrategy=falseのバックテストでは常にFalse",
         },
         "reversal_from_profit": reversal,
         "giveback_from_peak_profit": giveback,
         "time_stop": time_stop,
+        "range_exit": range_exit,
         "breakdowns": breakdowns,
     }
     if entry_pipeline_funnel is not None:
@@ -458,7 +518,7 @@ def write_report(
         json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8",
     )
     output_paths["markdown"].write_text(
-        _markdown(breakdowns, reversal, giveback, time_stop, entry_pipeline_funnel), encoding="utf-8",
+        _markdown(breakdowns, reversal, giveback, time_stop, range_exit, entry_pipeline_funnel), encoding="utf-8",
     )
     trades.to_csv(output_paths["trades"], index=False)
     return output_paths
