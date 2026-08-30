@@ -33,6 +33,14 @@ public:
       return CChoppinessIndex::IsChoppy(choppiness,choppiness_min) && adx<adx_max;
      }
 
+   // Tokyoセッション判定（2026-08-26追加、ユーザー依頼）。python.analysis.trade_breakdown.
+   // SESSION_BOUNDARIESのTokyo区分（hour∈[0,8)∪[22,24)）と同一の境界を用いる（DST未考慮の
+   // 簡略化、既存のSession別分析との整合性を優先。hour_utcはbar_timeをTimeToStructした値を渡す）。
+   static bool IsTokyoSession(const int hour_utc)
+     {
+      return hour_utc<8 || hour_utc>=22;
+     }
+
    // BUY: 確定足CloseがLower Bandを下抜けた後（Reentry待ち開始）、最大max_reentry_bars本以内に
    // 確定足CloseがLower Band内へ復帰した最初の確定足でのみ成立する。SELLはUpper Bandに対して同様。
    // closes[i]/lower_bands[i]/upper_bands[i]はshift=(i+1)（i=0が直近確定足=shift1）に対応する、
@@ -122,21 +130,33 @@ public:
 // 強制決済専用の別閾値によるCI/ADX判定）は、レンジが一時的に崩れただけでもTP到達前に決済される
 // 頻度が高すぎたため廃止した。Range Filterの判定条件自体（CMeanReversionEntryRules::
 // IsRangeFilterActive、エントリーと完全に同一の閾値）は変更せず、保有ポジションの状態機械
-// （CMeanReversionStrategy::IsRangeStillValid、警戒状態＋猶予期間`InpMeanReversionRangeExitGraceBars`）
-// が、Range Filter解除を「即決済」ではなく「警戒状態への移行」として扱う。警戒状態中に本クラスの
-// IsRangeBreak（実際のレンジ高値/安値ブレイク）が成立した場合のみ強制決済する。
+// （CMeanReversionStrategy::IsRangeStillValid）が、Range Filter解除を「即決済」ではなく
+// 「警戒状態への移行」として扱う。
+//
+// 2026-08-26仕様変更（ユーザー指示）: 当初は確定足ベースの猶予期間（最大N本以内のブレイク確認）
+// だったが、猶予期間が短くブレイクを十分に検知できていなかったため、警戒状態中はBid/Ask（実勢
+// 価格）を毎Tick監視し、本クラスのIsTickRangeBreak（ATRバッファ付きのレンジ高値/安値ブレイク）が
+// 実時間で`mean_reversion_break_confirm_seconds`秒以上継続した場合のみ強制決済する方式へ変更した。
 class CMeanReversionExitRules
   {
 public:
    // レンジ高値/安値（直近N本の実際のスイング高安値、Bollinger Bandのような統計的構成物ではない）を
-   // 確定足Closeで明確にブレイクしたか（保有ポジション方向への逆行）。
-   static bool IsRangeBreak(const ESignalDirection position_direction,const double confirmed_close,
-                            const double recent_range_low,const double recent_range_high)
+   // 実勢価格（Bid/Ask）がATRバッファを含めて明確にブレイクしたか（保有ポジション方向への逆行）。
+   // 2026-08-26仕様変更（ユーザー指示）: 確定足Close基準から、警戒状態中はTick（Bid/Ask）基準へ
+   // 変更した。BUY: Bid<RangeLow-ATR×break_atr_multiplier、SELL: Ask>RangeHigh+ATR×break_atr_multiplier。
+   // 継続確認（実時間で何秒続いたか）はCMeanReversionStrategy::IsRangeStillValid側の
+   // m_grace_trackerが担当し、本メソッドは「今この瞬間ブレイクしているか」のみを判定する。
+   static bool IsTickRangeBreak(const ESignalDirection position_direction,const double bid,const double ask,
+                                const double recent_range_low,const double recent_range_high,
+                                const double atr,const double break_atr_multiplier)
      {
-      if(!MathIsValidNumber(confirmed_close) || !MathIsValidNumber(recent_range_low) || !MathIsValidNumber(recent_range_high))
+      if(!MathIsValidNumber(bid) || !MathIsValidNumber(ask) || bid<=0.0 || ask<=0.0 || ask<bid ||
+         !MathIsValidNumber(recent_range_low) || !MathIsValidNumber(recent_range_high) ||
+         !MathIsValidNumber(atr) || atr<=0.0 || break_atr_multiplier<0.0)
          return false;
-      if(position_direction==SIGNAL_DIRECTION_BUY) return confirmed_close<recent_range_low;
-      if(position_direction==SIGNAL_DIRECTION_SELL) return confirmed_close>recent_range_high;
+      const double buffer=atr*break_atr_multiplier;
+      if(position_direction==SIGNAL_DIRECTION_BUY) return bid<recent_range_low-buffer;
+      if(position_direction==SIGNAL_DIRECTION_SELL) return ask>recent_range_high+buffer;
       return false;
      }
 
@@ -150,17 +170,25 @@ public:
      }
   };
 
-// 保有中レンジポジションの「警戒状態」（Range Filter解除を検知してから、猶予期間中）をticket単位で
-// 追跡する（2026-08-25追加）。レコードが存在する＝警戒状態、存在しない＝通常状態という単純な設計とし、
-// 状態フラグを別途持たない。CTimeStopTracker（PositionManager.mqh）と同じ考え方だが、Strategy層が
+// 保有中レンジポジションの「警戒状態」（Range Filter解除を検知してから、Range Filterが再成立する
+// かポジションが決済されるまで）をticket単位で追跡する（2026-08-25追加、2026-08-26仕様変更で
+// 猶予バー数の概念を廃止しTickベースのブレイク確認タイマーへ置き換え。ユーザー指示: 猶予期間が
+// 短くブレイクを十分に検知できていなかったため、確定足の本数ではなくBid/Askを毎Tick監視し、
+// ブレイク条件が実時間で一定秒数継続した場合のみ強制決済する方式へ変更した）。
+// レコードが存在する＝警戒状態、存在しない＝通常状態という単純な設計とし、状態フラグを別途持たない。
+// break_timer_start（0=ブレイク確認タイマー停止中）は、警戒状態中にBreakLevelを実勢価格で
+// 継続的に超過している実時間を計測するための開始時刻（TimeCurrent()、Tick数ではなく実時間で
+// 判定するため）。CTimeStopTracker（PositionManager.mqh）と同じ考え方だが、Strategy層が
 // Trading層へ依存する構成を避けるため、レンジ戦略専用としてこのファイル内に定義する。
+// EA再起動・再初期化時はこの配列が空の状態から始まるため、既存の保有ポジションは自動的に
+// 「通常状態」（未警戒）から再開する（CTimeStopTrackerと同じ、安全側のfalse-safeな再初期化）。
 class CRangeExitGraceTracker
   {
 private:
    struct SState
      {
       ulong    ticket;
-      datetime alert_start_bar_time; // Range Filter解除を最初に検知した確定足の時刻
+      datetime break_timer_start; // 0 = ブレイク確認タイマー停止中
      };
    SState m_states[];
 
@@ -172,30 +200,52 @@ private:
      }
 
 public:
-   bool IsInAlert(const ulong ticket,datetime &alert_start_bar_time)
+   bool IsInAlert(const ulong ticket,datetime &break_timer_start)
      {
       const int slot=Find(ticket);
       if(slot<0) return false;
-      alert_start_bar_time=m_states[slot].alert_start_bar_time;
+      break_timer_start=m_states[slot].break_timer_start;
       return true;
      }
 
-   void EnterAlert(const ulong ticket,const datetime alert_start_bar_time)
+   // 戻り値: 新規に警戒状態へ遷移した場合はtrue（監査ログ記録用）。既に警戒状態だった場合はfalse。
+   bool EnterAlert(const ulong ticket)
      {
-      if(Find(ticket)>=0) return; // 既に警戒状態。開始時刻は上書きしない。
+      if(Find(ticket)>=0) return false;
       const int last=ArraySize(m_states);
       ArrayResize(m_states,last+1);
       m_states[last].ticket=ticket;
-      m_states[last].alert_start_bar_time=alert_start_bar_time;
+      m_states[last].break_timer_start=0;
+      return true;
      }
 
-   void ClearAlert(const ulong ticket)
+   // 戻り値: 実際に警戒状態を解除した場合はtrue（監査ログ記録用）。元々警戒状態でなかった場合はfalse。
+   // ポジション決済時（理由を問わず）にも外部から呼び出され、状態を確実にクリアする
+   // （CMeanReversionStrategy::ClearPositionState経由、2026-08-26追加、ユーザー指示）。
+   bool ClearAlert(const ulong ticket)
      {
       const int slot=Find(ticket);
-      if(slot<0) return;
+      if(slot<0) return false;
       const int last=ArraySize(m_states)-1;
       m_states[slot]=m_states[last];
       ArrayResize(m_states,last);
+      return true;
+     }
+
+   // ブレイク確認タイマーを開始する（警戒状態でない場合、または既に開始済みの場合は何もしない）。
+   void StartBreakTimer(const ulong ticket,const datetime now)
+     {
+      const int slot=Find(ticket);
+      if(slot<0 || m_states[slot].break_timer_start>0) return;
+      m_states[slot].break_timer_start=now;
+     }
+
+   // 価格がBreakLevelの内側へ戻った場合にタイマーをリセットする（警戒状態自体は解除しない）。
+   void ResetBreakTimer(const ulong ticket)
+     {
+      const int slot=Find(ticket);
+      if(slot<0) return;
+      m_states[slot].break_timer_start=0;
      }
   };
 
@@ -262,7 +312,10 @@ private:
       return highest_high>-DBL_MAX && lowest_low<DBL_MAX;
      }
 
-   // 直近レンジ高安値（SL算出用）。BB期間と同じ窓（確定足のみ）を参照する。
+   // 直近レンジ高安値（確定足のみ）を、呼び出し元が指定したperiod本で参照する。
+   // エントリー側のSL算出ではmean_reversion_bb_period（Band期間と共用）、決済側の
+   // IsRangeBreak判定ではmean_reversion_range_break_lookback（エントリーとは独立、
+   // 2026-08-25追加）を使う。
    bool ReadRecentRange(const int period,double &highest_high,double &lowest_low)
      {
       if(period<1) return false;
@@ -321,14 +374,6 @@ private:
         }
       average_width=sum/period;
       return true;
-     }
-
-   // 警戒状態開始からの経過本数（entry_timeframe換算、確定足のみ）。EAController::ElapsedClosedBars
-   // と同じ考え方（look-ahead biasを避けるため未確定足を含めない、境界を含むBars()の-1補正）。
-   int ElapsedGraceBars(const datetime alert_start_bar_time)
-     {
-      const int bars=Bars(m_config.symbol,m_config.entry_timeframe,alert_start_bar_time,TimeCurrent());
-      return bars>0 ? bars-1 : 0;
      }
 
    void SetDataError(SSignalResult &result,const string code,const string message)
@@ -396,6 +441,21 @@ public:
          entry_bar[0].time<=0 || entry_bar[0].close<=0.0)
         { SetDataError(result,"MARKET_DATA_UNAVAILABLE","Closed-bar price data is unavailable."); return false; }
       result.signal_bar_time=entry_bar[0].time;
+
+      // Tokyoセッション限定（2026-08-26追加、ユーザー依頼）。既定は無効（従来どおり全セッションで
+      // エントリー判定を行う）。python.analysis.trade_breakdown由来の分析で、Tokyoセッションのみが
+      // 唯一プラスだった一方London/Overlapが特に悪かったことを踏まえた検証用オプション。
+      if(m_config.mean_reversion_restrict_to_tokyo_session)
+        {
+         MqlDateTime entry_bar_parts;
+         TimeToStruct(entry_bar[0].time,entry_bar_parts);
+         if(!CMeanReversionEntryRules::IsTokyoSession(entry_bar_parts.hour))
+           {
+            result.reason_code="OUTSIDE_TOKYO_SESSION";
+            result.reason=StringFormat("Entry bar hour=%d is outside the Tokyo session window.",entry_bar_parts.hour);
+            return true;
+           }
+        }
 
       double adx;
       if(!ReadIndicator(m_adx_handle,1,adx))
@@ -482,18 +542,33 @@ public:
 
    // 保有中のレンジポジションについて、決済すべきかを判断する（保有継続の前提が崩れたかどうかの
    // 再検証専用）。トレンドフォロー戦略のIsTrendStillValidと同じ考え方: データ取得不能時は
-   // false-safe（true=保有継続）。
+   // false-safe（true=保有継続）。EAController::EvaluateMeanReversionForcedExits経由でOnTick毎に
+   // 呼び出されるため、本メソッド自体が既にTickベースで評価されている。
    //
-   // 2026-08-25仕様変更（ユーザー指示）: Range Filter（CI>60かつADX<25、エントリーと完全に同一の
-   // 判定・閾値、変更しない）が解除されただけでは即決済しない。解除を検知したら「警戒状態」へ
-   // 移行し、その後最大`mean_reversion_range_exit_grace_bars`本（既定3）以内に確定足Closeが
-   // 直近レンジ高値/安値を明確にブレイクした場合のみ強制決済する。猶予期間内にRange Filterが
-   // 再成立すれば通常状態へ復帰し、猶予期間を超過した場合は決済せず既存SL/TP等の管理へ委ねる
-   // （ticket単位のm_grace_trackerで状態を保持）。BB Width急拡大は警戒状態と独立した、
-   // 常時有効なボラティリティベースの強制決済条件として維持する（変更なし）。
-   bool IsRangeStillValid(const ulong ticket,const ESignalDirection position_direction,string &reason_code)
+   // 2026-08-25/26仕様変更（ユーザー指示）: Range Filter（CI>60かつADX<25、エントリーと完全に
+   // 同一の判定・閾値、変更しない）が解除されただけでは即決済しない。解除を検知したら「警戒状態」へ
+   // 移行する。当初は「確定足ベースで最大N本の猶予期間」だったが、猶予期間が短くブレイクを
+   // 十分に検知できなかったため、確定足ではなく実勢価格（Bid/Ask）を毎Tick監視し、ブレイク条件
+   // （BUY: Bid<RangeLow-ATR×BreakAtrMultiplier、SELL: Ask>RangeHigh+ATR×BreakAtrMultiplier）が
+   // 実時間で`mean_reversion_break_confirm_seconds`秒以上継続した場合のみ強制決済する方式へ
+   // 変更した（Tick数ではなく実時間、TimeCurrent()はStrategy Tester上でもシミュレート時刻を
+   // 正しく返すため使用する）。継続中に価格がBreakLevelの内側へ戻ればタイマーをリセットし、
+   // 再度ブレイクすれば新たにタイマーが開始する。Range Filterが再成立すれば警戒状態・タイマーとも
+   // 解除して通常状態へ復帰する。BB Width急拡大は警戒状態と独立した、常時有効なボラティリティ
+   // ベースの強制決済条件として維持する（変更なし）。複数ポジションが存在する場合、警戒状態と
+   // タイマーはm_grace_tracker内でticket単位に独立管理される。
+   //
+   // alert_transition（2026-08-25追加、ユーザー依頼）: 警戒状態の遷移が今回発生した場合のみ
+   // "ALERT_ENTERED"/"ALERT_CLEARED_FILTER_REACTIVATED"を設定する（それ以外は空文字列）。
+   // 呼び出し元（EAController）が監査ログ（RANGE_ALERT）へ記録するための観測性向上専用の出力であり、
+   // 決済判断（戻り値・reason_code）そのものには影響しない。決済に至る遷移
+   // （BB_WIDTH_EXPANSION・TICK_BREAK_EXIT）は既存のRANGE_EXIT監査で捕捉済みのため、
+   // ここでは設定しない（二重記録を避ける）。
+   bool IsRangeStillValid(const ulong ticket,const ESignalDirection position_direction,string &reason_code,
+                          string &alert_transition)
      {
       reason_code="";
+      alert_transition="";
       if(!m_initialized)
         { reason_code="STRATEGY_NOT_INITIALIZED"; return true; }
 
@@ -516,43 +591,66 @@ public:
 
       if(range_filter_active)
         {
-         // Range Filterが再成立。警戒状態であれば解除し、通常状態へ復帰する。
-         m_grace_tracker.ClearAlert(ticket);
+         // Range Filterが再成立。警戒状態であれば解除し（ブレイク確認タイマーも一体で消える）、
+         // 通常状態へ復帰する。
+         if(m_grace_tracker.ClearAlert(ticket))
+            alert_transition="ALERT_CLEARED_FILTER_REACTIVATED";
          return true;
         }
 
-      const datetime current_bar_time=iTime(m_config.symbol,m_config.entry_timeframe,1);
-      if(current_bar_time<=0)
-        { reason_code="MARKET_DATA_UNAVAILABLE"; return true; }
-
-      datetime alert_start_bar_time;
-      if(!m_grace_tracker.IsInAlert(ticket,alert_start_bar_time))
+      datetime break_timer_start;
+      if(!m_grace_tracker.IsInAlert(ticket,break_timer_start))
         {
-         // Range Filter解除を検知した最初の確定足。ここでは決済せず警戒状態を開始する。
-         m_grace_tracker.EnterAlert(ticket,current_bar_time);
-         alert_start_bar_time=current_bar_time;
+         // Range Filter解除を検知した最初のTick。ここでは決済せず警戒状態を開始する
+         // （ブレイク確認タイマーはまだ開始しない、停止中=0のまま）。
+         m_grace_tracker.EnterAlert(ticket);
+         break_timer_start=0;
+         alert_transition="ALERT_ENTERED";
         }
 
-      const int elapsed_grace_bars=ElapsedGraceBars(alert_start_bar_time);
-      if(elapsed_grace_bars>=m_config.mean_reversion_range_exit_grace_bars)
-        {
-         // 猶予期間を超過。これ以上はRange Filterベースの監視をせず、既存SL/TP等の管理に委ねる。
-         m_grace_tracker.ClearAlert(ticket);
-         return true;
-        }
-
-      const double close=iClose(m_config.symbol,m_config.entry_timeframe,1);
+      // Tick監視: 確定足ではなくBid/Ask（実勢価格）でレンジブレイクを判定する。RangeLow/RangeHigh
+      // はmean_reversion_range_break_lookback本の確定足高安値（既存パラメータを再利用）。
+      double atr;
       double recent_high,recent_low;
-      if(close<=0.0 || !ReadRecentRange(m_config.mean_reversion_bb_period,recent_high,recent_low))
-        { reason_code="MARKET_DATA_UNAVAILABLE"; return true; }
-      if(CMeanReversionExitRules::IsRangeBreak(position_direction,close,recent_low,recent_high))
+      MqlTick tick;
+      if(!ReadIndicator(m_atr_handle,1,atr) || atr<=0.0 ||
+         !ReadRecentRange(m_config.mean_reversion_range_break_lookback,recent_high,recent_low) ||
+         !SymbolInfoTick(m_config.symbol,tick) || tick.bid<=0.0 || tick.ask<=0.0 || tick.ask<tick.bid)
+        { reason_code="MARKET_DATA_UNAVAILABLE"; return true; } // データ不能時はタイマーへ触れずfalse-safe
+
+      const bool broken=CMeanReversionExitRules::IsTickRangeBreak(position_direction,tick.bid,tick.ask,
+         recent_low,recent_high,atr,m_config.mean_reversion_break_atr_multiplier);
+
+      if(!broken)
         {
+         // 価格がBreakLevelの内側へ戻った（または一度もブレイクしていない）。タイマーをリセットする。
+         m_grace_tracker.ResetBreakTimer(ticket);
+         return true;
+        }
+
+      const datetime now=TimeCurrent();
+      if(break_timer_start<=0)
+        {
+         // ブレイク条件を初めて（またはリセット後に再び）満たした。確認タイマーを開始する。
+         m_grace_tracker.StartBreakTimer(ticket,now);
+         return true;
+        }
+      if(now-break_timer_start>=m_config.mean_reversion_break_confirm_seconds)
+        {
+         // ブレイクがBreakConfirmSeconds以上、実時間で継続して確認された。強制決済する。
          m_grace_tracker.ClearAlert(ticket);
-         reason_code="RANGE_BREAK";
+         reason_code="TICK_BREAK_EXIT";
          return false;
         }
+      return true; // タイマー継続中（BreakConfirmSecondsに未到達）。
+     }
 
-      return true;
+   // ポジション決済時に外部（EAController::OnTradeTransaction）から呼び出し、警戒状態・
+   // ブレイク確認タイマーを確実にクリアする（2026-08-26追加、ユーザー指示: 決済理由を問わず、
+   // 決済後は必ず状態をクリアする）。追跡されていないticketに対しては安全なno-op。
+   void ClearPositionState(const ulong ticket)
+     {
+      m_grace_tracker.ClearAlert(ticket);
      }
   };
 

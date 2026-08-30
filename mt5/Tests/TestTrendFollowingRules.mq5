@@ -118,6 +118,14 @@ void OnStart(void)
    AssertTrue(!CMeanReversionEntryRules::IsRangeFilterActive(70.0,MathSqrt(-1.0),60.0,25.0),
               "range filter inactive on NaN ADX");
 
+   // Tokyoセッション判定（2026-08-26追加）: hour∈[0,8)∪[22,24)のみTokyo。
+   AssertTrue(CMeanReversionEntryRules::IsTokyoSession(0), "hour 0 is Tokyo session");
+   AssertTrue(CMeanReversionEntryRules::IsTokyoSession(7), "hour 7 is Tokyo session");
+   AssertTrue(!CMeanReversionEntryRules::IsTokyoSession(8), "hour 8 is outside Tokyo session");
+   AssertTrue(!CMeanReversionEntryRules::IsTokyoSession(21), "hour 21 is outside Tokyo session");
+   AssertTrue(CMeanReversionEntryRules::IsTokyoSession(22), "hour 22 is Tokyo session");
+   AssertTrue(CMeanReversionEntryRules::IsTokyoSession(23), "hour 23 is Tokyo session");
+
    // Entry（Reentry Window対応、2026-08-24追加）: Band外側へのブレイク後、最大max_reentry_bars本
    // 以内にBand内へ復帰した最初の確定足でのみEntryする。
    double w_closes[],w_lower[],w_upper[];
@@ -204,23 +212,30 @@ void OnStart(void)
    AssertTrue(CMeanReversionEntryRules::TakeProfit(SIGNAL_DIRECTION_SELL,MEAN_REVERSION_TP_OPPOSITE_BAND,150.000,151.000,149.500)==149.500,
               "sell take profit can target the opposite (lower) band");
 
-   // 強制決済（2026-08-24仕様変更）: レンジ高値/安値（実際のスイング高安値）の確定足Closeブレイク。
-   // Range Filter（CI/ADX閾値）の一時的な跨ぎでは反応しない、独立した価格構造ベースの条件。
-   AssertTrue(CMeanReversionExitRules::IsRangeBreak(SIGNAL_DIRECTION_BUY,149.400,149.500,151.000),
-              "buy position force-exits when confirmed close breaks below the recent range low");
-   AssertTrue(!CMeanReversionExitRules::IsRangeBreak(SIGNAL_DIRECTION_BUY,149.600,149.500,151.000),
-              "buy position does not force-exit while close stays inside the recent range");
-   AssertTrue(CMeanReversionExitRules::IsRangeBreak(SIGNAL_DIRECTION_SELL,151.200,149.500,151.000),
-              "sell position force-exits when confirmed close breaks above the recent range high");
-   AssertTrue(!CMeanReversionExitRules::IsRangeBreak(SIGNAL_DIRECTION_NONE,149.400,149.500,151.000),
-              "range break check rejects an undirected position");
+   // 強制決済（2026-08-26仕様変更、ユーザー指示）: レンジ高値/安値（実際のスイング高安値）の
+   // ブレイク判定を、確定足Closeベースから警戒状態中のTick（Bid/Ask、ATRバッファ付き）ベースへ
+   // 変更した。継続確認（実時間で何秒続いたか）はCMeanReversionStrategy::IsRangeStillValid側の
+   // m_grace_trackerが担当するため、本メソッドは「今この瞬間ブレイクしているか」のみを判定する。
+   AssertTrue(CMeanReversionExitRules::IsTickRangeBreak(SIGNAL_DIRECTION_BUY,149.400,149.410,149.500,151.000,0.100,0.25),
+              "buy tick break confirmed when bid falls below range low minus the ATR buffer");
+   AssertTrue(!CMeanReversionExitRules::IsTickRangeBreak(SIGNAL_DIRECTION_BUY,149.480,149.490,149.500,151.000,0.100,0.25),
+              "buy tick break not confirmed while bid stays within the ATR buffer of the range low");
+   AssertTrue(CMeanReversionExitRules::IsTickRangeBreak(SIGNAL_DIRECTION_SELL,151.090,151.100,149.500,151.000,0.100,0.25),
+              "sell tick break confirmed when ask rises above range high plus the ATR buffer");
+   AssertTrue(!CMeanReversionExitRules::IsTickRangeBreak(SIGNAL_DIRECTION_SELL,151.000,151.010,149.500,151.000,0.100,0.25),
+              "sell tick break not confirmed while ask stays within the ATR buffer of the range high");
+   AssertTrue(!CMeanReversionExitRules::IsTickRangeBreak(SIGNAL_DIRECTION_NONE,149.400,149.410,149.500,151.000,0.100,0.25),
+              "tick break check rejects an undirected position");
+   AssertTrue(!CMeanReversionExitRules::IsTickRangeBreak(SIGNAL_DIRECTION_BUY,149.400,149.410,149.500,151.000,0.0,0.25),
+              "tick break check rejected on non-positive ATR");
+   AssertTrue(!CMeanReversionExitRules::IsTickRangeBreak(SIGNAL_DIRECTION_BUY,149.410,149.400,149.500,151.000,0.100,0.25),
+              "tick break check rejected on crossed bid/ask market data");
 
-   // 強制決済（2026-08-25仕様変更、ユーザー指示）: Range Filter解除だけを理由とした即時決済
-   // （旧IsRangeQualityLost）は廃止し、「警戒状態＋猶予期間」の状態機械
-   // （CMeanReversionStrategy::IsRangeStillValid、ticket単位の状態を要するため本ファイルでの
-   // 静的関数テストの対象外。IsTrendStillValidと同じ理由）へ置き換えた。Range Filter自体の
-   // 判定（IsRangeFilterActive）とレンジブレイク判定（IsRangeBreak）は変更しておらず、
-   // 上記のテストがそのまま引き続き有効。
+   // 強制決済（2026-08-25/26仕様変更、ユーザー指示）: Range Filter解除だけを理由とした即時決済
+   // （旧IsRangeQualityLost）は廃止し、「警戒状態」への移行＋Tickベースのブレイク確認タイマー
+   // （CMeanReversionStrategy::IsRangeStillValid、ticket単位の状態と実時間の経過を要するため
+   // 本ファイルでの静的関数テストの対象外。IsTrendStillValidと同じ理由）へ置き換えた。
+   // Range Filter自体の判定（IsRangeFilterActive）は変更しておらず、上記のテストがそのまま引き続き有効。
 
    // 強制決済: BB Widthの急拡大（過去N本平均比）。
    AssertTrue(CMeanReversionExitRules::IsBbWidthExpanded(3.0,2.0,1.5),

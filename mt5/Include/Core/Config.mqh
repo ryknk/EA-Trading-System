@@ -52,7 +52,10 @@ struct SEaConfig
    int               mean_reversion_take_profit_mode;
    int               mean_reversion_bb_width_lookback;
    double            mean_reversion_bb_width_expansion_ratio;
-   int               mean_reversion_range_exit_grace_bars;
+   int               mean_reversion_range_break_lookback;
+   double            mean_reversion_break_atr_multiplier;
+   int               mean_reversion_break_confirm_seconds;
+   bool              mean_reversion_restrict_to_tokyo_session;
    int               mean_reversion_max_holding_bars;
    ulong             mean_reversion_magic_number;
    double            risk_per_trade_rate;
@@ -154,8 +157,11 @@ void SetDefaultConfig(SEaConfig &config)
    config.mean_reversion_take_profit_mode = 0; // MEAN_REVERSION_TP_BB_MIDDLE
    config.mean_reversion_bb_width_lookback = 20;
    config.mean_reversion_bb_width_expansion_ratio = 1.5;
-   config.mean_reversion_range_exit_grace_bars = 3;
-   config.mean_reversion_max_holding_bars = 20;
+   config.mean_reversion_range_break_lookback = 20;
+   config.mean_reversion_break_atr_multiplier = 0.25;
+   config.mean_reversion_break_confirm_seconds = 30;
+   config.mean_reversion_restrict_to_tokyo_session = false;
+   config.mean_reversion_max_holding_bars = 10;
    config.mean_reversion_magic_number = 26072002;
    config.risk_per_trade_rate       = 0.005;
    config.daily_loss_limit_rate     = 0.02;
@@ -268,7 +274,8 @@ bool ValidateConfig(const SEaConfig &config,string &error)
        config.mean_reversion_stop_atr_multiple<=0.0 || config.mean_reversion_max_reentry_bars<1 ||
        config.mean_reversion_take_profit_mode<0 || config.mean_reversion_take_profit_mode>1 ||
        config.mean_reversion_bb_width_lookback<2 || config.mean_reversion_bb_width_expansion_ratio<=1.0 ||
-       config.mean_reversion_range_exit_grace_bars<0 ||
+       config.mean_reversion_range_break_lookback<1 ||
+       config.mean_reversion_break_atr_multiplier<0.0 || config.mean_reversion_break_confirm_seconds<0 ||
        config.mean_reversion_max_holding_bars<1 ||
        config.mean_reversion_magic_number==0 || config.mean_reversion_magic_number==config.magic_number))
      { error="INVALID_MEAN_REVERSION_PARAMETERS"; return false; }

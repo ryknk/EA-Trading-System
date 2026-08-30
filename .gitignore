@@ -4,6 +4,7 @@ __pycache__/
 *.py[cod]
 infra/cdk.out/
 data/
+tick/
 python/ml/models/**/model.json
 python/ml/models/**/metadata.json
 release-evidence/

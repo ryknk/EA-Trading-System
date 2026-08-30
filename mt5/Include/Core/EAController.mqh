@@ -379,8 +379,10 @@ private:
      }
 
    // レンジ戦略のポジションについて、BB Width急拡大、またはRange Filter解除後の警戒状態中に
-   // レンジ高値/安値の確定足ブレイクを検知したら満期を待たず市場成行で決済する（Range Filter解除
-   // 単独では即決済しない、2026-08-25仕様変更。詳細はCMeanReversionStrategy::IsRangeStillValid参照）。
+   // 実勢価格（Bid/Ask）ベースのレンジブレイクが一定秒数継続したことを検知したら満期を待たず
+   // 市場成行で決済する（Range Filter解除単独では即決済しない、2026-08-25/26仕様変更。詳細は
+   // CMeanReversionStrategy::IsRangeStillValid参照）。本メソッドはOnTick毎に呼ばれるため、
+   // Tickベースのブレイク監視も自然に実現される（EAController::OnTick参照）。
    // 判断（Strategy参照）はここで行い、メカニズム（決済実行）はPositionManagerへ委ねる
    // （EvaluateSignalInvalidationExitsと同じ責務境界）。トレンド戦略のポジション監視
    // （EvaluateSignalInvalidationExits/EvaluateTimeStopExits）とは完全に独立しており、
@@ -399,7 +401,26 @@ private:
          const ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
          const ESignalDirection direction=(type==POSITION_TYPE_BUY ? SIGNAL_DIRECTION_BUY : SIGNAL_DIRECTION_SELL);
          string reason_code;
-         if(!m_mean_reversion_strategy.IsRangeStillValid(ticket,direction,reason_code))
+         string alert_transition;
+         const bool still_valid=m_mean_reversion_strategy.IsRangeStillValid(
+            ticket,direction,reason_code,alert_transition);
+
+         // 警戒状態（Range Filter解除後、ブレイク確認待ち）の遷移を監査ログへ記録する（2026-08-25
+         // 追加、ユーザー依頼）。決済に至らない状態遷移専用のため、決済確定時のRANGE_EXITとは
+         // 別イベント（RANGE_ALERT）とする。ポジションが同時に決済される場合でもここで先に
+         // 識別子を確保する（下のRANGE_EXIT側の識別子取得と同じ安全な順序）。
+         if(StringLen(alert_transition)>0)
+           {
+            const string alert_symbol=PositionGetString(POSITION_SYMBOL);
+            const ulong alert_position_identifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+            const string alert_candidate_id=CandidateForPosition(alert_position_identifier,alert_symbol);
+            string alert_payload="{";
+            alert_payload+="\"position_ticket\":"+JString(StringFormat("%I64u",ticket))+",";
+            alert_payload+="\"transition\":"+JString(alert_transition)+"}";
+            Audit("RANGE_ALERT",alert_candidate_id,"",alert_symbol,alert_payload,false);
+           }
+
+         if(!still_valid)
            {
             // 決済実行（CloseOnSignalInvalidation）で本ポジションが消滅する前に、監査ログ用の
             // 識別子を確保しておく（EvaluateTimeStopExitsと同じ安全な取得順序）。
@@ -413,7 +434,9 @@ private:
                continue;
               }
             // 監査ログの粒度不足対応（2026-08-24追加、ユーザー依頼）: 強制決済の発火理由
-            // （RANGE_FILTER_RELEASED/RANGE_BREAK/BB_WIDTH_EXPANSION）を専用イベントへ記録する。
+            // （TICK_BREAK_EXIT/BB_WIDTH_EXPANSION等）を専用イベントへ記録する。TICK_BREAK_EXITは
+            // 警戒状態中にBid/Askベースのレンジブレイクが実時間でBreakConfirmSeconds以上継続した
+            // 場合の理由コード（2026-08-26追加、ユーザー依頼: 従来のSL/TP等と区別できるようにする）。
             // TIME_STOP_EXITと同じくローカル監査のみ、既存TRADE_CLOSEDの契約は変更しない。
             const int elapsed_bars=ElapsedClosedBars(symbol,m_config.entry_timeframe,open_time);
             const string candidate_id=CandidateForPosition(position_identifier,symbol);
@@ -879,7 +902,8 @@ public:
       // 決済された場合にDEAL/TRADE_CLOSED/TRADE_ANALYTICSが監査ログへ一切記録されない不具合を修正
       // （初回コミットから存在、レンジ戦略追加時に未更新。2026-08-24修正）。他のMagic Number判定
       // （IsManagedPosition 3引数版）と同じ設計に統一する。
-      if(!CPositionProtectionRules::IsManagedPosition(HistoryDealGetInteger(transaction.deal,DEAL_MAGIC),
+      const long deal_magic=HistoryDealGetInteger(transaction.deal,DEAL_MAGIC);
+      if(!CPositionProtectionRules::IsManagedPosition(deal_magic,
          m_config.magic_number,m_config.mean_reversion_magic_number)) return;
       const string symbol=HistoryDealGetString(transaction.deal,DEAL_SYMBOL);
       const ulong position_identifier=(ulong)HistoryDealGetInteger(transaction.deal,DEAL_POSITION_ID);
@@ -911,6 +935,14 @@ public:
 
       if(entry==DEAL_ENTRY_OUT)
         {
+         // レンジ戦略ポジションの決済を検知したら、決済理由（SL/TP/TICK_BREAK_EXIT/BB_WIDTH_EXPANSION
+         // 等いずれでも）を問わず警戒状態・ブレイク確認タイマーを必ずクリアする（2026-08-26追加、
+         // ユーザー指示）。RANGE_BREAK/BB_WIDTH_EXPANSION経由の決済は既に呼び出し元
+         // （EvaluateMeanReversionForcedExits内のIsRangeStillValid）でクリア済みだが、SL/TP等の
+         // ブローカー側自動決済経路はここでしかクリアの機会がないため、常に呼んでも安全な
+         // no-op設計（未追跡ticketは何もしない）を活かして無条件に呼び出す。
+         if(deal_magic==(long)m_config.mean_reversion_magic_number)
+            m_mean_reversion_strategy.ClearPositionState(transaction.position);
          const int slot=ArraySize(m_pending_closed_positions);
          ArrayResize(m_pending_closed_positions,slot+1);
          m_pending_closed_positions[slot].position_identifier=position_identifier;

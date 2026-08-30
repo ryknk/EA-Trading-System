@@ -108,16 +108,16 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
 
 **Range Filter**: Choppiness Index（`InpMeanReversionChoppinessMin`以上）かつADX（`InpMeanReversionAdxMax`未満）の両方を満たす場合のみレンジ相場と判定する。
 
-**Entry**: 確定足のCloseがBand外側へブレイクした場合（Reentry待ち開始）、その後`InpMeanReversionMaxReentryBars`本以内に確定足のCloseがBand内側へ復帰した最初の確定足でのみ成立する（タッチのみでは反応しない。期限内に復帰しなければシグナル破棄。同一ブレイクから複数回エントリーしない）。
+**Entry**: 確定足のCloseがBand外側へブレイクした場合（Reentry待ち開始）、その後`InpMeanReversionMaxReentryBars`本以内に確定足のCloseがBand内側へ復帰した最初の確定足でのみ成立する（タッチのみでは反応しない。期限内に復帰しなければシグナル破棄。同一ブレイクから複数回エントリーしない）。`InpMeanReversionRestrictToTokyoSession=true`（既定false）の場合、エントリー確定足の時刻（UTC相当、`python.analysis.trade_breakdown`のSession区分と同一境界）がTokyoセッション（hour∈[0,8)∪[22,24)）外であれば候補を棄却する（2026-08-26追加、既存分析でTokyoセッションのみが唯一プラスだったことを踏まえた検証用オプション）。
 
 **SL**: Lower/Upper Bandまたは直近レンジ高安値（`InpMeanReversionBbPeriod`本）のうち保守的な方の外側に、ATR×`InpMeanReversionStopAtrMultiple`のバッファを設ける。
 
-**強制決済**（トレンド戦略へは引き継がず、レンジポジションを決済したうえで新規エントリーのみ停止する。その後はトレンド戦略が通常どおり独立してエントリー判定を行う。2026-08-25仕様変更: Range Filter解除だけを理由とした即時決済は、レンジが一時的に崩れただけでもTP到達前に決済される頻度が高すぎたため廃止し、「警戒状態＋猶予期間」の状態機械へ変更した）:
+**強制決済**（トレンド戦略へは引き継がず、レンジポジションを決済したうえで新規エントリーのみ停止する。その後はトレンド戦略が通常どおり独立してエントリー判定を行う。2026-08-25仕様変更: Range Filter解除だけを理由とした即時決済は、レンジが一時的に崩れただけでもTP到達前に決済される頻度が高すぎたため廃止し、「警戒状態」への移行に変更した。2026-08-26仕様変更: 当初の「確定足ベースで最大N本の猶予期間」は猶予が短くブレイクを十分に検知できていなかったため、警戒状態中はBid/Askを毎Tick監視し、ブレイクが実時間で一定秒数継続した場合のみ決済する方式へ変更した）:
 
 1. **BB Width急拡大**: BB Widthが過去`InpMeanReversionBbWidthLookback`本平均の`InpMeanReversionBbWidthExpansionRatio`倍以上に急拡大した場合、警戒状態と無関係に常時決済する（変更なし）。
-2. **Range Filter解除→警戒状態→猶予期間内のレンジブレイク**: Range Filter（エントリーと完全に同一の判定・閾値、`InpMeanReversionChoppinessMin`/`InpMeanReversionAdxMax`。判定条件自体は変更しない）が解除されただけでは決済しない。解除を検知したポジションを「警戒状態」へ移行し、その後最大`InpMeanReversionRangeExitGraceBars`本（既定3）以内に、確定足CloseがBUYなら直近レンジ安値を下抜け、SELLなら直近レンジ高値を上抜けた場合のみ決済する。猶予期間内にRange Filterが再成立すれば通常状態へ復帰し、猶予期間を超過した場合はこの機構による決済はせず、既存SL/TP等の管理に委ねる（ticket単位の状態はポジションごとに追跡）。
+2. **Range Filter解除→警戒状態→Tick監視によるブレイク確認**: Range Filter（エントリーと完全に同一の判定・閾値、`InpMeanReversionChoppinessMin`/`InpMeanReversionAdxMax`。判定条件自体は変更しない）が解除されただけでは決済しない。解除を検知したポジションを「警戒状態」へ移行し、以降は毎TickでBid/Ask（実勢価格）を監視する。BUYは`Bid<RangeLow-ATR×InpMeanReversionBreakAtrMultiplier`、SELLは`Ask>RangeHigh+ATR×InpMeanReversionBreakAtrMultiplier`をブレイク条件とする（RangeLow/RangeHighは直近`InpMeanReversionRangeBreakLookback`本の確定足高安値、エントリー側SLの参照本数とは独立）。ブレイク条件を初めて満たした実時刻からタイマーを開始し、`InpMeanReversionBreakConfirmSeconds`秒（既定30、Tick数ではなく実時間）以上継続した場合のみ強制決済する。継続中に価格がBreakLevelの内側へ戻ればタイマーをリセットし、再度ブレイクすれば新たにタイマーが開始する。警戒状態中にRange Filterが再成立すれば警戒状態・タイマーとも解除して通常状態へ復帰し、決済されなかった場合は既存SL/TP等の管理に委ねる（ticket単位の状態はポジションごとに独立管理し、決済理由を問わずポジション決済時に必ずクリアする）。
 
-エントリー条件（`CMeanReversionEntryRules`）と強制決済条件（`CMeanReversionExitRules`・`CMeanReversionStrategy::IsRangeStillValid`の状態機械）はコード上も分離している。強制決済の発火理由（`RANGE_BREAK`/`BB_WIDTH_EXPANSION`/`MEAN_REVERSION_MAX_HOLDING_BARS`）は監査イベント`RANGE_EXIT`のreason_codeへ記録される（`trade_candidate_id`で`TRADE_CLOSED`と紐付け可能、`TIME_STOP_EXIT`と同じ形式）。MT5のclose_reason（SL/TP/SO/EXPERT）はEA発注による決済をすべて"EXPERT"に一括りにするため、強制決済回数・TP到達率・SL到達率を区別するにはRANGE_EXITイベント側のreason_codeを参照する必要がある（NOT VERIFIED: `python/analysis/trade_breakdown.py`は現時点で`TIME_STOP_EXIT`のみを結合しており、`RANGE_EXIT`の結合は未実装）。
+エントリー条件（`CMeanReversionEntryRules`）と強制決済条件（`CMeanReversionExitRules`・`CMeanReversionStrategy::IsRangeStillValid`の状態機械）はコード上も分離している。強制決済の発火理由（`TICK_BREAK_EXIT`/`BB_WIDTH_EXPANSION`/`MEAN_REVERSION_MAX_HOLDING_BARS`）は監査イベント`RANGE_EXIT`のreason_codeへ記録され、従来のSL・TPとは区別できる（`trade_candidate_id`で`TRADE_CLOSED`と紐付け可能、`TIME_STOP_EXIT`と同じ形式）。MT5のclose_reason（SL/TP/SO/EXPERT）はEA発注による決済をすべて"EXPERT"に一括りにするため、強制決済回数・TP到達率・SL到達率を区別するにはRANGE_EXITイベント側のreason_codeを参照する必要がある。`python/analysis/trade_breakdown.py`は`RANGE_EXIT`イベントを`range_exit_reason_code`/`range_exit_triggered`列として結合し、`range_exit_summary()`でreason_code別の件数・純損益を集計する（`TIME_STOP_EXIT`と同じ結合方式、2026-08-25追加）。
 
 **時間切れ決済**: `InpMeanReversionMaxHoldingBars`本（entry_timeframe換算）を経過したら無条件で成行決済する（トレンド戦略のTime Stopとはパラメータ・判断ロジックとも独立）。
 
@@ -134,9 +134,11 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
 | `InpMeanReversionTakeProfitMode` | `MEAN_REVERSION_TP_BB_MIDDLE` | TP方式。既定はBB Middle（中心線）到達。`MEAN_REVERSION_TP_OPPOSITE_BAND`で反対側Band到達に切替可能（将来比較用） |
 | `InpMeanReversionBbWidthLookback` | 20 | BB Width急拡大判定の平均算出本数 |
 | `InpMeanReversionBbWidthExpansionRatio` | 1.5 | 現在のBB Widthが過去平均の何倍以上で強制決済するか |
-| `InpMeanReversionForcedExitAdxThreshold` | 30.0 | 強制決済: このADXを超え、かつChoppinessが`InpMeanReversionForcedExitChoppinessMax`未満の場合に決済する（Range Filterの`InpMeanReversionAdxMax`とは独立に指定可能） |
-| `InpMeanReversionForcedExitChoppinessMax` | 50.0 | 強制決済: このChoppiness Index未満、かつADXが`InpMeanReversionForcedExitAdxThreshold`を超えた場合に決済する（Range Filterの`InpMeanReversionChoppinessMin`とは独立に指定可能） |
-| `InpMeanReversionMaxHoldingBars` | 20 | 時間切れ決済が発動する経過バー数の上限（entry_timeframe換算） |
+| `InpMeanReversionRangeBreakLookback` | 20 | 強制決済（レンジブレイク）判定用の直近レンジ高安値（RangeLow/RangeHigh）の参照本数。エントリー側SLの参照本数（`InpMeanReversionBbPeriod`）とは独立（2026-08-25追加） |
+| `InpMeanReversionBreakAtrMultiplier` | 0.25 | 警戒状態中のTickブレイク判定で、RangeLow/RangeHighに加えるATRバッファの倍率（2026-08-26追加） |
+| `InpMeanReversionBreakConfirmSeconds` | 30 | 警戒状態中、ブレイク条件が実時間で何秒継続したら強制決済するか（Tick数ではなく実時間、2026-08-26追加） |
+| `InpMeanReversionRestrictToTokyoSession` | false | trueの場合、エントリー確定足がTokyoセッション（UTC相当hour∈[0,8)∪[22,24)）外であれば候補を棄却する |
+| `InpMeanReversionMaxHoldingBars` | 10 | 時間切れ決済が発動する経過バー数の上限（entry_timeframe換算）。2026-08-26、Fold1〜6 Trainスイープで20本が最悪と判明したため10本へ変更（詳細はTASKS.md参照） |
 | `InpMeanReversionMagicNumber` | 26072002 | レンジ戦略ポジション識別用のMagic Number（`InpMagicNumber`とは別値が必須） |
 
 ## Decision API・ML設定
