@@ -25,3 +25,11 @@ OANDA証券のWeb版Tickダウンロードツールから取得した2016年9月
 その後、2016-09開始でStrategy Testerを実行したところ、対象期間全体（26,882本のH1確定足）で取引数0件の異常が判明した（`20260816-180519-USDJPY-H1/ANOMALY-zero-trades.md`）。原因は、Tester開始日が`USDJPY_HIST`実データ最古日（2016-08-31）に近すぎ、D1/H4インジケーターのウォームアップに必要なバッファ（二分探索の結果、実測で9〜10か月必要と判明）が不足していたことだった。この結果を受け、`DECISIONS.md` DEC-025でIn-Sample開始日を**2017-09-01**へ補正した。`mt5/test-config/StrategyTester-USDJPY-H1.ini`の既定値もIn-Sample期間（`USDJPY_HIST`、2017-09-01〜2020-12-31）へ更新済み。
 
 補正後の期間でIn-Sample正式実行を完了した（`20260816-193344-USDJPY-H1/`）: ヒストリー品質100%リアルティック、取引数55、総損益-65,696円、Profit Factor 0.66、最大DD9%。受入基準は未凍結のため合否は未判定。
+
+## 2026-09-01: 複数ケース実行基盤の追加（Cross-Asset Validation向け、未実行）
+
+`tools/run-strategy-tester.ps1`へ`-CaseFile`を追加し、単体実行と同じ処理を複数銘柄・複数期間で順番に実行できるようにした（`docs/backtesting.md`「複数ケース実行」参照）。結果は `<run-id>-cases/` 配下、ケースごとの`manifest.json`・`summary.csv`・`summary.md`で確認できる。
+
+初期確認用に`mt5/test-config/cases/cross-symbol-2020-2024.json`（EURJPY/EURUSD/GBPJPY×2020-2024、計15ケース）を作成したが、**このセッションの権限設定でterminal64.exeの起動がブロックされたため、実機でのStrategy Tester実行・動作確認は未実施（NOT VERIFIED）である**。CaseFileのバリデーション・ケース継続処理・manifest/summary生成ロジックは、ダミーInstallPathによるドライラン（Strategy Tester自体は起動せずTerminal未検出で全15ケースが意図どおりFailed記録され、後続ケースへ継続し、manifest.json/summary.csvが正しく生成されることを確認済み）で検証した。
+
+なお、`USDJPY_HIST`以外（EURJPY・EURUSD・GBPJPY等）にはOANDA Web版Tickダウンロードツールからのreal tick投入（DEC-023と同じ方式）を行っていない。ブローカーのライブtickキャッシュは直近1年程度しか保持しないため（DEC-023参照）、2020-2023年のケースは「ヒストリー品質」が100%リアルティックに満たない可能性が高い。実行前に品質を確認し、不足する場合はUSDJPY_HISTと同様にCustom Symbolへreal tickを投入する対応を検討すること。

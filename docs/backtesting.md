@@ -14,7 +14,24 @@
 .\tools\run-strategy-tester.ps1 -TimeoutSeconds 900
 ```
 
-結果は `results/backtests/<run-id>-USDJPY-H1/` へ保存する。メタデータは `results/backtests/run-metadata.template.json` を複製し、EA・Strategy・Config版と全入力値を記録する。
+結果は `results/backtests/<run-id>-<Symbol>-<Period>/` へ保存する（`<Symbol>`・`<Period>`はTemplateの`[Tester]`セクションから読み取る。`-Symbol`未指定時は`StrategyTester-USDJPY-H1.ini`の`Symbol=USDJPY_HIST`がそのまま使われるため、`<run-id>-USDJPY_HIST-H1/`となる）。メタデータは `results/backtests/run-metadata.template.json` を複製し、EA・Strategy・Config版と全入力値を記録する。
+
+## 複数ケース実行（Cross-Asset Validation、OOS、Walk Forward、Stress Test等の共通基盤）
+
+`tools/run-strategy-tester.ps1`は`-CaseFile`を指定すると、複数銘柄・複数期間のケースを同じ1ケース実行処理で順番に実行する汎用Runnerとして動作する（`-CaseFile`未指定時は従来どおりの単体実行）。用途別の専用Runnerは追加せず、Cross-Asset Validation・OOS・Walk Forward・Final Holdout・Stress Testいずれもこの基盤を使う。
+
+CaseFileはJSON配列（または`cases`キーを持つオブジェクト）で、各ケースへ最低限`case_name`・`symbol`・`from_date`・`to_date`・`template`を指定する。`template`は同一の入力パラメータ（`[TesterInputs]`）を複数ケースで共有する汎用Template（例: `mt5/test-config/StrategyTester-Generic-H1.ini`）を指すことができ、`symbol`・`from_date`・`to_date`はケースごとに実行時へ上書きされる（Templateが宣言する`Symbol`/`InpSymbol`を`-CaseFile`経由・`-Symbol`明示指定時のみ上書きする。単体実行をデフォルト引数のまま呼び出した場合はTemplateの値をそのまま使う＝既存の単体実行との後方互換性を維持）。
+
+```powershell
+.\tools\run-strategy-tester.ps1 -CaseFile mt5\test-config\cases\cross-symbol-2020-2024.json
+```
+
+結果は `results/backtests/<run-id>-cases/` 配下へ保存する。
+
+* `manifest.json`: Run ID、InstallPath/TerminalData/TimeoutSeconds、CaseFileパスとSHA-256、ケースごとのSymbol/期間/Template/Template SHA-256/Expert/Deposit/実行結果（Succeeded/Failed）・失敗理由・監査ログ格納先・分析結果パスを記録する（再現用の識別情報）。
+* 各ケースの結果は `<CaseName>-<Symbol>-<FromDateCompact>_<ToDateCompact>/` の専用フォルダへ保存し、ケース間の結果混同を防ぐ（監査JSONLの混入防止処理は既存どおりケースごとに実行する）。
+* 全ケース終了後、監査JSONLが取得できたケースは既存の`python.analysis.reports`を再利用してケース単位の`performance-summary.json`等を生成し、`summary.csv`・`summary.md`へCaseName・Symbol・FromDate・ToDate・Net Profit・CAGR・Max Drawdown・Profit Factor・Sharpe Ratio・Win Rate・Average Win/Loss・Expectancy・Max Consecutive Losses・Trades・Status・ResultPathを集計する。
+* 1ケースが失敗（Terminal未検出、Timeout、レポート未生成等）しても後続ケースは継続し、失敗理由は`manifest.json`と`summary.csv`/`summary.md`へ記録される。
 
 Phase 13の自動試行は初回`account is not specified`で開始できなかったが、2026-07-21にXMTrading-MT5（USDJPY/H1/2025年、100%リアルティック）で完走した（`results/backtests/20260721-231302-USDJPY-H1/`、総損益-95,024円・Profit Factor 0.59）。ただし2026-08-10、XMTrading-MT5はUSDJPYのreal tickデータを2022年1月分以降しか保持していないことを確認した（2020-2021指定時は「ヒストリー品質0%リアルティック」の合成データにフォールバックする）。このためブローカーをOANDA証券MT5（東京サーバー）へ切り替えたが、OANDA-Japan MT5 Demoサーバーのライブtickキャッシュも直近約1年分しか保持しておらず、同様に「ヒストリー品質2%リアルティック」となることが判明した（`results/backtests/20260816-113850-USDJPY-H1/INVALID-2pct-real-ticks.md`）。
 

@@ -20,6 +20,19 @@ input bool   InpResetSymbol  = false;                     // true = 投入前に
 
 bool EnsureCustomSymbol()
   {
+   if(!SymbolSelect(InpSourceSymbol, true))
+     {
+      PrintFormat("SOURCE_SYMBOL_SELECT_FAILED symbol=%s error=%d", InpSourceSymbol, GetLastError());
+     }
+   else
+     {
+      MqlTick t;
+      for(int i = 0; i < 20 && !SymbolInfoTick(InpSourceSymbol, t); i++)
+         Sleep(200);
+      PrintFormat("SOURCE_SYMBOL_READY symbol=%s digits=%d point=%.5f", InpSourceSymbol,
+                  (int)SymbolInfoInteger(InpSourceSymbol, SYMBOL_DIGITS),
+                  SymbolInfoDouble(InpSourceSymbol, SYMBOL_POINT));
+     }
    bool is_custom = false;
    bool exists = SymbolExist(InpCustomSymbol, is_custom);
    if(exists && InpResetSymbol)
@@ -87,25 +100,48 @@ bool ParseLine(const string &line, MqlTick &tick)
    return true;
   }
 
-bool FlushBatch(MqlTick &batch[], int &count, const string &filename, const long line_no, long &total_ticks)
+// CustomTicksAdd()は原因不明のエラー（本環境ではGetLastError()=5310）で
+// 特定バッチが拒否されることがある。1件単位まで再帰的に分割して切り分け、
+// 個別tickが最後まで拒否される場合のみそのtickをスキップして継続する
+// （数億件規模の投入が1件の不整合データで全体停止しないようにするため）。
+long AddTicksChunk(MqlTick &send[], int offset, int cnt, const string &filename, long &skipped)
+  {
+   if(cnt <= 0)
+      return 0;
+   MqlTick chunk[];
+   ArrayResize(chunk, cnt);
+   ArrayCopy(chunk, send, 0, offset, cnt);
+   int added = CustomTicksAdd(InpCustomSymbol, chunk);
+   if(added >= 0)
+      return added;
+
+   if(cnt == 1)
+     {
+      PrintFormat("CUSTOM_TICKS_ADD_SKIPPED_SINGLE file=%s error=%d time=%s bid=%.5f ask=%.5f",
+                  filename, GetLastError(), TimeToString(chunk[0].time, TIME_DATE|TIME_SECONDS), chunk[0].bid, chunk[0].ask);
+      skipped++;
+      return 0;
+     }
+
+   int half = cnt / 2;
+   long a = AddTicksChunk(send, offset, half, filename, skipped);
+   long b = AddTicksChunk(send, offset + half, cnt - half, filename, skipped);
+   return a + b;
+  }
+
+bool FlushBatch(MqlTick &batch[], int &count, const string &filename, const long line_no, long &total_ticks, long &skipped_ticks)
   {
    if(count <= 0)
       return true;
    MqlTick send[];
    ArrayResize(send, count);
    ArrayCopy(send, batch, 0, 0, count);
-   int added = CustomTicksAdd(InpCustomSymbol, send);
-   if(added < 0)
-     {
-      PrintFormat("CUSTOM_TICKS_ADD_FAILED file=%s line=%d error=%d", filename, line_no, GetLastError());
-      return false;
-     }
-   total_ticks += added;
+   total_ticks += AddTicksChunk(send, 0, count, filename, skipped_ticks);
    count = 0;
    return true;
   }
 
-bool ImportFile(const string &filename, long &total_ticks)
+bool ImportFile(const string &filename, long &total_ticks, long &skipped_ticks)
   {
    string path = InpDataFolder + "\\" + filename;
    int handle = FileOpen(path, FILE_READ | FILE_TXT | FILE_ANSI);
@@ -122,6 +158,7 @@ bool ImportFile(const string &filename, long &total_ticks)
    ArrayResize(batch, InpBatchSize);
    int count = 0;
    long file_ticks_before = total_ticks;
+   long file_skipped_before = skipped_ticks;
    long line_no = 1;
    long parse_failures = 0;
 
@@ -141,20 +178,13 @@ bool ImportFile(const string &filename, long &total_ticks)
       count++;
       if(count >= InpBatchSize)
         {
-         if(!FlushBatch(batch, count, filename, line_no, total_ticks))
-           {
-            FileClose(handle);
-            return false;
-           }
+         FlushBatch(batch, count, filename, line_no, total_ticks, skipped_ticks);
         }
      }
-   if(!FlushBatch(batch, count, filename, line_no, total_ticks))
-     {
-      FileClose(handle);
-      return false;
-     }
+   FlushBatch(batch, count, filename, line_no, total_ticks, skipped_ticks);
    FileClose(handle);
-   PrintFormat("FILE_IMPORTED file=%s ticks=%d parse_failures=%d", filename, total_ticks - file_ticks_before, parse_failures);
+   PrintFormat("FILE_IMPORTED file=%s ticks=%d skipped=%d parse_failures=%d", filename,
+               total_ticks - file_ticks_before, skipped_ticks - file_skipped_before, parse_failures);
    return true;
   }
 
@@ -200,15 +230,16 @@ void OnStart()
      }
 
    long total = 0;
+   long skipped = 0;
    ulong start_ms = GetTickCount64();
    for(int i = 0; i < ArraySize(files); i++)
      {
-      if(!ImportFile(files[i], total))
+      if(!ImportFile(files[i], total, skipped))
         {
          PrintFormat("IMPORT_ABORTED_AT file=%s files_done=%d total_ticks_so_far=%d", files[i], i, total);
          return;
         }
      }
    ulong elapsed_ms = GetTickCount64() - start_ms;
-   PrintFormat("IMPORT_COMPLETED symbol=%s files=%d total_ticks=%d elapsed_ms=%I64u", InpCustomSymbol, ArraySize(files), total, elapsed_ms);
+   PrintFormat("IMPORT_COMPLETED symbol=%s files=%d total_ticks=%d skipped_ticks=%d elapsed_ms=%I64u", InpCustomSymbol, ArraySize(files), total, skipped, elapsed_ms);
   }
