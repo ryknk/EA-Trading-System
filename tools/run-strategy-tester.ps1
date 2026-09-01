@@ -288,9 +288,20 @@ foreach ($case in $cases) {
         try {
             if ($execResult.AuditDir -and $execResult.AuditFiles.Count -gt 0) {
                 # 既存のpython.analysis.reportsをそのまま再利用してケース単位の成績を集計する。
+                # 監査JSONLは日次ファイルのため年間バックテストでは数百件になり、ファイルごとに
+                # --inputを渡すとWindowsのコマンドライン長上限（約32,767文字）を超えて
+                # 「ファイル名または拡張子が長すぎます」で失敗する。事前に1ファイルへ結合してから渡す。
                 $analysisOutput = Join-Path $caseResultDir "performance-report"
-                $inputArgs = @()
-                foreach ($auditFileName in $execResult.AuditFiles) { $inputArgs += @("--input", (Join-Path $execResult.AuditDir $auditFileName)) }
+                $mergedAuditPath = Join-Path $execResult.AuditDir "_merged-for-analysis.jsonl"
+                $writer = [System.IO.StreamWriter]::new($mergedAuditPath, $false, [System.Text.UTF8Encoding]::new($false))
+                try {
+                    foreach ($auditFileName in $execResult.AuditFiles) {
+                        foreach ($jsonLine in (Get-Content -LiteralPath (Join-Path $execResult.AuditDir $auditFileName))) {
+                            $writer.WriteLine($jsonLine)
+                        }
+                    }
+                } finally { $writer.Close() }
+                $inputArgs = @("--input", $mergedAuditPath)
                 $deposit = if ($execResult.Deposit) { $execResult.Deposit } else { 1000000 }
                 Push-Location $root
                 try {
