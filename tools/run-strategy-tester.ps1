@@ -296,7 +296,7 @@ foreach ($case in $cases) {
                 $writer = [System.IO.StreamWriter]::new($mergedAuditPath, $false, [System.Text.UTF8Encoding]::new($false))
                 try {
                     foreach ($auditFileName in $execResult.AuditFiles) {
-                        foreach ($jsonLine in (Get-Content -LiteralPath (Join-Path $execResult.AuditDir $auditFileName))) {
+                        foreach ($jsonLine in (Get-Content -LiteralPath (Join-Path $execResult.AuditDir $auditFileName) -Encoding UTF8)) {
                             $writer.WriteLine($jsonLine)
                         }
                     }
@@ -312,7 +312,10 @@ foreach ($case in $cases) {
                 if ($analysisExit -eq 0) {
                     $summaryJsonPath = Join-Path $analysisOutput "performance-summary.json"
                     if (Test-Path -LiteralPath $summaryJsonPath) {
-                        $performanceSummary = Get-Content -LiteralPath $summaryJsonPath -Raw | ConvertFrom-Json
+                        # performance-summary.jsonはBOMなしUTF-8でPythonが出力するため、-Encodingを明示しないと
+                        # Windows PowerShell 5.1でANSI/CP932として誤読され、definitions内の日本語説明文が
+                        # 文字化けしてConvertFrom-Jsonが失敗する（2026-09-02発見）。
+                        $performanceSummary = Get-Content -LiteralPath $summaryJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
                         $caseRecord.performance_summary = (Join-Path $analysisOutput "performance-summary.json")
                     }
                 } else {
