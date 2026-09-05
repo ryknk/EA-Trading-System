@@ -87,7 +87,10 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
 | `InpEnableTradeMutations` | false | 発注・決済変更の主安全フラグ |
 | `InpCloseUnprotectedPositions` | true | 保護SLなしの所有positionを緊急決済対象にする |
 | `InpEnableBreakevenStop` | true | 建値ストップ移動の有効化（2026-08-17追加、詳細はTASKS.md参照） |
-| `InpBreakevenTriggerR` | 1.0 | 含み益が「建値〜当初SL距離（初期リスク）」の何倍に達したら建値へSLを引き上げるか（2026-08-17追加）。`InpEnableTradeMutations=false`では発動しない。0.5/0.75/1.25/1.5/2.0とのスイープ比較で1.0が純損益・PF・Sharpe・期待利得・最大連敗のすべてで最良またはタイの結果を確認済み（詳細はTASKS.md参照）。部分利確（1R/1.5Rトリガー）・ATRトレーリングストップ（1.0Rトリガー・2.0×ATR幅）をいずれも試したが建値ストップ単体を上回らなかったため撤回済み |
+| `InpBreakevenTriggerR` | 1.0 | 含み益が「建値〜当初SL距離（初期リスク）」の何倍に達したら建値へSLを引き上げるか（2026-08-17追加）。`InpEnableTradeMutations=false`では発動しない。単一銘柄IS期間での0.5/0.75/1.25/1.5/2.0スイープ比較で1.0が純損益・PF・Sharpe・期待利得・最大連敗のすべてで最良またはタイの結果を確認済み（詳細はTASKS.md 2.1参照）。部分利確（1R/1.5Rトリガー）は建値ストップ単体を上回らなかったため撤回済み。ATRトレーリングストップは2026-08-17に単一銘柄IS期間の1点（1.0Rトリガー・2.0×ATR幅）でのみ検証し撤回したが、2026-09-05に4銘柄OOS・2次元グリッドで再検証した結果は建値ストップ単体と拮抗〜やや上回る結果となった（詳細はTASKS.md 2.1.3参照、Final Holdout未確認のため採用は保留） |
+| `InpEnableAtrTrailingStop` | false | ATRトレーリングストップの有効化（`mt5/Include/Trading/PositionManager.mqh`の`CAtrTrailingStopRules`、2026-09-05再実装）。トリガーR×ATR倍率の2次元グリッド検証結果はTASKS.md 2.1.3参照。建値ストップと同時に有効化すると、建値到達後も`ShouldTrail`の当初SL基準判定により建値ストップと独立して動作し続ける（両立可能だが評価は分離して実施） |
+| `InpAtrTrailingTriggerR` | 1.0 | 含み益が「建値〜当初SL距離（初期リスク）」の何倍に達したらATRトレーリングを開始するか。開始判定は当初SL（エントリー時点の固定値）を基準にするため、建値ストップ等による現在SLの変更に影響されない |
+| `InpAtrTrailingAtrMultiple` | 2.0 | トレーリング開始後、現在Bid/AskからATRの何倍離れた位置へSLを追従させるか。保護方向にのみ動かし緩めない |
 | `InpEnableSignalInvalidationExit` | true | シグナル失効による早期Exitの有効化（2026-08-17追加、詳細はTASKS.md参照）。エントリー根拠（D1/H4トレンド一致・H1/H4 ADX）が保有中に消失したら決済する。RSI・エントリーパターンは再チェックしない。`InpEnableTradeMutations=false`では発動しない |
 | `InpSignalExitCheckTrend` | true | シグナル失効判定にD1/H4トレンド反転チェックを含めるか（2026-08-17追加） |
 | `InpSignalExitCheckH1Adx` | true | シグナル失効判定にH1 ADX閾値チェックを含めるか（2026-08-17追加） |
@@ -102,9 +105,23 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
 
 `InpEnableTradeMutations` は最後に有効化する。Risk Manager、Decision API、LLMがALLOWでも、この値がfalseなら新規発注しない。本番ゲート未達の状態でtrueにしてはならない。
 
-## レンジ相場逆張り戦略設定（2026-08-24仕様変更）
+## 戦略実行モード（2026-09-05追加）
 
-トレンドフォロー戦略とは独立した第二の候補生成源。レンジ端（Bollinger Band外側）からの平均回帰を狙う。トレンドフォロー戦略が本確定足で候補を生成しなかった場合のみ評価され（両戦略が同一口座へ同時発注することを避ける排他制御）、既存のRisk Manager・PositionManager・監査ログ基盤をそのまま共有するが、`InpMeanReversionMagicNumber`により別のMagic Numberでポジションを識別する（トレンドフォロー戦略のポジションと混同しない）。`InpEnableMeanReversionStrategy=false`（既定）では初期化も評価も一切行われず、既存挙動を変えない。
+Trend戦略とRange（Mean Reversion）戦略の新規エントリー可否を、複数の有効/無効フラグの組み合わせではなく`InpStrategyMode`（`EStrategyMode`）一つで一元管理する。
+
+| 値 | 名前 | 実行される新規エントリー処理 |
+|---:|---|---|
+| 0 | `STRATEGY_MODE_TREND_ONLY`（既定） | Trend戦略のみ。Range戦略は初期化・評価とも行われない（従来の`InpEnableMeanReversionStrategy=false`と同じ挙動） |
+| 1 | `STRATEGY_MODE_MEAN_REVERSION_ONLY` | Range戦略のみ。Trend戦略のEntry判定自体は従来どおり実行されるが、その候補は新規発注に使わない |
+| 2 | `STRATEGY_MODE_COMBINED` | 両戦略。Trend戦略が本確定足で候補を生成しなかった場合のみRange戦略を評価する（従来の`InpEnableMeanReversionStrategy=true`と同じ挙動） |
+
+Trend・Rangeいずれのモードでも、Entry/Exit条件そのもの、Risk・Lot計算・Order・Position・Logging等の共通基盤、Magic Numberによる戦略識別（`InpMagicNumber`/`InpMeanReversionMagicNumber`）は変更しない。既存ポジションの管理・決済（`PositionManager::Monitor`、`PositionExitEvaluator`の各Exit判定）はモードに関わらず常に継続する。`STRATEGY_MODE_MEAN_REVERSION_ONLY`または`STRATEGY_MODE_COMBINED`を選んだ場合、`config.enable_mean_reversion_strategy`は自動的にtrueへ導出され、Range戦略のパラメータ検証（後述）が適用される。
+
+IS/OOS/Walk Forwardの個別検証時は、同一の`.set`/`.ini`から`InpStrategyMode`の値だけを変えてTrendOnly・MeanReversionOnly・Combinedの3パターンを再実行することで、単独評価と併用結果を比較できる。
+
+## レンジ相場逆張り戦略設定（2026-08-24仕様変更、2026-09-05: 有効化方法を`InpStrategyMode`へ統一）
+
+トレンドフォロー戦略とは独立した第二の候補生成源。レンジ端（Bollinger Band外側）からの平均回帰を狙う。`STRATEGY_MODE_COMBINED`ではトレンドフォロー戦略が本確定足で候補を生成しなかった場合のみ評価され（両戦略が同一口座へ同時発注することを避ける排他制御）、`STRATEGY_MODE_MEAN_REVERSION_ONLY`ではトレンドフォロー戦略の候補有無に関わらず常に評価される。既存のRisk Manager・PositionManager・監査ログ基盤をそのまま共有するが、`InpMeanReversionMagicNumber`により別のMagic Numberでポジションを識別する（トレンドフォロー戦略のポジションと混同しない）。`InpStrategyMode=STRATEGY_MODE_TREND_ONLY`（既定）では初期化も評価も一切行われず、既存挙動を変えない。
 
 **Range Filter**: Choppiness Index（`InpMeanReversionChoppinessMin`以上）かつADX（`InpMeanReversionAdxMax`未満）の両方を満たす場合のみレンジ相場と判定する。
 
@@ -123,7 +140,7 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
 
 | 設定 | 初期値 | 意味 |
 |---|---:|---|
-| `InpEnableMeanReversionStrategy` | false | レンジ相場逆張り戦略の有効化 |
+| `InpStrategyMode` | `STRATEGY_MODE_TREND_ONLY` | 戦略実行モード（詳細は「戦略実行モード」節参照）。`STRATEGY_MODE_MEAN_REVERSION_ONLY`/`STRATEGY_MODE_COMBINED`を選ぶと以下のRangeパラメータ検証が有効になる |
 | `InpMeanReversionBbPeriod` | 20 | Bollinger Bandの期間。SL算出の直近レンジ高安値の参照本数としても使う |
 | `InpMeanReversionBbDeviation` | 2.0 | Bollinger Bandの標準偏差倍率 |
 | `InpMeanReversionChoppinessPeriod` | 14 | Choppiness Index（`CChoppinessIndex`）の算出期間 |

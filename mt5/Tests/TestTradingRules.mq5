@@ -12,6 +12,11 @@ void AssertTrue(const bool condition,const string name)
    else { PrintFormat("FAIL %s",name); g_failures++; }
   }
 
+void AssertNearDouble(const double actual,const double expected,const string name)
+  {
+   AssertTrue(MathAbs(actual-expected)<=1e-9,StringFormat("%s (actual=%.6f expected=%.6f)",name,actual,expected));
+  }
+
 void OnStart(void)
   {
    AssertTrue(COrderCheckRules::IsAccepted(true,0),"OrderCheck bool success accepts documented retcode zero");
@@ -90,6 +95,43 @@ void OnStart(void)
               "zero trigger multiple never fires");
    AssertTrue(!CBreakevenStopRules::ShouldMoveToBreakeven(POSITION_TYPE_BUY,150.00,0.0,151.00,151.02,1.0),
               "missing stop loss never fires");
+
+   AssertTrue(CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_BUY,150.00,149.00,151.00,151.02,1.0),
+              "buy trailing triggers at exactly 1R profit against initial sl");
+   AssertTrue(!CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_BUY,150.00,149.00,150.99,151.01,1.0),
+              "buy trailing below 1R profit does not trigger");
+   AssertTrue(CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_SELL,150.00,151.00,148.98,149.00,1.0),
+              "sell trailing triggers at exactly 1R profit against initial sl");
+   AssertTrue(!CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_SELL,150.00,151.00,148.99,149.01,1.0),
+              "sell trailing below 1R profit does not trigger");
+   AssertTrue(CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_BUY,150.00,149.00,152.00,152.02,1.0),
+              "buy trailing still triggers using initial sl even after current sl already moved to breakeven");
+   AssertTrue(!CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_BUY,150.00,149.00,151.00,151.02,0.0),
+              "zero trigger multiple never fires for trailing");
+   AssertTrue(!CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_BUY,150.00,0.0,151.00,151.02,1.0),
+              "missing initial stop loss never fires for trailing");
+
+   AssertNearDouble(CAtrTrailingStopRules::ComputeTrailingStopLoss(POSITION_TYPE_BUY,151.00,151.02,0.50,2.0),150.00,
+                    "buy trailing sl is bid minus atr times multiple");
+   AssertNearDouble(CAtrTrailingStopRules::ComputeTrailingStopLoss(POSITION_TYPE_SELL,148.98,149.00,0.50,2.0),150.00,
+                    "sell trailing sl is ask plus atr times multiple");
+   AssertTrue(CAtrTrailingStopRules::ComputeTrailingStopLoss(POSITION_TYPE_BUY,151.00,151.02,0.0,2.0)==0.0,
+              "zero atr yields zero trailing sl");
+   AssertTrue(CAtrTrailingStopRules::ComputeTrailingStopLoss(POSITION_TYPE_BUY,151.00,151.02,0.50,0.0)==0.0,
+              "zero atr multiple yields zero trailing sl");
+
+   AssertTrue(CAtrTrailingStopRules::IsMoreProtective(POSITION_TYPE_BUY,150.10,150.00),
+              "buy candidate above current sl is more protective");
+   AssertTrue(!CAtrTrailingStopRules::IsMoreProtective(POSITION_TYPE_BUY,149.90,150.00),
+              "buy candidate below current sl is not more protective (never loosens)");
+   AssertTrue(CAtrTrailingStopRules::IsMoreProtective(POSITION_TYPE_SELL,150.90,151.00),
+              "sell candidate below current sl is more protective");
+   AssertTrue(!CAtrTrailingStopRules::IsMoreProtective(POSITION_TYPE_SELL,151.10,151.00),
+              "sell candidate above current sl is not more protective (never loosens)");
+   AssertTrue(!CAtrTrailingStopRules::IsMoreProtective(POSITION_TYPE_BUY,0.0,150.00),
+              "zero candidate sl is never more protective");
+   AssertTrue(CAtrTrailingStopRules::IsMoreProtective(POSITION_TYPE_BUY,150.00,0.0),
+              "any valid candidate is more protective than a missing current sl");
 
    AssertTrue(CTimeStopRules::HasExceededMaxHoldingBars(20,20),"time stop fires at exactly max holding bars");
    AssertTrue(CTimeStopRules::HasExceededMaxHoldingBars(21,20),"time stop fires beyond max holding bars");

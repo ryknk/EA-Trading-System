@@ -26,7 +26,7 @@ private:
    CTrendFollowingStrategy     m_strategy;
    CSignalEngine               m_signal_engine;
    // II案（平均回帰、2026-08-24追加）: トレンドフォロー戦略とは独立した第二の候補生成源。
-   // InpEnableMeanReversionStrategy=false（既定）では初期化も評価も行われず、既存挙動を一切変えない。
+   // InpStrategyMode=STRATEGY_MODE_TREND_ONLY（既定）では初期化も評価も行われず、既存挙動を一切変えない。
    CMeanReversionStrategy      m_mean_reversion_strategy;
    CSignalEngine               m_mean_reversion_signal_engine;
    CRiskManager                m_risk_manager;
@@ -220,8 +220,9 @@ public:
                   (m_config.emergency_stop ? "enabled" : "disabled"),
                   (m_config.strategy_enabled ? "enabled" : "disabled"),
                   (!m_config.emergency_stop && m_config.strategy_enabled ? "enabled" : "disabled"));
-      PrintFormat("EA_INIT_OK ea_id=%s strategy=%s symbol=%s entry_tf=%s phase=9 decision_api=%s telemetry=%s trade_mutations=%s",
-                  m_config.ea_id,m_strategy.Name(),m_config.symbol,EnumToString(m_config.entry_timeframe),
+      PrintFormat("EA_INIT_OK ea_id=%s strategy=%s strategy_mode=%s symbol=%s entry_tf=%s phase=9 decision_api=%s telemetry=%s trade_mutations=%s",
+                  m_config.ea_id,m_strategy.Name(),EnumToString((EStrategyMode)m_config.strategy_mode),
+                  m_config.symbol,EnumToString(m_config.entry_timeframe),
                   (m_config.decision_api_enabled ? "enabled" : "disabled"),
                   (m_config.telemetry_enabled ? "enabled" : "disabled"),
                   (m_config.enable_trade_mutations ? "enabled" : "disabled"));
@@ -236,6 +237,7 @@ public:
       m_mock_decision_provider.Shutdown();
       m_entry_timing_analyzer.Shutdown();
       m_breakout_timing_analyzer.Shutdown();
+      m_position_manager.Shutdown();
       m_strategy.Shutdown();
       m_mean_reversion_strategy.Shutdown();
      }
@@ -357,10 +359,19 @@ public:
          Audit("ENTRY_PIPELINE",pipeline_id,"",result.symbol,pipeline_payload,false);
         }
 
+      // Strategy Mode（2026-09-05追加）: MeanReversionOnlyでは、Trendフォロー戦略のEntry判定自体は
+      // 従来どおり実行するが、その候補は新規発注に使わない（Entry/Exit条件は変更せず、モードに
+      // よる発注可否のみを制御する）。TrendOnly/Combinedでは従来どおり何もしない。
+      if(CStrategyModeRules::ShouldDiscardTrendCandidate(m_config.strategy_mode) &&
+         result.status==SIGNAL_STATUS_CANDIDATE)
+         result.status=SIGNAL_STATUS_NONE;
+
       // II案（平均回帰、2026-08-24追加）: トレンドフォロー戦略が本確定足で候補を生成しなかった
       // 場合のみ、独立した第二の候補生成源として平均回帰戦略を評価する。トレンドフォロー戦略が
       // 候補を出した場合は評価しない（両戦略が同一口座へ同時に発注することを避ける単純な排他制御）。
-      // InpEnableMeanReversionStrategy=false（既定）では従来どおり本ブロックは一切実行されない。
+      // MeanReversionOnlyでは、上のブロックによりTrend候補は常に破棄されるため、Trend候補の有無に
+      // 関わらず本ブロックが評価される。enable_mean_reversion_strategy=false（TrendOnly、既定）では
+      // 従来どおり本ブロックは一切実行されない。
       if(result.status!=SIGNAL_STATUS_CANDIDATE && m_config.enable_mean_reversion_strategy)
         {
          SSignalResult mr_result;

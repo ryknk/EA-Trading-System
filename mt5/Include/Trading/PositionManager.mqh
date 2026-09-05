@@ -70,6 +70,62 @@ public:
      }
   };
 
+// ATRトレーリングストップ判定の純粋関数群（単体テスト対象）。建値ストップと異なり、
+// 開始判定には「当初SL（エントリー時点、以降のSL変更の影響を受けない固定値）」を使う。
+// 現在SLを基準にすると、一度トレーリングでSLを動かした後は risk_distance が変動し、
+// 判定が不安定になるため（建値ストップのべき等性トリックとは異なる設計が必要）。
+class CAtrTrailingStopRules
+  {
+public:
+   // 含み益が「建値〜当初SL距離（初期リスク）」のtrigger_r_multiple倍に達したかを判定する。
+   static bool ShouldTrail(const ENUM_POSITION_TYPE type,const double open_price,
+                           const double initial_stop_loss,const double bid,const double ask,
+                           const double trigger_r_multiple)
+     {
+      if(trigger_r_multiple<=0.0 || initial_stop_loss<=0.0 || open_price<=0.0 || bid<=0.0 || ask<=0.0)
+         return false;
+      double risk_distance,profit_distance;
+      if(type==POSITION_TYPE_BUY)
+        {
+         risk_distance=open_price-initial_stop_loss;
+         profit_distance=bid-open_price;
+        }
+      else if(type==POSITION_TYPE_SELL)
+        {
+         risk_distance=initial_stop_loss-open_price;
+         profit_distance=open_price-ask;
+        }
+      else
+         return false;
+      if(risk_distance<=0.0)
+         return false;
+      return profit_distance>=risk_distance*trigger_r_multiple;
+     }
+
+   // 現在Bid/AskからATR×atr_multipleだけ離れた位置を候補SLとして返す。atr<=0またはatr_multiple<=0なら0を返す。
+   static double ComputeTrailingStopLoss(const ENUM_POSITION_TYPE type,const double bid,const double ask,
+                                         const double atr,const double atr_multiple)
+     {
+      if(atr<=0.0 || atr_multiple<=0.0 || bid<=0.0 || ask<=0.0)
+         return 0.0;
+      const double distance=atr*atr_multiple;
+      if(type==POSITION_TYPE_BUY)  return bid-distance;
+      if(type==POSITION_TYPE_SELL) return ask+distance;
+      return 0.0;
+     }
+
+   // 候補SLが現在のSLより保護方向（利益を確定する方向）へ動いているかを判定する。
+   // トレーリングは保護方向にのみ追従し、緩める方向へは絶対に動かさない。
+   static bool IsMoreProtective(const ENUM_POSITION_TYPE type,const double candidate_sl,const double current_sl)
+     {
+      if(candidate_sl<=0.0) return false;
+      if(current_sl<=0.0) return true;
+      if(type==POSITION_TYPE_BUY)  return candidate_sl>current_sl;
+      if(type==POSITION_TYPE_SELL) return candidate_sl<current_sl;
+      return false;
+     }
+  };
+
 class CTimeStopRules
   {
 public:
@@ -174,6 +230,8 @@ private:
    ulong     m_signal_exit_attempt_ticket;
    string    m_time_stop_key_prefix;
    ulong     m_time_stop_attempt_ticket;
+   string    m_atr_trailing_initial_sl_key_prefix;
+   int       m_atr_trailing_handle;
    bool      m_initialized;
 
    ENUM_ORDER_TYPE_FILLING FillingMode(const string symbol)
@@ -280,6 +338,31 @@ private:
       return true;
      }
 
+   // ポジションの当初SL（ATRトレーリング開始前の値）をGlobalVariableで一度だけ固定保存し、以降は
+   // その値を返す。ATRトレーリングが現在のSLを動かした後もShouldTrailの判定基準がぶれないようにする
+   // （EmergencyClose等と同じGlobalVariableべき等性パターン）。
+   double InitialStopLoss(const ulong ticket,const double current_sl)
+     {
+      const string key=m_atr_trailing_initial_sl_key_prefix+StringFormat("%I64u",ticket);
+      if(GlobalVariableCheck(key))
+         return GlobalVariableGet(key);
+      ResetLastError();
+      GlobalVariableSet(key,current_sl);
+      GlobalVariablesFlush();
+      return current_sl;
+     }
+
+   // 確定足ベースのATR（shift=1）を取得する。無効時はハンドル未作成のため常にfalseを返す。
+   bool ReadAtr(double &atr)
+     {
+      if(m_atr_trailing_handle==INVALID_HANDLE) return false;
+      if(BarsCalculated(m_atr_trailing_handle)<=1) return false;
+      double values[1];
+      if(CopyBuffer(m_atr_trailing_handle,0,1,1,values)!=1) return false;
+      atr=values[0];
+      return MathIsValidNumber(atr) && atr>0.0;
+     }
+
 public:
    CPositionManager(void)
      {
@@ -288,11 +371,14 @@ public:
       m_signal_exit_attempt_ticket=0;
       m_time_stop_key_prefix="";
       m_time_stop_attempt_ticket=0;
+      m_atr_trailing_initial_sl_key_prefix="";
+      m_atr_trailing_handle=INVALID_HANDLE;
       m_initialized=false;
      }
 
    bool Initialize(const SEaConfig &config,string &error)
      {
+      Shutdown();
       error="";
       m_config=config;
       const string identity=StringFormat("%I64d",AccountInfoInteger(ACCOUNT_LOGIN));
@@ -305,11 +391,28 @@ public:
       m_time_stop_key_prefix="ETS.POS.TIMESTOP."+identity+"."+StringFormat("%I64u",m_config.magic_number)+".";
       if(StringLen(m_time_stop_key_prefix)+20>63)
         { error="POSITION_STATE_KEY_TOO_LONG"; return false; }
+      m_atr_trailing_initial_sl_key_prefix="ETS.POS.ATRTRAIL."+identity+"."+StringFormat("%I64u",m_config.magic_number)+".";
+      if(StringLen(m_atr_trailing_initial_sl_key_prefix)+20>63)
+        { error="POSITION_STATE_KEY_TOO_LONG"; return false; }
       m_emergency_attempt_ticket=0;
       m_signal_exit_attempt_ticket=0;
       m_time_stop_attempt_ticket=0;
+      if(m_config.enable_atr_trailing_stop)
+        {
+         if(!SymbolSelect(m_config.symbol,true))
+           { error="SYMBOL_SELECT_FAILED"; return false; }
+         m_atr_trailing_handle=iATR(m_config.symbol,m_config.entry_timeframe,m_config.atr_period);
+         if(m_atr_trailing_handle==INVALID_HANDLE)
+           { error="INDICATOR_HANDLE_FAILED"; return false; }
+        }
       m_initialized=true;
       return true;
+     }
+
+   void Shutdown(void)
+     {
+      if(m_atr_trailing_handle!=INVALID_HANDLE) IndicatorRelease(m_atr_trailing_handle);
+      m_atr_trailing_handle=INVALID_HANDLE;
      }
 
    bool Monitor(string &error)
@@ -344,6 +447,27 @@ public:
                string breakeven_error;
                if(!ModifyStopLoss(ticket,open_price,breakeven_error))
                   PrintFormat("BREAKEVEN_SL_MOVE_FAILED position=%I64u code=%s",ticket,breakeven_error);
+              }
+            // 分析ではなくリスク管理: 含み益が初期リスクのtrigger_r_multiple倍に達したら、以降SLを
+            // ATR×atr_multiple幅で保護方向にのみ追従させる。開始判定は当初SL（エントリー時点、
+            // 建値ストップ等によるSL変更の影響を受けない固定値）を基準にする。失敗しても既存の
+            // 保護SLは維持されるため、Monitor()全体を失敗させず次Tickで再試行する。
+            double atr;
+            if(m_config.enable_atr_trailing_stop && m_config.enable_trade_mutations && ReadAtr(atr))
+              {
+               const double initial_stop_loss=InitialStopLoss(ticket,stop_loss);
+               if(CAtrTrailingStopRules::ShouldTrail(type,open_price,initial_stop_loss,
+                                                     tick.bid,tick.ask,m_config.atr_trailing_trigger_r_multiple))
+                 {
+                  const double candidate_sl=CAtrTrailingStopRules::ComputeTrailingStopLoss(
+                     type,tick.bid,tick.ask,atr,m_config.atr_trailing_atr_multiple);
+                  if(CAtrTrailingStopRules::IsMoreProtective(type,candidate_sl,stop_loss))
+                    {
+                     string trailing_error;
+                     if(!ModifyStopLoss(ticket,candidate_sl,trailing_error))
+                        PrintFormat("ATR_TRAILING_SL_MOVE_FAILED position=%I64u code=%s",ticket,trailing_error);
+                    }
+                 }
               }
             continue;
            }

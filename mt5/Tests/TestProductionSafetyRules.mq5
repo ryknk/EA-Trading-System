@@ -46,6 +46,34 @@ void OnStart(void)
    AssertTrue(provider.Initialize(config,error),"mock timeout initialized");
    AssertTrue(provider.Decide(signal,decision) && decision.status==EXTERNAL_DECISION_VETO,"mock timeout fails closed");
 
+   AssertTrue(!CStrategyModeRules::IsMeanReversionModeActive(STRATEGY_MODE_TREND_ONLY),
+              "TrendOnly does not activate mean reversion");
+   AssertTrue(CStrategyModeRules::IsMeanReversionModeActive(STRATEGY_MODE_MEAN_REVERSION_ONLY),
+              "MeanReversionOnly activates mean reversion");
+   AssertTrue(CStrategyModeRules::IsMeanReversionModeActive(STRATEGY_MODE_COMBINED),
+              "Combined activates mean reversion");
+   AssertTrue(!CStrategyModeRules::ShouldDiscardTrendCandidate(STRATEGY_MODE_TREND_ONLY),
+              "TrendOnly keeps trend candidates");
+   AssertTrue(!CStrategyModeRules::ShouldDiscardTrendCandidate(STRATEGY_MODE_COMBINED),
+              "Combined keeps trend candidates");
+   AssertTrue(CStrategyModeRules::ShouldDiscardTrendCandidate(STRATEGY_MODE_MEAN_REVERSION_ONLY),
+              "MeanReversionOnly discards trend candidates");
+
+   SEaConfig mode_config;
+   SetDefaultConfig(mode_config);
+   string mode_error;
+   AssertTrue(ValidateConfig(mode_config,mode_error),"default config (TrendOnly) validates");
+   mode_config.strategy_mode=STRATEGY_MODE_MEAN_REVERSION_ONLY;
+   AssertTrue(!ValidateConfig(mode_config,mode_error) && mode_error=="STRATEGY_MODE_REQUIRES_MEAN_REVERSION_ENABLED",
+              "MeanReversionOnly without enable_mean_reversion_strategy is rejected");
+   mode_config.enable_mean_reversion_strategy=true;
+   AssertTrue(ValidateConfig(mode_config,mode_error),"MeanReversionOnly with mean reversion enabled validates");
+   mode_config.strategy_mode=STRATEGY_MODE_COMBINED;
+   AssertTrue(ValidateConfig(mode_config,mode_error),"Combined with mean reversion enabled validates");
+   mode_config.strategy_mode=99;
+   AssertTrue(!ValidateConfig(mode_config,mode_error) && mode_error=="INVALID_STRATEGY_MODE",
+              "out-of-range strategy_mode is rejected");
+
    if(g_failures==0) Print("TEST_SUITE_PASS TestProductionSafetyRules");
    else PrintFormat("TEST_SUITE_FAIL TestProductionSafetyRules failures=%d",g_failures);
   }

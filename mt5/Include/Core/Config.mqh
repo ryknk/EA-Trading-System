@@ -1,6 +1,36 @@
 #ifndef EA_TRADING_SYSTEM_CORE_CONFIG_MQH
 #define EA_TRADING_SYSTEM_CORE_CONFIG_MQH
 
+// 戦略実行モード（2026-09-05追加）。Trend戦略とRange（Mean Reversion）戦略の新規エントリー可否を、
+// 複数の有効/無効フラグの組み合わせではなくこの一つの値で一元管理する。既存ポジションの管理・決済
+// （PositionManager::Monitor、PositionExitEvaluatorの各Exit判定）はモードに関わらず常に継続する。
+enum EStrategyMode
+  {
+   STRATEGY_MODE_TREND_ONLY=0,
+   STRATEGY_MODE_MEAN_REVERSION_ONLY=1,
+   STRATEGY_MODE_COMBINED=2
+  };
+
+// Strategy Modeから各戦略の参加可否を導出する純粋な判定ロジック。EAControllerからの
+// 呼び出し1箇所に単純化するためのRule集約（新しい抽象化・Interfaceは追加しない）。
+class CStrategyModeRules
+  {
+public:
+   // Range戦略（初期化・エントリー評価・強制決済を含む）を有効にするモードか。
+   static bool IsMeanReversionModeActive(const int strategy_mode)
+     {
+      return strategy_mode==STRATEGY_MODE_MEAN_REVERSION_ONLY || strategy_mode==STRATEGY_MODE_COMBINED;
+     }
+
+   // Trendフォロー戦略が生成した候補を新規発注対象から除外すべきモードか。
+   // MeanReversionOnlyでは、Trendの候補生成自体（Entry判定ロジック）は変更せず、
+   // その候補を発注へ使わないことでモードを実現する。
+   static bool ShouldDiscardTrendCandidate(const int strategy_mode)
+     {
+      return strategy_mode==STRATEGY_MODE_MEAN_REVERSION_ONLY;
+     }
+  };
+
 struct SEaConfig
   {
    string            ea_id;
@@ -41,6 +71,7 @@ struct SEaConfig
    int               adaptive_sizing_lookback_trades;
    double            adaptive_sizing_sensitivity;
    double            adaptive_sizing_floor_multiplier;
+   int               strategy_mode;
    bool              enable_mean_reversion_strategy;
    int               mean_reversion_bb_period;
    double            mean_reversion_bb_deviation;
@@ -76,6 +107,9 @@ struct SEaConfig
    bool              close_unprotected_positions;
    bool              enable_breakeven_stop;
    double            breakeven_trigger_r_multiple;
+   bool              enable_atr_trailing_stop;
+   double            atr_trailing_trigger_r_multiple;
+   double            atr_trailing_atr_multiple;
    bool              enable_signal_invalidation_exit;
    bool              signal_exit_check_trend;
    bool              signal_exit_check_h1_adx;
@@ -148,6 +182,7 @@ void SetDefaultConfig(SEaConfig &config)
    config.adaptive_sizing_lookback_trades = 10;
    config.adaptive_sizing_sensitivity = 1.0;
    config.adaptive_sizing_floor_multiplier = 0.5;
+   config.strategy_mode             = STRATEGY_MODE_TREND_ONLY;
    config.enable_mean_reversion_strategy = false;
    config.mean_reversion_bb_period  = 20;
    config.mean_reversion_bb_deviation = 2.0;
@@ -185,6 +220,9 @@ void SetDefaultConfig(SEaConfig &config)
    config.close_unprotected_positions = true;
    config.enable_breakeven_stop     = true;
    config.breakeven_trigger_r_multiple = 1.0;
+   config.enable_atr_trailing_stop  = false;
+   config.atr_trailing_trigger_r_multiple = 1.0;
+   config.atr_trailing_atr_multiple = 2.0;
    config.enable_signal_invalidation_exit = true;
    config.signal_exit_check_trend   = true;
    config.signal_exit_check_h1_adx  = true;
@@ -270,6 +308,11 @@ bool ValidateConfig(const SEaConfig &config,string &error)
        config.adaptive_sizing_sensitivity<0.0 ||
        config.adaptive_sizing_floor_multiplier<=0.0 || config.adaptive_sizing_floor_multiplier>1.0))
      { error="INVALID_ADAPTIVE_SIZING_PARAMETERS"; return false; }
+   if(config.strategy_mode!=STRATEGY_MODE_TREND_ONLY && config.strategy_mode!=STRATEGY_MODE_MEAN_REVERSION_ONLY &&
+      config.strategy_mode!=STRATEGY_MODE_COMBINED)
+     { error="INVALID_STRATEGY_MODE"; return false; }
+   if(CStrategyModeRules::IsMeanReversionModeActive(config.strategy_mode) && !config.enable_mean_reversion_strategy)
+     { error="STRATEGY_MODE_REQUIRES_MEAN_REVERSION_ENABLED"; return false; }
    if(config.enable_mean_reversion_strategy &&
       (config.mean_reversion_bb_period<2 || config.mean_reversion_bb_deviation<=0.0 ||
        config.mean_reversion_choppiness_period<2 ||
@@ -302,6 +345,9 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_MIN_MARGIN_LEVEL"; return false; }
    if(config.enable_breakeven_stop && config.breakeven_trigger_r_multiple<=0.0)
      { error="INVALID_BREAKEVEN_TRIGGER"; return false; }
+   if(config.enable_atr_trailing_stop &&
+      (config.atr_trailing_trigger_r_multiple<=0.0 || config.atr_trailing_atr_multiple<=0.0))
+     { error="INVALID_ATR_TRAILING_CONFIG"; return false; }
    if(config.enable_signal_invalidation_exit &&
       !config.signal_exit_check_trend && !config.signal_exit_check_h1_adx && !config.signal_exit_check_h4_adx)
      { error="NO_SIGNAL_EXIT_CONDITION_ENABLED"; return false; }
