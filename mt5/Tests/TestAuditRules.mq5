@@ -20,6 +20,8 @@ void OnStart(void)
    AssertTrue(!CTradeLogRules::SafeCorrelationId("candidate\nforged"),"log injection rejected");
    AssertTrue(CTradeLogRules::SafeEventType("TRADE_CLOSED"),"known event type accepted");
    AssertTrue(!CTradeLogRules::SafeEventType("BUY"),"unknown event type rejected");
+   AssertTrue(CTradeLogRules::SafeEventType("BREAKOUT_TIMING_SETUP"),"breakout timing setup event type accepted");
+   AssertTrue(CTradeLogRules::SafeEventType("BREAKOUT_TIMING_TRADE"),"breakout timing trade event type accepted");
 
    ResetLastError();
    if(g_failures==0) Print("TEST_SUITE_PASS TestAuditRules");

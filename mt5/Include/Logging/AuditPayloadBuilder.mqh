@@ -3,6 +3,7 @@
 
 #include <EaTradingSystem/External/CryptoUtils.mqh>
 #include <EaTradingSystem/Logging/EntryTimingAnalyzer.mqh>
+#include <EaTradingSystem/Logging/BreakoutTimingAnalyzer.mqh>
 
 // TRADE_CLOSEDイベントのPayload組み立てに必要な情報（ClosedPositionProcessorが決済履歴から集計する）。
 struct SClosedPositionEvent
@@ -72,6 +73,56 @@ public:
       checkpoints+="}";
       string payload="{";
       payload+="\"variant\":"+JString(EntryTimingVariantToString(trade.variant))+",";
+      payload+="\"entry_bar_time\":"+JString(Iso8601Utc(trade.entry_bar_time))+",";
+      payload+="\"direction\":"+JString(SignalDirectionToString(trade.direction))+",";
+      payload+="\"entry_price\":"+JNumber(trade.entry_price)+",";
+      payload+="\"stop_loss\":"+JNumber(trade.stop_loss)+",";
+      payload+="\"take_profit\":"+JNumber(trade.take_profit)+",";
+      payload+="\"wait_bars\":"+IntegerToString(trade.wait_bars)+",";
+      payload+="\"bars_held\":"+IntegerToString(trade.bars_held)+",";
+      payload+="\"mfe_r\":"+JNumber(trade.mfe_r)+",";
+      payload+="\"mae_r\":"+JNumber(trade.mae_r)+",";
+      payload+="\"exit_reason\":"+JString(trade.exit_reason)+",";
+      payload+="\"exit_price\":"+JNumber(trade.exit_price)+",";
+      payload+="\"pnl_r\":"+JNumber(trade.pnl_r)+",";
+      payload+="\"checkpoint_r\":"+checkpoints+"}";
+      return payload;
+     }
+
+   // BREAKOUT_TIMING_SETUPイベントのPayload。
+   static string BuildBreakoutTimingSetupPayload(const SBreakoutTimingSetupEvent &setup)
+     {
+      string payload="{";
+      payload+="\"setup_bar_time\":"+JString(Iso8601Utc(setup.setup_bar_time))+",";
+      payload+="\"direction\":"+JString(SignalDirectionToString(setup.direction))+",";
+      payload+="\"breakout_level_high\":"+JNumber(setup.breakout_level_high)+",";
+      payload+="\"breakout_level_low\":"+JNumber(setup.breakout_level_low)+",";
+      payload+="\"pre_entry_mfe_price\":"+JNumber(setup.pre_entry_mfe_price)+",";
+      payload+="\"pre_entry_mfe_r\":"+JNumber(setup.pre_entry_mfe_r)+",";
+      payload+="\"pre_entry_mfe_time\":"+JString(Iso8601Utc(setup.pre_entry_mfe_time))+",";
+      payload+="\"pre_entry_mae_price\":"+JNumber(setup.pre_entry_mae_price)+",";
+      payload+="\"pre_entry_mae_r\":"+JNumber(setup.pre_entry_mae_r)+",";
+      payload+="\"pre_entry_mae_time\":"+JString(Iso8601Utc(setup.pre_entry_mae_time))+",";
+      payload+="\"confirm_1_bar_held\":"+JBool(setup.confirm_1_bar_held)+",";
+      payload+="\"confirm_2_bars_held\":"+JBool(setup.confirm_2_bars_held)+",";
+      payload+="\"confirm_3_bars_held\":"+JBool(setup.confirm_3_bars_held)+"}";
+      return payload;
+     }
+
+   // BREAKOUT_TIMING_TRADEイベントのPayload。
+   static string BuildBreakoutTimingTradePayload(const SBreakoutTimingTradeEvent &trade)
+     {
+      string checkpoints="{";
+      for(int checkpoint_index=0; checkpoint_index<CEntryTimingRules::CheckpointCount(); checkpoint_index++)
+        {
+         if(!trade.checkpoint_valid[checkpoint_index]) continue;
+         if(StringLen(checkpoints)>1) checkpoints+=",";
+         checkpoints+="\"bars_"+IntegerToString(CEntryTimingRules::CheckpointBars(checkpoint_index))+"\":"+
+                      JNumber(trade.checkpoint_r[checkpoint_index]);
+        }
+      checkpoints+="}";
+      string payload="{";
+      payload+="\"variant\":"+JString(BreakoutTimingVariantToString(trade.variant))+",";
       payload+="\"entry_bar_time\":"+JString(Iso8601Utc(trade.entry_bar_time))+",";
       payload+="\"direction\":"+JString(SignalDirectionToString(trade.direction))+",";
       payload+="\"entry_price\":"+JNumber(trade.entry_price)+",";

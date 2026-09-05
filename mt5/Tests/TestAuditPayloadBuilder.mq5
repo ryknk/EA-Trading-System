@@ -56,6 +56,47 @@ void OnStart(void)
    AssertTrue(StringFind(trade_payload,"\"checkpoint_r\":{\"bars_1\":0.5000000000}")>=0,
               "entry timing trade payload aggregates only valid checkpoints");
 
+   SBreakoutTimingSetupEvent breakout_setup;
+   ZeroMemory(breakout_setup);
+   breakout_setup.setup_id="bt-setup-1";
+   breakout_setup.setup_bar_time=sample;
+   breakout_setup.direction=SIGNAL_DIRECTION_BUY;
+   breakout_setup.breakout_level_high=150.5;
+   breakout_setup.breakout_level_low=149.0;
+   breakout_setup.pre_entry_mfe_price=151.0;
+   breakout_setup.pre_entry_mfe_r=1.5;
+   breakout_setup.pre_entry_mfe_time=sample;
+   breakout_setup.pre_entry_mae_price=150.2;
+   breakout_setup.pre_entry_mae_r=-0.2;
+   breakout_setup.pre_entry_mae_time=sample;
+   breakout_setup.confirm_1_bar_held=true;
+   breakout_setup.confirm_2_bars_held=false;
+   breakout_setup.confirm_3_bars_held=false;
+   const string breakout_setup_payload=CAuditPayloadBuilder::BuildBreakoutTimingSetupPayload(breakout_setup);
+   AssertTrue(StringFind(breakout_setup_payload,"\"breakout_level_high\":150.5000000000")>=0,
+              "breakout timing setup payload has breakout_level_high");
+   AssertTrue(StringFind(breakout_setup_payload,"\"confirm_1_bar_held\":true")>=0,
+              "breakout timing setup payload has confirm_1_bar_held");
+   AssertTrue(StringFind(breakout_setup_payload,"\"confirm_2_bars_held\":false")>=0,
+              "breakout timing setup payload has confirm_2_bars_held");
+
+   SBreakoutTimingTradeEvent breakout_trade;
+   ZeroMemory(breakout_trade);
+   breakout_trade.setup_id="bt-setup-1";
+   breakout_trade.variant=BREAKOUT_TIMING_CONFIRM_2_BARS;
+   breakout_trade.entry_bar_time=sample;
+   breakout_trade.direction=SIGNAL_DIRECTION_SELL;
+   breakout_trade.exit_reason="SL";
+   breakout_trade.checkpoint_valid[1]=true;
+   breakout_trade.checkpoint_r[1]=-1.0;
+   const string breakout_trade_payload=CAuditPayloadBuilder::BuildBreakoutTimingTradePayload(breakout_trade);
+   AssertTrue(StringFind(breakout_trade_payload,"\"variant\":\"CONFIRM_2_BARS\"")>=0,
+              "breakout timing trade payload has variant");
+   AssertTrue(StringFind(breakout_trade_payload,"\"exit_reason\":\"SL\"")>=0,
+              "breakout timing trade payload has exit_reason");
+   AssertTrue(StringFind(breakout_trade_payload,"\"checkpoint_r\":{\"bars_2\":-1.0000000000}")>=0,
+              "breakout timing trade payload aggregates only valid checkpoints");
+
    SClosedPositionEvent closed;
    ZeroMemory(closed);
    closed.position_ticket=12345;

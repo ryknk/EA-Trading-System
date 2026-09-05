@@ -13,6 +13,7 @@
 #include <EaTradingSystem/Logging/TradeLogger.mqh>
 #include <EaTradingSystem/Logging/TradeAnalyticsTracker.mqh>
 #include <EaTradingSystem/Logging/EntryTimingAnalyzer.mqh>
+#include <EaTradingSystem/Logging/BreakoutTimingAnalyzer.mqh>
 #include <EaTradingSystem/Logging/AuditPayloadBuilder.mqh>
 #include <EaTradingSystem/Logging/AuditEventPublisher.mqh>
 #include <EaTradingSystem/Core/ClosedPositionProcessor.mqh>
@@ -37,6 +38,7 @@ private:
    CTradeAnalyticsTracker      m_analytics_tracker;
    CClosedPositionProcessor    m_closed_position_processor;
    CEntryTimingAnalyzer        m_entry_timing_analyzer;
+   CBreakoutTimingAnalyzer     m_breakout_timing_analyzer;
    bool                        m_initialized;
    datetime                    m_last_risk_error_log;
    string                      m_last_risk_lock_code;
@@ -79,6 +81,19 @@ private:
       for(int index=0; index<ArraySize(trades); index++)
          Audit("ENTRY_TIMING_TRADE",trades[index].setup_id,"",m_config.symbol,
                CAuditPayloadBuilder::BuildEntryTimingTradePayload(trades[index]),false);
+     }
+
+   // Breakout Timing分析（分析専用、実注文なし）の完了イベントを監査ログへ記録する。
+   // Telemetryへは送らない（バー単位で発生しうる高頻度データのためローカル監査のみ、
+   // AuditEntryTimingEventsと同じ方針）。
+   void AuditBreakoutTimingEvents(const SBreakoutTimingSetupEvent &setups[],const SBreakoutTimingTradeEvent &trades[])
+     {
+      for(int index=0; index<ArraySize(setups); index++)
+         Audit("BREAKOUT_TIMING_SETUP",setups[index].setup_id,"",m_config.symbol,
+               CAuditPayloadBuilder::BuildBreakoutTimingSetupPayload(setups[index]),false);
+      for(int index=0; index<ArraySize(trades); index++)
+         Audit("BREAKOUT_TIMING_TRADE",trades[index].setup_id,"",m_config.symbol,
+               CAuditPayloadBuilder::BuildBreakoutTimingTradePayload(trades[index]),false);
      }
 
    string DealEntryName(const ENUM_DEAL_ENTRY entry)
@@ -373,6 +388,11 @@ public:
          m_strategy.Shutdown();
          return false;
         }
+      if(!m_breakout_timing_analyzer.Initialize(m_config,error))
+        {
+         m_strategy.Shutdown();
+         return false;
+        }
       const bool use_mock=(MQLInfoInteger(MQL_TESTER) && m_config.tester_decision_mode!=TESTER_DECISION_FAIL_SAFE);
       if(!(use_mock ? m_mock_decision_provider.Initialize(m_config,error) : m_decision_client.Initialize(m_config,error)))
         {
@@ -414,6 +434,7 @@ public:
       m_decision_client.Shutdown();
       m_mock_decision_provider.Shutdown();
       m_entry_timing_analyzer.Shutdown();
+      m_breakout_timing_analyzer.Shutdown();
       m_strategy.Shutdown();
       m_mean_reversion_strategy.Shutdown();
      }
@@ -450,6 +471,13 @@ public:
       SEntryTimingTradeEvent entry_timing_trades[];
       m_entry_timing_analyzer.OnTick(entry_timing_setups,entry_timing_trades);
       AuditEntryTimingEvents(entry_timing_setups,entry_timing_trades);
+      // 分析専用。ブレイクアウトTiming比較（即時Entry/1〜3本後のブレイクアウトレベル維持確認）を
+      // Shadow Tradeとして並行シミュレートする。実注文は一切発生しない。
+      // InpEnableBreakoutTimingAnalysis=false（既定）では即return。
+      SBreakoutTimingSetupEvent breakout_timing_setups[];
+      SBreakoutTimingTradeEvent breakout_timing_trades[];
+      m_breakout_timing_analyzer.OnTick(breakout_timing_setups,breakout_timing_trades);
+      AuditBreakoutTimingEvents(breakout_timing_setups,breakout_timing_trades);
       // 分析専用。前Tickで決済検知しキューへ積んだポジションの履歴を確定させる。
       m_closed_position_processor.ProcessPending();
       // 既存ポジション管理の一部。エントリー根拠（トレンド/ADX）が消失した保有ポジションを

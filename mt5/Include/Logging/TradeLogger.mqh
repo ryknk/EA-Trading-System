@@ -33,7 +33,7 @@ public:
              value=="TRADE_CLOSED" || value=="ACCOUNT_SNAPSHOT" || value=="SYSTEM_ERROR" ||
              value=="TRADE_ANALYTICS" || value=="TIME_STOP_EXIT" || value=="ENTRY_PIPELINE" ||
              value=="ENTRY_TIMING_SETUP" || value=="ENTRY_TIMING_TRADE" || value=="RANGE_EXIT" ||
-             value=="RANGE_ALERT";
+             value=="RANGE_ALERT" || value=="BREAKOUT_TIMING_SETUP" || value=="BREAKOUT_TIMING_TRADE";
      }
   };
 

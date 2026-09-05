@@ -89,6 +89,8 @@ input double          InpTimeStopMinMfeR=0.5;
 input bool            InpEnableEntryTimingAnalysis=false;
 input int             InpEntryTimingMaxWaitBars=6;
 input int             InpEntryTimingMaxHoldingBars=20;
+input bool            InpEnableBreakoutTimingAnalysis=false;
+input int             InpBreakoutTimingMaxHoldingBars=20;
 input bool            InpDecisionApiEnabled=false;
 input string          InpDecisionApiUrl="";
 input string          InpDecisionApiKeyId="";
@@ -197,6 +199,8 @@ int OnInit(void)
    config.enable_entry_timing_analysis=InpEnableEntryTimingAnalysis;
    config.entry_timing_max_wait_bars=InpEntryTimingMaxWaitBars;
    config.entry_timing_max_holding_bars=InpEntryTimingMaxHoldingBars;
+   config.enable_breakout_timing_analysis=InpEnableBreakoutTimingAnalysis;
+   config.breakout_timing_max_holding_bars=InpBreakoutTimingMaxHoldingBars;
    config.decision_api_enabled=InpDecisionApiEnabled;
    config.decision_api_url=InpDecisionApiUrl;
    config.decision_api_key_id=InpDecisionApiKeyId;

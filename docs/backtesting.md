@@ -156,6 +156,34 @@ python -m python.analysis.entry_timing `
 
 出力は `entry-timing-report.json`（JSON契約は `contracts/entry-timing-report.schema.json` を正とする）、`entry-timing-report.md`、`entry-timing-setups.csv`、`entry-timing-trades.csv`である。レポートの`variants`はVariant別（IMMEDIATE/WAIT_1_BAR/WAIT_2_BARS/WAIT_TRIGGER）にTrades・Win Rate・Profit Factor・Expectancy・Net Profit・Max Drawdown（すべてR倍数）・平均MFE/MAE・価格推移チェックポイント平均を集計する。Max Drawdownは基準値100R（アカウント資金とは無関係な相対指標）からの累積R下落幅であり、Variant間の相対比較専用。`pre_entry_excursion`はSetup成立からEntryまでの逆行・順行の平均・中央値とTrigger成立率を要約する。`InpEnableEntryTimingAnalysis=false`のバックテストでは対象イベントが存在せず、`setups_observed=0`・全Variant`trades=0`として返る。
 
+## Breakout Timing比較分析（2026-09-05実装）
+
+Entry Timing比較分析はプルバックパターンのみを対象とし、ブレイクアウトパターンは「SetupとTriggerが同一の価格事象（レンジ突破）であり、両者の間に待機できる中間状態が存在しない」ため対象外としていた。しかし実トレードの大半（Fold1〜5・4銘柄の実績で85.6%）はブレイクアウトが占めており、ブレイクアウト成立直後の反転（ダマシ）による損失がタイミングの問題か、Setup/Trigger条件自体の精度の問題かを切り分けるため、ブレイクアウト専用の比較分析を別途実装した。
+
+`InpEnableBreakoutTimingAnalysis`（既定値`false`）を`true`にすると、EA側`CBreakoutTimingAnalyzer`（`mt5/Include/Logging/BreakoutTimingAnalyzer.mqh`）が、同一のブレイクアウトSetupについて次の4方式を**実注文なしのShadow Trade**として並行シミュレートする。
+
+```text
+IMMEDIATE      : ブレイクアウト成立bar自身の終値で即Entry（現行ライブロジックと同一）
+CONFIRM_1_BAR  : 1本後の終値時点でもブレイクアウトレベル（Setup成立時点で固定）を維持できていた場合のみEntry
+CONFIRM_2_BARS : 2本後について同様
+CONFIRM_3_BARS : 3本後について同様（維持できていなければ当Variantのトレードは生成しない）
+```
+
+「Trigger成立を待つ」というEntry Timing比較分析の概念はブレイクアウトには適用できないため、代わりに「ブレイクアウトが直後に反転せず維持されたか」を検証する設計とした。維持判定（`CBreakoutTimingRules::HoldsBreakout`）は`CTrendFollowingRules::IsBreakout`と同一の数式だが、レンジ高安値をSetup成立時点の値へ固定して再評価する点が異なる。Setup検出（HTF Bias・ATR/ADX/RSIゲート・ブレイクアウトレンジ）・SL/TP幾何は、`CEntryTimingAnalyzer`と同じ設計方針で`CTrendFollowingStrategy`とは独立に自己完結モジュールとして再評価し、実際の`RiskManager`・`OrderManager`・`PositionManager`には一切参照されず、実注文・実ポジションを一切発生させない。`InpEnableBreakoutTimingAnalysis=false`（既定値）ではIndicatorハンドルすら作成せず、既存の売買判断・監査ログ量に影響しない。
+
+Shadow TradeのSL/TP判定・R換算・チェックポイント記録は`CEntryTimingRules`（Entry Timing比較分析と共通の汎用ロジック）をそのまま再利用する。**過去データに最も適合する確認本数を自動採用する処理は実装していない。**
+
+`InpAuditFileEnabled=true`かつ`InpEnableBreakoutTimingAnalysis=true`でStrategy Testerを実行すると、監査JSONLへ`BREAKOUT_TIMING_SETUP`（Setup単位、`breakout_level_high`・`breakout_level_low`・`pre_entry_mfe_r`・`pre_entry_mae_r`・`confirm_1_bar_held`・`confirm_2_bars_held`・`confirm_3_bars_held`）と`BREAKOUT_TIMING_TRADE`（Variant単位、`variant`・`entry_price`・`wait_bars`・`bars_held`・`mfe_r`・`mae_r`・`exit_reason`・`pnl_r`・`checkpoint_r`）が記録される。
+
+```powershell
+$env:PYTHONPATH='.'
+python -m python.analysis.breakout_timing `
+  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-20200101.jsonl `
+  --output build/breakout-timing-report
+```
+
+出力は `breakout-timing-report.json`（JSON契約は `contracts/breakout-timing-report.schema.json` を正とする）、`breakout-timing-report.md`、`breakout-timing-setups.csv`、`breakout-timing-trades.csv`である。レポートの`variants`はVariant別（IMMEDIATE/CONFIRM_1_BAR/CONFIRM_2_BARS/CONFIRM_3_BARS）にTrades・Win Rate・Profit Factor・Expectancy・Net Profit・Max Drawdown（すべてR倍数）・平均MFE/MAE・価格推移チェックポイント平均を集計する。`confirmation_hold`はSetup数と、1/2/3本後にブレイクアウトレベルを維持できていた（ダマシに遭っていない）割合、およびSetup成立からの逆行・順行の平均・中央値を要約する。`InpEnableBreakoutTimingAnalysis=false`のバックテストでは対象イベントが存在せず、`setups_observed=0`・全Variant`trades=0`として返る。
+
 ## コスト感応度分析（2026-08-22実装）
 
 目的は、Profit Factorが低い場合の原因が「Entry/Exitロジック自体の問題」なのか「薄いエッジが取引コスト（Spread・Commission・Swap・Slippage）によって失われている」のかを切り分けることである。**過去データに最も都合よく適合するコスト条件を自動採用する処理は実装していない。** MT5テスターが実際に生成したSpread・Commission・Swap・Slippageをそのまま記録・集計するのみで、EA内部で市場コストを変更・偽装するロジックは持たない。
