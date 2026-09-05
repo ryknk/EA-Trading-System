@@ -1,0 +1,15 @@
+{
+  "description": "OOS Fold1（docs/backtesting.md記載のWalk Forward定義、検証期間2020年）を対象10銘柄で実行する。全銘柄real tick投入済みCustom Symbol（*_HIST）を使用。XAUUSD_HIST/JP225_HIST/US30_HIST/US100_HIST/US500_HIST/US2000_HISTはreal tickが2020-04以降しか投入されておらず、D1/H4インジケーターウォームアップに実データ最古日から約9〜10か月必要（DECISIONS.md DEC-025）なため、2020年通期では取引数0件の異常（MARKET_DATA_UNAVAILABLE）が発生する可能性が高い。この6銘柄は結果を無効（NOT VERIFIED）として扱い、異常の有無を確認する目的で含めている。",
+  "cases": [
+    { "case_name": "USDJPY-Fold1-2020", "symbol": "USDJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURJPY-Fold1-2020", "symbol": "EURJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURUSD-Fold1-2020", "symbol": "EURUSD_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPJPY-Fold1-2020", "symbol": "GBPJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "XAUUSD-Fold1-2020", "symbol": "XAUUSD_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "JP225-Fold1-2020", "symbol": "JP225_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "US30-Fold1-2020", "symbol": "US30_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "US100-Fold1-2020", "symbol": "US100_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "US500-Fold1-2020", "symbol": "US500_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "US2000-Fold1-2020", "symbol": "US2000_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" }
+  ]
+}

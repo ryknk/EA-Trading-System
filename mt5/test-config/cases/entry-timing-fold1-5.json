@@ -1,0 +1,25 @@
+{
+  "description": "InpEnableEntryTimingAnalysis=trueで、Fold1〜5（2020-2024年）を含み益反転パターンが確認された4銘柄（USDJPY/EURJPY/EURUSD/GBPJPY）で実行する。エントリー直後の反転が待機（Entry Timing）で回避可能か、Setup/Trigger条件自体の問題かを切り分ける目的。本分析はプルバックパターンのみ対象（ブレイクアウトはSetupとTriggerが同一事象のため対象外、docs/backtesting.md参照）であり、実トレードの大半を占めるBREAKOUT戦略のエントリー精度は別途評価が必要。",
+  "cases": [
+    { "case_name": "USDJPY-EntryTiming-2020", "symbol": "USDJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "EURJPY-EntryTiming-2020", "symbol": "EURJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "EURUSD-EntryTiming-2020", "symbol": "EURUSD_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "GBPJPY-EntryTiming-2020", "symbol": "GBPJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "USDJPY-EntryTiming-2021", "symbol": "USDJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "EURJPY-EntryTiming-2021", "symbol": "EURJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "EURUSD-EntryTiming-2021", "symbol": "EURUSD_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "GBPJPY-EntryTiming-2021", "symbol": "GBPJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "USDJPY-EntryTiming-2022", "symbol": "USDJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "EURJPY-EntryTiming-2022", "symbol": "EURJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "EURUSD-EntryTiming-2022", "symbol": "EURUSD_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "GBPJPY-EntryTiming-2022", "symbol": "GBPJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "USDJPY-EntryTiming-2023", "symbol": "USDJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "EURJPY-EntryTiming-2023", "symbol": "EURJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "EURUSD-EntryTiming-2023", "symbol": "EURUSD_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "GBPJPY-EntryTiming-2023", "symbol": "GBPJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "USDJPY-EntryTiming-2024", "symbol": "USDJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "EURJPY-EntryTiming-2024", "symbol": "EURJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "EURUSD-EntryTiming-2024", "symbol": "EURUSD_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" },
+    { "case_name": "GBPJPY-EntryTiming-2024", "symbol": "GBPJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-EntryTiming-H1.ini" }
+  ]
+}
