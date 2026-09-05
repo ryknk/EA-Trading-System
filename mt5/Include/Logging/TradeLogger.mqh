@@ -20,6 +20,12 @@ public:
       return true;
      }
 
+   // 相関ID等のログ・監査フィールドが安全でない場合にフォールバック値へ差し替える。
+   static string SafeIdentifier(const string value,const string fallback)
+     {
+      return SafeCorrelationId(value) ? value : fallback;
+     }
+
    static bool SafeEventType(const string value)
      {
       return value=="CANDIDATE" || value=="EXTERNAL_DECISION" || value=="RISK_DECISION" ||

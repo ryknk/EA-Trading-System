@@ -24,6 +24,7 @@ $targets = @(
     @{ Name = "TestTradingRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestTradingRules.mq5" },
     @{ Name = "TestDecisionApiRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestDecisionApiRules.mq5" },
     @{ Name = "TestAuditRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestAuditRules.mq5" },
+    @{ Name = "TestAuditPayloadBuilder"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestAuditPayloadBuilder.mq5" },
     @{ Name = "TestProductionSafetyRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestProductionSafetyRules.mq5" },
     @{ Name = "TestEntryTimingAnalyzer"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestEntryTimingAnalyzer.mq5" }
 )
