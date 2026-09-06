@@ -133,6 +133,77 @@ class TradeBreakdownTests(unittest.TestCase):
         self.assertAlmostEqual(1.625, by_id.loc["c2", "giveback_ratio"])
         self.assertTrue(pd.isna(by_id.loc["c3", "giveback_ratio"]), "mfe<=0 trades should have no giveback ratio")
 
+    def test_build_trade_context_computes_peak_timing_and_post_peak_reversal(self) -> None:
+        # SL到達トレードの「Peak到達までの時間」「Peak後の最大逆行」「Peak到達後クローズまでの時間」
+        # 「MFEがTP相当R以上に達したか」を検証する（2026-09-06追加、TRADE_ANALYTICS.mfe_time/
+        # post_peak_maeを新設した際の回帰テスト）。
+        records = [
+            audit_event("CANDIDATE", "peak1", "2025-02-01T00:00:00Z", {
+                "direction": "BUY", "pattern": "MEAN_REVERSION", "entry_price": 145.0,
+                "stop_loss": 144.0, "take_profit": 147.0, "risk_reward_ratio": 2.0,
+                "atr": 0.1, "adx": 20.0, "spread_points": 10.0,
+                "market_regime_trend": "Range", "market_regime_volatility": "NormalVolatility",
+                "hour": 0, "day_of_week": 5, "reason_code": "RANGE_REVERSAL_ENTRY", "reason": "ok",
+            }),
+            audit_event("RISK_DECISION", "peak1", "2025-02-01T00:00:00Z", {
+                "status": "APPROVED", "reason_code": "OK", "reason": "ok", "volume": 0.1,
+                "risk_budget": 1000.0, "estimated_stop_loss": -1000.0, "required_margin": 100.0,
+                "daily_loss_rate": 0.0, "drawdown_rate": 0.0,
+            }),
+            audit_event("TRADE_CLOSED", "peak1", "2025-02-01T05:00:00Z", {
+                "position_ticket": "1", "direction": "BUY",
+                "open_time": "2025-02-01T00:00:00Z", "close_time": "2025-02-01T05:00:00Z",
+                "volume": 0.1, "open_price": 145.0, "close_price": 144.0,
+                "close_reason": "SL", "pnl": -400.0, "commission": -10.0, "swap": 0.0,
+                "exit_spread_points": 1.0, "point_value": 100.0,
+            }),
+            audit_event("TRADE_ANALYTICS", "peak1", "2025-02-01T05:00:00Z", {
+                "position_ticket": "1", "mfe": 1800.0, "mae": -400.0,
+                "mfe_time": "2025-02-01T02:00:00Z", "post_peak_mae": -400.0,
+            }),
+            audit_event("CANDIDATE", "peak2", "2025-02-02T00:00:00Z", {
+                "direction": "BUY", "pattern": "MEAN_REVERSION", "entry_price": 145.0,
+                "stop_loss": 144.0, "take_profit": 147.0, "risk_reward_ratio": 2.0,
+                "atr": 0.1, "adx": 20.0, "spread_points": 10.0,
+                "market_regime_trend": "Range", "market_regime_volatility": "NormalVolatility",
+                "hour": 0, "day_of_week": 6, "reason_code": "RANGE_REVERSAL_ENTRY", "reason": "ok",
+            }),
+            audit_event("RISK_DECISION", "peak2", "2025-02-02T00:00:00Z", {
+                "status": "APPROVED", "reason_code": "OK", "reason": "ok", "volume": 0.1,
+                "risk_budget": 1000.0, "estimated_stop_loss": -1000.0, "required_margin": 100.0,
+                "daily_loss_rate": 0.0, "drawdown_rate": 0.0,
+            }),
+            audit_event("TRADE_CLOSED", "peak2", "2025-02-02T04:00:00Z", {
+                "position_ticket": "2", "direction": "BUY",
+                "open_time": "2025-02-02T00:00:00Z", "close_time": "2025-02-02T04:00:00Z",
+                "volume": 0.1, "open_price": 145.0, "close_price": 144.0,
+                "close_reason": "SL", "pnl": -100.0, "commission": -10.0, "swap": 0.0,
+                "exit_spread_points": 1.0, "point_value": 100.0,
+            }),
+            audit_event("TRADE_ANALYTICS", "peak2", "2025-02-02T04:00:00Z", {
+                "position_ticket": "2", "mfe": 2500.0, "mae": -100.0,
+                "mfe_time": "2025-02-02T01:00:00Z", "post_peak_mae": -100.0,
+            }),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audit-peak.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in records), encoding="utf-8")
+            trades = build_trade_context([path])
+
+        by_id = trades.set_index("trade_candidate_id")
+        # peak1: 開始0時、Peak(MFE)到達2時間後、クローズ5時間後 → Peakまで2h、Peakからクローズまで3h。
+        self.assertAlmostEqual(2.0, by_id.loc["peak1", "time_to_peak_hours"])
+        self.assertAlmostEqual(3.0, by_id.loc["peak1", "peak_to_close_hours"])
+        # post_peak_mae(-400) - mfe(1800) = -2200、risk_budget=1000 → -2.2R（Peakから収支ゼロ以下まで丸ごと反転）。
+        self.assertAlmostEqual(-2.2, by_id.loc["peak1", "post_peak_mae_r"])
+        # mfe_r=1.8 < risk_reward_ratio=2.0 → TP相当には届いていない。
+        self.assertFalse(bool(by_id.loc["peak1", "reached_tp_equivalent_r"]))
+
+        # peak2: mfe_r=2.5 >= risk_reward_ratio=2.0 → TP相当以上に到達していたが結局SLで反転した。
+        self.assertAlmostEqual(1.0, by_id.loc["peak2", "time_to_peak_hours"])
+        self.assertAlmostEqual(3.0, by_id.loc["peak2", "peak_to_close_hours"])
+        self.assertTrue(bool(by_id.loc["peak2", "reached_tp_equivalent_r"]))
+
     def test_reversal_from_profit_counts_losses_that_had_unrealized_gain(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = write_audit_file(Path(directory))

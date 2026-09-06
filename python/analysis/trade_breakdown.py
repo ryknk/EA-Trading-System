@@ -87,10 +87,11 @@ def _extract_candidate_context(records: list[dict[str, Any]]) -> pd.DataFrame:
             "entry_spread_points": payload.get("spread_points"),
             "market_regime_trend": payload.get("market_regime_trend"),
             "market_regime_volatility": payload.get("market_regime_volatility"),
+            "candidate_risk_reward_ratio": payload.get("risk_reward_ratio"),
         })
     return pd.DataFrame(rows, columns=[
         "trade_candidate_id", "entry_atr", "entry_adx", "entry_spread_points",
-        "market_regime_trend", "market_regime_volatility",
+        "market_regime_trend", "market_regime_volatility", "candidate_risk_reward_ratio",
     ])
 
 
@@ -122,8 +123,14 @@ def _extract_analytics_context(records: list[dict[str, Any]]) -> pd.DataFrame:
         if not isinstance(candidate_id, str) or candidate_id in seen or not isinstance(payload, dict):
             continue
         seen.add(candidate_id)
-        rows.append({"trade_candidate_id": candidate_id, "mfe": payload.get("mfe"), "mae": payload.get("mae")})
-    return pd.DataFrame(rows, columns=["trade_candidate_id", "mfe", "mae"])
+        rows.append({
+            "trade_candidate_id": candidate_id,
+            "mfe": payload.get("mfe"),
+            "mae": payload.get("mae"),
+            "mfe_time": payload.get("mfe_time"),
+            "post_peak_mae": payload.get("post_peak_mae"),
+        })
+    return pd.DataFrame(rows, columns=["trade_candidate_id", "mfe", "mae", "mfe_time", "post_peak_mae"])
 
 
 def _extract_time_stop_context(records: list[dict[str, Any]]) -> pd.DataFrame:
@@ -254,6 +261,8 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
         "time_stop_reason_code", "time_stop_triggered",
         "range_exit_reason_code", "range_exit_triggered",
         "exit_spread_points", "point_value",
+        "candidate_risk_reward_ratio", "mfe_time", "post_peak_mae", "post_peak_mae_r",
+        "time_to_peak_hours", "peak_to_close_hours", "reached_tp_equivalent_r",
     ]
     if trades.empty:
         for column in context_columns:
@@ -273,9 +282,10 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
     enriched = enriched.merge(_extract_range_exit_context(records), on="trade_candidate_id", how="left")
     for column in (
         "entry_atr", "entry_adx", "entry_spread_points", "risk_budget", "mfe", "mae",
-        "exit_spread_points", "point_value",
+        "exit_spread_points", "point_value", "candidate_risk_reward_ratio", "post_peak_mae",
     ):
         enriched[column] = pd.to_numeric(enriched[column], errors="coerce")
+    enriched["mfe_time"] = pd.to_datetime(enriched["mfe_time"], errors="coerce", utc=True)
 
     hold_time = enriched["close_time"] - enriched["open_time"]
     enriched["hold_time_hours"] = hold_time.dt.total_seconds() / 3600.0
@@ -294,6 +304,24 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
     # 一度到達したMFE（含み益ピーク）のうち、決済までに手放した割合。1.0以上は損益ゼロ以下まで完全反転したことを示す。
     mfe = enriched["mfe"]
     enriched["giveback_ratio"] = ((mfe - enriched["net_pnl"]) / mfe).where(mfe > 0.0)
+
+    # Peak（MFE到達時刻）到達までの時間、およびPeak到達後クローズまでの時間。
+    # mfe_time未記録（2026-09-06以前の監査ログ、または一度も含み益に転じなかったトレード）ではNaTのままNaNになる。
+    enriched["time_to_peak_hours"] = (
+        (enriched["mfe_time"] - enriched["open_time"]).dt.total_seconds() / 3600.0
+    )
+    enriched["peak_to_close_hours"] = (
+        (enriched["close_time"] - enriched["mfe_time"]).dt.total_seconds() / 3600.0
+    )
+    # Peak（MFE）確定後の最大逆行（R換算）。post_peak_maeはPeak時点の値でリセットされるため、
+    # Peak後に一度も新安値を更新していないトレードではpost_peak_mae==mfeとなり0になる。
+    enriched["post_peak_mae_r"] = (enriched["post_peak_mae"] - enriched["mfe"]) / risk_budget
+    # MFEが、そのトレード自身のTP相当R（CANDIDATE.risk_reward_ratio）以上に達したか（TP到達相当の近似指標）。
+    # SL到達トレードは実際にTP価格へ到達すれば発注上TP決済になるため、この指標は「あと一歩でTPだった」の近似である。
+    enriched["reached_tp_equivalent_r"] = (
+        enriched["mfe_r"].notna() & enriched["candidate_risk_reward_ratio"].notna() &
+        (enriched["mfe_r"] >= enriched["candidate_risk_reward_ratio"])
+    )
 
     enriched["time_stop_triggered"] = enriched["time_stop_reason_code"].notna()
     enriched["range_exit_triggered"] = enriched["range_exit_reason_code"].notna()

@@ -164,12 +164,15 @@ public:
          m_publisher.Audit("TRADE_CLOSED",candidate_id,"",symbol,
                            CAuditPayloadBuilder::BuildClosedPositionPayload(closed),true);
 
-         double analytics_mfe=0.0,analytics_mae=0.0;
-         if(m_analytics_tracker.Finalize(position_ticket,analytics_mfe,analytics_mae))
+         double analytics_mfe=0.0,analytics_mae=0.0,analytics_post_peak_mae=0.0;
+         datetime analytics_mfe_time=0;
+         if(m_analytics_tracker.Finalize(position_ticket,analytics_mfe,analytics_mae,
+                                         analytics_mfe_time,analytics_post_peak_mae))
            {
             m_publisher.Audit("TRADE_ANALYTICS",candidate_id,"",symbol,
                               CAuditPayloadBuilder::BuildClosedPositionAnalyticsPayload(
-                                 position_ticket,analytics_mfe,analytics_mae),true);
+                                 position_ticket,analytics_mfe,analytics_mae,
+                                 analytics_mfe_time,analytics_post_peak_mae),true);
            }
 
          const int last=ArraySize(m_pending_closed_positions)-1;

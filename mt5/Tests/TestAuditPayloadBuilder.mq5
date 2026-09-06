@@ -117,9 +117,11 @@ void OnStart(void)
    AssertTrue(StringFind(closed_payload,"\"close_reason\":\"TP\"")>=0,"closed payload has close_reason");
    AssertTrue(StringFind(closed_payload,"\"point_value\":1000.0000000000")>=0,"closed payload has point_value");
 
-   const string analytics_payload=CAuditPayloadBuilder::BuildClosedPositionAnalyticsPayload(12345,10.0,-5.0);
+   const string analytics_payload=CAuditPayloadBuilder::BuildClosedPositionAnalyticsPayload(12345,10.0,-5.0,sample,-2.0);
    AssertTrue(StringFind(analytics_payload,"\"mfe\":10.0000000000")>=0,"analytics payload has mfe");
    AssertTrue(StringFind(analytics_payload,"\"mae\":-5.0000000000")>=0,"analytics payload has mae");
+   AssertTrue(StringFind(analytics_payload,"\"mfe_time\":\"2026-01-02T03:04:05Z\"")>=0,"analytics payload has mfe_time");
+   AssertTrue(StringFind(analytics_payload,"\"post_peak_mae\":-2.0000000000")>=0,"analytics payload has post_peak_mae");
 
    if(g_failures==0) Print("TEST_SUITE_PASS TestAuditPayloadBuilder");
    else PrintFormat("TEST_SUITE_FAIL TestAuditPayloadBuilder failures=%d",g_failures);

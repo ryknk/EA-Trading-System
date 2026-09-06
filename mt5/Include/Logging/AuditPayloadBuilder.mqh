@@ -160,12 +160,17 @@ public:
      }
 
    // TRADE_ANALYTICSイベントのPayload。
-   static string BuildClosedPositionAnalyticsPayload(const ulong position_ticket,const double mfe,const double mae)
+   // mfe_time: mfeが最後に更新された時刻（Peak到達時刻）。
+   // post_peak_mae: mfe_time以降（直近Peak確定後）に観測された含み損益の最小値。
+   static string BuildClosedPositionAnalyticsPayload(const ulong position_ticket,const double mfe,const double mae,
+                                                      const datetime mfe_time,const double post_peak_mae)
      {
       string payload="{";
       payload+="\"position_ticket\":"+JString(StringFormat("%I64u",position_ticket))+",";
       payload+="\"mfe\":"+JNumber(mfe)+",";
-      payload+="\"mae\":"+JNumber(mae)+"}";
+      payload+="\"mae\":"+JNumber(mae)+",";
+      payload+="\"mfe_time\":"+JString(Iso8601Utc(mfe_time))+",";
+      payload+="\"post_peak_mae\":"+JNumber(post_peak_mae)+"}";
       return payload;
      }
   };

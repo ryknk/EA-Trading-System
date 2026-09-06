@@ -1,0 +1,25 @@
+{
+  "description": "InpStrategyMode=STRATEGY_MODE_MEAN_REVERSION_ONLY（1）でFold1-5(2020-2024年)を4銘柄で実行する。戦略別個別検証モードにより、トレンドフォロー戦略の候補有無に関わらずレンジ戦略（Mean Reversion）のみが新規発注対象となる。損失の内訳分析（含み益からの反転パターン再現性の確認）が目的。",
+  "cases": [
+    { "case_name": "USDJPY-RangeOnly-2020", "symbol": "USDJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "USDJPY-RangeOnly-2021", "symbol": "USDJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "USDJPY-RangeOnly-2022", "symbol": "USDJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "USDJPY-RangeOnly-2023", "symbol": "USDJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "USDJPY-RangeOnly-2024", "symbol": "USDJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "EURJPY-RangeOnly-2020", "symbol": "EURJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "EURJPY-RangeOnly-2021", "symbol": "EURJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "EURJPY-RangeOnly-2022", "symbol": "EURJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "EURJPY-RangeOnly-2023", "symbol": "EURJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "EURJPY-RangeOnly-2024", "symbol": "EURJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "EURUSD-RangeOnly-2020", "symbol": "EURUSD_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "EURUSD-RangeOnly-2021", "symbol": "EURUSD_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "EURUSD-RangeOnly-2022", "symbol": "EURUSD_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "EURUSD-RangeOnly-2023", "symbol": "EURUSD_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "EURUSD-RangeOnly-2024", "symbol": "EURUSD_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "GBPJPY-RangeOnly-2020", "symbol": "GBPJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "GBPJPY-RangeOnly-2021", "symbol": "GBPJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "GBPJPY-RangeOnly-2022", "symbol": "GBPJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "GBPJPY-RangeOnly-2023", "symbol": "GBPJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" },
+    { "case_name": "GBPJPY-RangeOnly-2024", "symbol": "GBPJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-RangeOnly-H1.ini" }
+  ]
+}
