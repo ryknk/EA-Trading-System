@@ -1567,6 +1567,24 @@ InpEnableTradeMutations = false
 * [ ] Model Rollbackを演習する
 * [ ] CDK Rollbackを演習する
 
+## 8.1 MT5実行VM（2026-09-06追加、2026-09-06 vmrun優先へ変更、2026-09-06 VM暗号化パスワード対応追加、2026-09-06 実機検証完了）
+
+Strategy Tester・MQL5単体テスト実行中にホストの対話デスクトップがMT5 GUIへフォーカスを奪われる問題への対応として、`tools/lib/Mt5ExecutionBackend.psm1`にHost/VM切り替え可能な共通実行バックエンドを実装した（`-ExecutionMode Host|VM`、既定Host。VM接続は`connectionType`で選択、既定・優先は`Vmrun`＝VMware Workstation/Player付属vmrun、`WinRm`＝汎用WinRM/PSRemotingも選択可能。詳細は`DECISIONS.md` DEC-029）。
+
+**2026-09-06、実VM（`D:\VMware\MT5-Tester\MT5-Tester.vmx`、Windows 11、VM暗号化有効）へOANDA証券MT5をインストールし、フル動作確認まで完了した。** 実機検証で合計7件の不具合を発見・修正している（cmd.exe経由実行の失敗、`..`相対パス解決失敗、if/パイプ構文の不備、`$process.ExitCode`取得不安定、`ProcessStartInfo.ArgumentList`が.NET Frameworkに存在しない、単一要素配列のスカラーアンラップ、TerminalData全体同期のタイムアウト。詳細は`DECISIONS.md` DEC-029参照）。VM側の電源設定（スリープ・画面タイムアウト）も無効化が必要だった。`tools/config/mt5-vm.settings.json`は作成済み（`.gitignore`対象）。
+
+* [x] VMware WorkstationのGUIから、対象VMの暗号化パスワードを自分で管理できる値へ変更する
+* [x] `tools/config/mt5-vm.settings.json`を作成する（`connectionType: "Vmrun"`、`vmxPath`、`vmEncrypted: true`、ゲストOS認証情報を設定、環境変数経由）
+* [x] VM側にVMware Toolsがインストール済みであることを確認する（`listProcessesInGuest`で疎通確認済み）
+* [x] 共通実行バックエンド（起動・ExitCode取得・タイムアウト・ディレクトリ同期・ログ行数取得）の実機動作を、汎用コマンド（cmd.exe/ping.exe等）で確認する
+* [x] VM内にMT5（OANDA証券MT5）をインストールし、`vmTerminalData`を実際のTerminal ID（`EE0304F13905552AE0B5EAEFB04866EB`）へ更新する
+* [x] VM内へリポジトリの`mt5`ソースを転送し、`link-mt5.ps1`相当のジャンクション作成・`compile-mql5.ps1`相当のEA/テストスクリプトコンパイルをvmrun経由で実施する
+* [x] `-ExecutionMode VM`で実際のMT5起動・終了コード取得・report/ログのVM→ホスト同期が成功することを実機確認する（`run-mql5-tests.ps1`: 全12テストPASS、`run-strategy-tester.ps1`: `exit=0`でreport/png回収成功）
+* [ ] `-ExecutionMode VM`でのCaseFileによる複数ケース実行の実機確認（単体実行のみ確認済み）
+* [ ] audit JSONL（`InpAuditFileEnabled`）を有効にした状態でのVM実行時audit回収の実機確認（今回のテンプレートでは無効だったため未確認、Host版では`STRATEGY_TESTER_AUDIT_COPIED`実績あり）
+* [ ] `connectionType: "WinRm"`側（汎用WinRM/PSRemoting）も、使う場合は同様に実機確認する
+* [x] 確認結果を`docs/mt5-development.md`へ反映する
+
 ---
 
 # 9. 小額実口座

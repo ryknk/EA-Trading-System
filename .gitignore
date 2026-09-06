@@ -12,4 +12,6 @@ release-evidence/
 **/decision-api-secret.txt
 **/*api-key*.txt
 results/backtests/*/
+results/mql5-tests/
 HANDOFF.md
+tools/config/mt5-vm.settings.json

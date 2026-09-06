@@ -1,0 +1,34 @@
+{
+  "_comment": "このファイルをコピーして tools/config/mt5-vm.settings.json を作成する（.gitignore対象）。パスワード等の秘密情報はこのファイルへ書かないこと。",
+  "connectionType": "Vmrun",
+  "_comment_connectionType": "Vmrun（既定、VMware Workstation/Player付属vmrun）または WinRm（汎用WinRM/PSRemoting、Hypervisor製品を問わない）。",
+
+  "_comment_vmrun_fields": "connectionType=Vmrunの場合に使用するフィールド。",
+  "vmxPath": "C:\\VMs\\Mt5Vm\\Mt5Vm.vmx",
+  "vmrunPath": "",
+  "_comment_vmrunPath": "省略時は既定の 'C:\\Program Files (x86)\\VMware\\VMware Workstation\\vmrun.exe' を使用する。",
+
+  "vmEncrypted": false,
+  "_comment_vmEncrypted": "VMware VM暗号化（Encryption）を有効にしている場合はtrue。ゲストOSログインパスワードとは別物で、vmrunの-vpオプションに渡す。",
+  "encryptionCredentialSource": "Prompt",
+  "encryptionCredentialEnvVarName": "",
+  "_comment_encryption_fields": "vmEncrypted=trueの場合のみ使用。credentialSource/credentialEnvVarNameと同じ考え方だが、VM暗号化パスワード専用（ユーザー名は無い）。",
+
+  "_comment_winrm_fields": "connectionType=WinRmの場合に使用するフィールド。",
+  "computerName": "MT5VM01",
+
+  "_comment_common_fields": "connectionTypeによらず共通のフィールド（ゲストOSログイン用）。",
+  "userName": "mt5runner",
+  "credentialSource": "Prompt",
+  "credentialEnvVarName": "",
+  "vmExecutablePath": "C:\\Program Files\\OANDA MetaTrader 5\\terminal64.exe",
+  "vmSharedConfigPath": "C:\\Mt5Exchange\\config",
+  "vmTerminalData": "C:\\Users\\mt5runner\\AppData\\Roaming\\MetaQuotes\\Terminal\\REPLACE_WITH_VM_TERMINAL_DATA_ID",
+  "vmInstallPath": "C:\\Program Files\\OANDA MetaTrader 5",
+  "operationTimeoutBufferSeconds": 60,
+
+  "vmSyncExcludeNames": ["bases"],
+  "_comment_vmSyncExcludeNames": "connectionType=Vmrunでのディレクトリ同期時に除外するトップレベル名（省略時は既定[\"bases\"]）。MT5のTerminalData直下のbasesはtickヒストリカルデータで数百MB〜GBに達しreport/audit回収には不要なため既定で除外する。",
+  "vmSyncTimeoutSeconds": 300,
+  "_comment_vmSyncTimeoutSeconds": "ディレクトリ同期（Compress-Archive+コピー）のタイムアウト秒数（省略時300）。"
+}
