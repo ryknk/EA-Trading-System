@@ -20,11 +20,16 @@ param(
     [string]$Template = "mt5\test-config\StrategyTester-USDJPY-H1.ini",
     [string]$CaseFile = "",
     [string]$Python = ".\.venv\Scripts\python.exe",
-    [double]$AnnualRiskFreeRate = 0.0
+    [double]$AnnualRiskFreeRate = 0.0,
+    # MT5実行バックエンド（既定Host、従来どおりホスト上で直接terminal64.exeを起動する）。
+    # VM指定時はホストのGUIフォーカスを奪わず、WinRM/PSRemoting経由でVM上のMT5を実行する。
+    [ValidateSet("Host", "VM")][string]$ExecutionMode = "Host",
+    [string]$VmSettingsPath = "tools\config\mt5-vm.settings.json"
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
+Import-Module (Join-Path $PSScriptRoot "lib\Mt5ExecutionBackend.psm1") -Force
 
 function Read-IniValue {
     param([string]$Path, [string]$Key)
@@ -57,12 +62,26 @@ function Invoke-StrategyTesterCase {
         [Parameter(Mandatory)][string]$ToDate,
         [string]$Symbol = "",
         [Parameter(Mandatory)][string]$ResultDir,
-        [Parameter(Mandatory)][string]$ReportName
+        [Parameter(Mandatory)][string]$ReportName,
+        [ValidateSet("Host", "VM")][string]$ExecutionMode = "Host",
+        [string]$VmSettingsPath = ""
     )
 
     $terminal = Join-Path $InstallPath "terminal64.exe"
-    if (-not (Test-Path -LiteralPath $terminal)) { throw "Terminal not found: $terminal" }
-    if (Get-Process terminal64 -ErrorAction SilentlyContinue) { throw "自動実行前に起動中のMetaTrader 5を終了してください。" }
+    $vmSettingsFullPath = ""
+    $vmSyncSourcePaths = @()
+    if ($ExecutionMode -eq "VM") {
+        $vmSettingsFullPath = if ([System.IO.Path]::IsPathRooted($VmSettingsPath)) { $VmSettingsPath } else { Join-Path $Root $VmSettingsPath }
+        $vmSettings = Test-Mt5VmSettings -Path $vmSettingsFullPath
+        if ($vmSettings.vmTerminalData) { $vmSyncSourcePaths += $vmSettings.vmTerminalData }
+        if ($vmSettings.vmInstallPath) { $vmSyncSourcePaths += $vmSettings.vmInstallPath }
+        if ($vmSyncSourcePaths.Count -eq 0) {
+            throw "VM設定ファイルにvmTerminalDataまたはvmInstallPathが必要です（report/audit取得のため）: $vmSettingsFullPath"
+        }
+    } else {
+        if (-not (Test-Path -LiteralPath $terminal)) { throw "Terminal not found: $terminal" }
+        if (Get-Process terminal64 -ErrorAction SilentlyContinue) { throw "自動実行前に起動中のMetaTrader 5を終了してください。" }
+    }
 
     $templatePath = if ([System.IO.Path]::IsPathRooted($Template)) { $Template } else { Join-Path $Root $Template }
     if (-not (Test-Path -LiteralPath $templatePath)) { throw "Template not found: $templatePath" }
@@ -107,12 +126,14 @@ function Invoke-StrategyTesterCase {
         Write-Host "STRATEGY_TESTER_STALE_AUDIT_CLEARED count=$($staleAuditFiles.Count)"
     }
 
-    $process = Start-Process -FilePath $terminal -ArgumentList @("/config:$config") -PassThru -WindowStyle Hidden
-    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-        Stop-Process -Id $process.Id -Force
-        throw "Strategy Tester timeout: $TimeoutSeconds seconds"
-    }
-    $exitCode = $process.ExitCode
+    $execResult = Invoke-Mt5Execution -ExecutionMode $ExecutionMode -ExecutablePath $terminal `
+        -ConfigFilePath $config -TimeoutSeconds $TimeoutSeconds `
+        -VmSettingsPath $vmSettingsFullPath -SyncSourcePaths $vmSyncSourcePaths `
+        -StagingRoot (Join-Path $ResultDir "_vm-staging")
+    $exitCode = $execResult.ExitCode
+    # VM実行時は、共通実行バックエンドがVM側TerminalData/InstallPathをホスト側へ同期した結果を
+    # 検索対象へ追加する。以降のreport/audit検索ロジックはHost/VMで変更しない。
+    if ($ExecutionMode -eq "VM") { $searchRoots += $execResult.StagingRoots }
 
     $reports = foreach ($searchRoot in $searchRoots) {
         if (Test-Path -LiteralPath $searchRoot) {
@@ -186,7 +207,8 @@ if ([string]::IsNullOrEmpty($CaseFile)) {
 
     Invoke-StrategyTesterCase -Root $root -InstallPath $InstallPath -TerminalData $TerminalData `
         -TimeoutSeconds $TimeoutSeconds -Template $Template -FromDate $FromDate -ToDate $ToDate `
-        -Symbol $symbolOverride -ResultDir $resultDir -ReportName $reportName | Out-Null
+        -Symbol $symbolOverride -ResultDir $resultDir -ReportName $reportName `
+        -ExecutionMode $ExecutionMode -VmSettingsPath $VmSettingsPath | Out-Null
     return
 }
 
@@ -268,7 +290,8 @@ foreach ($case in $cases) {
     try {
         $execResult = Invoke-StrategyTesterCase -Root $root -InstallPath $InstallPath -TerminalData $TerminalData `
             -TimeoutSeconds $TimeoutSeconds -Template $template -FromDate $fromDate -ToDate $toDate `
-            -Symbol $symbol -ResultDir $caseResultDir -ReportName $reportName
+            -Symbol $symbol -ResultDir $caseResultDir -ReportName $reportName `
+            -ExecutionMode $ExecutionMode -VmSettingsPath $VmSettingsPath
 
         $caseRecord.status = "Succeeded"
         $caseRecord.exit_code = $execResult.ExitCode

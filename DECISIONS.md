@@ -624,3 +624,59 @@ Market Regimeの方向性（Up/Down）とHTF Biasの方向性が食い違う場�
 * `InpEnableEntryTimingAnalysis=true`にした場合の実際の分析結果（どのVariantが優れているか）はユーザーの仮説検証に委ねる。本Decisionでは待機方式の推奨・自動選択は一切行わない
 * 実装の妥当性はサンプル期間（2018-01〜2018-06）の実データで検証済みだが、正式なIS期間（2017-09〜2020-12）・OOS期間での分析はまだ実施していない
 * **2026-08-22、正式なIS期間（2017-09〜2020-12）で初めて実行し、`python/analysis/entry_timing.py`の`DRAWDOWN_BASELINE_R`（当時100R）を起点に累積損益（`pnl_r`の累計）がマイナスへ落ちるとequityが0以下になり`drawdown.build_drawdown_curve`が例外を送出する不具合を発見・修正した**。Shadow TradeはMaxOpenPositions等の並行数制限を受けないためSetup数が多く（本IS期間で1,101件）、IMMEDIATE/WAIT_1_BAR/WAIT_2_BARSの累積損失がそれぞれ-99R〜-118Rに達し100Rを超過していた。相対指標という設計意図は変えず、基準値を10,000Rへ引き上げて修正した（`python/tests/test_entry_timing.py`は基準値を直接検証しておらず、修正後も7件全PASS）。この修正を経て、正式なIS期間でのVariant比較を実施した。詳細な分析結果はTASKS.md参照
+
+---
+
+# DEC-029: MT5実行バックエンドはHost/VM共通の薄い抽象化とし、VM接続はVMware Workstation/Player付属vmrunを既定・優先とする（WinRM/PSRemotingも選択可能）
+
+**状態:** 採用
+
+## 背景
+
+Strategy Tester・MQL5単体テスト実行はいずれもホストWindows上で`terminal64.exe`を直接`Start-Process`しており、実行中にMT5 GUIがホストの対話デスクトップへ一瞬でも表示され、ユーザーの他の作業・ゲームのフォーカスを奪う問題があった。恒久対策として、MT5を隔離VM内で実行できる方式を追加する依頼があった。当初はHypervisor非依存の汎用WinRM/PSRemotingのみを想定していたが、ユーザーが実際に使用するのはローカルPC上のVMware Workstation Pro/Playerであるため、その付属CLIである`vmrun`を優先する方針へ変更した。
+
+## 判断
+
+`tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`のどちらからも使う共通モジュール`tools/lib/Mt5ExecutionBackend.psm1`を新設し、「MT5起動・待機・タイムアウト検出・終了コード取得・VM実行時の結果ファイル同期」だけをこのモジュールへ委譲する。Report/Audit検索、CaseFile処理、PASSマーカー判定など各スクリプト固有の業務ロジックは変更しない。
+
+`-ExecutionMode Host|VM`（既定`Host`）で切り替える。VM実行時の接続方式はVM設定ファイルの`connectionType`でさらに選択する：
+
+* `Vmrun`（既定）— VMware Workstation/Player付属の`vmrun`コマンドラインツールを使い、VMware Tools経由でゲストOS内のプログラムを直接実行する。IPアドレスやゲスト側WinRM設定は不要で、`.vmx`パスとゲストOSのユーザー名・パスワードのみで動作する。
+* `WinRm`— 汎用WinRM/PSRemoting（`New-PSSession -ComputerName`）。Hypervisor製品を問わないが、ゲスト側で事前にWinRMを有効化する必要がある。
+
+VM接続設定は`tools/config/mt5-vm.settings.json`（`.gitignore`対象、テンプレートは`tools/config/mt5-vm.settings.example.json`）で保持し、パスワード等の秘密情報は設定ファイルへ書かず、対話入力（`Get-Credential`）または環境変数経由のみ許可する。`-ExecutionMode VM`指定時にVM設定が不足・不正な場合（`connectionType`に応じた必須フィールド不足を含む）はHostへ暗黙フォールバックせず、明確な例外で終了する。
+
+Vmrun方式では、vmrunが`runProgramInGuest`経由でゲスト内プログラムの終了コードを直接返さないため、ゲスト内で`<exe> <args> & echo %ERRORLEVEL%><ファイル>`を実行させ、そのファイルを`copyFileFromGuestToHost`でホストへ回収する方式でExitCodeを取得する。vmrunにディレクトリ再帰コピー機能が無いため、TerminalData/InstallPath等のディレクトリ同期はゲスト内で`Compress-Archive`により圧縮したうえで単一ファイルとしてホストへ回収し展開する。タイムアウト時は`listProcessesInGuest`/`killProcessInGuest`でゲスト内プロセスを明示的に強制終了する。WinRm方式は既存どおり`Copy-Item -ToSession`/`-FromSession`でファイル転送する。
+
+VMware VM暗号化（Encryption）が有効な場合、ゲストOSログインパスワード（`-gu`/`-gp`）とは別に、VM自体を復号するための暗号化パスワード（vmrunの`-vp`）が必要になる。この2つは全く別のパスワードであるため、VM設定ファイルへ`vmEncrypted`（既定`false`）と、それが`true`の場合の`encryptionCredentialSource`（`Prompt`/`EnvironmentVariable`、ゲスト認証の`credentialSource`と同じ考え方だがユーザー名の概念はない）を独立して追加した。`vmEncrypted=true`かつ`encryptionCredentialSource`が不足・不正な場合も、他の必須項目と同様に明確な例外で終了する。
+
+いずれの方式でも、既存のreport/audit検索ロジック（`$searchRoots`）は変更せず、VM実行時のみステージングディレクトリを検索対象へ追加する形で対応する。
+
+## 理由
+
+* ユーザーが実際に使用する環境がローカルPC上のVMware Workstation Pro/Playerであるため、そのVM専用のゲスト内直接実行手段である`vmrun`を既定・優先とした。IPアドレス割当やゲスト側WinRM設定が不要になり、個人利用のローカルVM構成に適する
+* 一方で「VM製品をコードへ強く固定しない」という当初要求も維持するため、`connectionType`で接続方式を選べる設計とし、WinRM/PSRemoting実装は削除せず残した。将来的に別の隔離実行方式（別Hypervisor、コンテナ等）を追加する場合も、共通モジュールへ新しい接続実装を追加し`connectionType`の選択肢を増やすだけで済む
+* Strategy Tester/MQL5単体テストのどちらも「起動・待機・タイムアウト・終了コード取得」というMT5起動処理自体は同一であり、これを共通化することで重複実装を避けつつ、各スクリプト固有の業務ロジック（report/audit検索、CaseFile、PASSマーカー判定）には触れない設計とした
+* VM設定不備時にHostへ自動フォールバックさせると、ユーザーが意図せずホストGUIで実行してしまう（今回解決したい問題が再発する）ため、明確なエラーで停止する設計とした
+* 秘密情報をリポジトリ・設定ファイルへ保存しないというCLAUDE.md/DECISIONS.mdの既存方針を維持するため、資格情報は対話入力または環境変数経由のみとした。ただしvmrunの`-gp`（ゲストパスワード）・`-vp`（VM暗号化パスワード）オプションはコマンドライン引数として渡す必要があり、実行中は同一ホスト上の他プロセスから一時的にプロセスの起動コマンドラインとして見える可能性がある。これはvmrun自体の仕様上の制約であり、ログ・例外メッセージへの出力はマスキングして防いでいるが、完全な排除はできないためユーザーへ明示する
+* VM暗号化パスワードをWindows資格情報マネージャーから直接読み出すコードは実装しなかった。ユーザー自身の環境であっても、資格情報ストアから認証情報を復号・抽出する処理は認証情報窃取ツールと外形的に区別しづらく、安全側に倒して見送った。ユーザーには代わりにVMware Workstation自身のGUI機能（暗号化パスワードの変更）で、自分が管理できる値へ設定し直すことを案内した
+
+## 影響
+
+* 新規`tools/lib/Mt5ExecutionBackend.psm1`・`tools/config/mt5-vm.settings.example.json`・`tools/test-mt5-execution-backend.ps1`を追加した
+* `tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`・`.gitignore`・`docs/mt5-development.md`・`TASKS.md`を変更した
+* `-ExecutionMode`省略時（既定`Host`）は既存呼び出しと完全互換に動作することを、Hostモードでの単体実行・CaseFile複数ケース実行・MQL5単体テスト実行で確認済み
+* **2026-09-06、実VMware VM（VMware Workstation Pro、Windows 11ゲスト）で実機検証を行い、Vmrun方式の実装に3件の不具合を発見・修正した：**
+  1. `runProgramInGuest`で`cmd.exe`を**引数付きで**実行すると、ゲストプログラム自身は正常終了しているにもかかわらずvmrunが一律`exit code 1`を報告する既知の問題を確認した（`cmd.exe /c dir`単体でも再現、引数なしの`cmd.exe`単体や`ipconfig.exe`等の直接実行は成功する）。回避策として、MT5起動・ExitCode取得ロジックをcmd.exe経由から`powershell.exe -NoProfile -Command`経由（`Start-Process -PassThru` + `WaitForExit`でタイムアウト制御し、ExitCodeまたは`"TIMEOUT"`をファイルへ書き出す方式）へ全面的に置き換えた
+  2. `copyFileFromGuestToHost`が`..`を含む相対パス要素を解決できず失敗することを確認した（Compress-Archive自体は成功していたが、その結果ファイルの回収が失敗していた）。同期対象ディレクトリの親パスを`Split-Path -Parent`で事前に正規化してから使うよう修正した
+  3. ゲスト内で実行するPowerShellコマンド文字列で`if (...) { A } else { B } | Set-Content ...`という構文を使うと、パイプがif式全体ではなく最後の分岐にのみ適用され機能しないことを確認した（`Get-Mt5VmRemoteLineCount`）。`$(if (...) {...} else {...}) | Set-Content ...`とサブ式化して修正した
+* 上記修正後、実VM上で以下を実機確認済み: VM暗号化パスワード付きVM起動、ゲスト認証（vmrun `-gu`/`-gp`/`-vp`）、`Invoke-Mt5Execution`のVM実行によるExitCode取得（0・非0いずれも）、タイムアウト時のゲストプロセス強制終了、`Compress-Archive`方式によるディレクトリ同期、リモートファイルの行数取得
+* 実機検証はMT5未インストールのVM上で、`vmExecutablePath`を`cmd.exe`等の汎用コマンドに差し替えて実施した（共通実行バックエンドの起動・待機・ExitCode取得・タイムアウト・同期ロジックの検証が目的）
+* **2026-09-06、VM内にOANDA証券MT5をインストール後、実際のMT5（MQL5単体テスト・Strategy Tester）でのフル動作確認を実施し、さらに4件の不具合を発見・修正した：**
+  1. `Start-Process -RedirectStandardOutput/-RedirectStandardError`経由で`$process.ExitCode`を読み取ると、引数が長い・複雑なvmrun呼び出しで不定に空文字列/nullになる不具合を確認した（Windows PowerShell 5.1、.NET Frameworkでの既知の癖）。`System.Diagnostics.Process`を直接使い、`BeginOutputReadLine`/`BeginErrorReadLine`による非同期イベント読み取り（.NET推奨パターン）へ`Invoke-VmrunCommand`を全面書き換えた
+  2. その書き換えで`ProcessStartInfo.ArgumentList`を使ったところ、実際の運用環境（Windows PowerShell 5.1、.NET Framework）には同プロパティが存在しない（.NET Core専用）ことが判明した（このセッションの対話環境がPowerShell 7/.NET Coreだったため当初のテストでは検出できなかった）。Win32の`CommandLineToArgvW`互換エスケープを自前実装し、Framework/Core双方で確実に動く`Arguments`（単一文字列）方式に統一した
+  3. `Copy-Mt5VmrunPathsToStaging`が要素数1の配列を`return`する際、PowerShellがスカラーへ自動アンラップし、呼び出し側の`$stagingRoots[0]`が文字列の先頭1文字になる不具合を確認した。`return , $stagingRoots`と`,`演算子で配列化を強制して修正した
+  4. VM内のTerminalDataフォルダ全体（実測761MB、うち`bases`＝tickヒストリカルデータが709MB）を無条件に同期しようとして`Compress-Archive`/`copyFileFromGuestToHost`がタイムアウトする問題を確認した。Strategy Testerのreport/audit生成物はTerminalData直下やTester配下に留まりヒストリカルデータは不要なため、同期時に除外するトップレベル名（VM設定`vmSyncExcludeNames`、既定`@("bases")`）とタイムアウト秒数（`vmSyncTimeoutSeconds`、既定300秒）を設定可能にした
+* また、VM側の電源設定（ディスプレイ・スタンバイのタイムアウト）を無効化する必要があることが分かった。有効なままだと実行中にVMがスリープし、vmrunコマンドが原因不明のエラーで間欠的に失敗する（`docs/mt5-development.md`に事前準備手順として追記）
+* 上記修正後、VM内にコンパイル済みEA・テストスクリプトを配置した状態で、`run-mql5-tests.ps1 -ExecutionMode VM`（全12テストPASS、Hostモードと同一結果）・`run-strategy-tester.ps1 -ExecutionMode VM`（`exit=0`、report/pngが正しくホスト側へ回収される）の両方が実機で成功することを確認した。Hostモードの回帰（単体実行・MQL5単体テスト）も再確認済み
+* WinRm方式は今回未検証のまま（ユーザー環境がVMware Workstationのため）
