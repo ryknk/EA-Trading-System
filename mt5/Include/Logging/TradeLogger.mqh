@@ -51,8 +51,13 @@ private:
                           parts.year,parts.mon,parts.day,parts.hour,parts.min,parts.sec);
      }
 
+   // audit_run_idが設定されている場合（Strategy Tester等、実行単位でRun IDが割り当てられる場合）は
+   // audit-<run_id>.jsonl という実行単位のファイル名にする。空の場合（既定値、通常運用）は従来どおり
+   // 日付単位のファイル名にフォールバックする。
    string FileName(const datetime value)
      {
+      if(StringLen(m_config.audit_run_id)>0)
+        return StringFormat("%s\\audit-%s.jsonl",m_config.audit_log_directory,m_config.audit_run_id);
       MqlDateTime parts;
       TimeToStruct(value,parts);
       return StringFormat("%s\\audit-%04d%02d%02d.jsonl",
@@ -71,7 +76,10 @@ public:
       ResetLastError();
       // FolderCreate returns false when the directory already exists. Actual
       // writability is checked by Record without disabling terminal logging.
-      FolderCreate(m_config.audit_log_directory);
+      // FILE_COMMONを指定し、Terminal\Common\Files配下（Strategy Tester Agentのサンドボックスの外）へ
+      // 保存する。Host/VM/Strategy Tester/単体テストいずれで実行してもAgentサンドボックスのcleanupの
+      // 影響を受けない（2026-09-07変更、旧: サンドボックス化された<data folder>\MQL5\Files配下）。
+      FolderCreate(m_config.audit_log_directory,FILE_COMMON);
       return true;
      }
 
@@ -117,7 +125,7 @@ public:
       if(!m_config.audit_file_enabled) return true;
 
       ResetLastError();
-      const int handle=FileOpen(FileName(event_time),FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ,0,CP_UTF8);
+      const int handle=FileOpen(FileName(event_time),FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_COMMON,0,CP_UTF8);
       if(handle==INVALID_HANDLE)
         { error=StringFormat("AUDIT_FILE_OPEN_FAILED_%d",GetLastError()); return false; }
       FileSeek(handle,0,SEEK_END);

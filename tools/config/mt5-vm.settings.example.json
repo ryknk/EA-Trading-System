@@ -27,6 +27,9 @@
   "vmInstallPath": "C:\\Program Files\\OANDA MetaTrader 5",
   "operationTimeoutBufferSeconds": 60,
 
+  "vmCommonDataPath": "",
+  "_comment_vmCommonDataPath": "監査JSONL（FILE_COMMON、既定Terminal\\Common\\Files\\EaTradingSystem\\Audit配下）の同期元パス（Terminal\\Commonフォルダ自体）。空または省略時はvmTerminalDataの兄弟フォルダ（...\\Terminal\\Common）を自動的に使用するため、通常は指定不要。Common配下の格納場所を明示的に上書きしたい場合のみ指定する。",
+
   "vmSyncExcludeNames": ["bases"],
   "_comment_vmSyncExcludeNames": "connectionType=Vmrunでのディレクトリ同期時に除外するトップレベル名（省略時は既定[\"bases\"]）。MT5のTerminalData直下のbasesはtickヒストリカルデータで数百MB〜GBに達しreport/audit回収には不要なため既定で除外する。",
   "vmSyncTimeoutSeconds": 300,

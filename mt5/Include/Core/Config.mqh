@@ -134,6 +134,7 @@ struct SEaConfig
    double            ml_min_expected_return;
    bool              audit_file_enabled;
    string            audit_log_directory;
+   string            audit_run_id;
    bool              telemetry_enabled;
    string            telemetry_api_url;
    int               telemetry_timeout_ms;
@@ -247,6 +248,7 @@ void SetDefaultConfig(SEaConfig &config)
    config.ml_min_expected_return     = 0.0;
    config.audit_file_enabled         = true;
    config.audit_log_directory        = "EaTradingSystem\\Audit";
+   config.audit_run_id               = "";
    config.telemetry_enabled          = false;
    config.telemetry_api_url          = "";
    config.telemetry_timeout_ms       = 1500;
@@ -381,6 +383,22 @@ bool ValidateConfig(const SEaConfig &config,string &error)
       StringFind(config.audit_log_directory,"..")>=0 || StringFind(config.audit_log_directory,":")>=0 ||
       StringGetCharacter(config.audit_log_directory,0)=='\\' || StringGetCharacter(config.audit_log_directory,0)=='/')
      { error="INVALID_AUDIT_DIRECTORY"; return false; }
+   // 監査ファイル名（audit-<run_id>.jsonl）へ直接使われるため、Windowsファイル名として安全な文字集合に限定する
+   // （IsSafeConfigIdentifierと異なり":"は許可しない＝ドライブ区切りとの混同を避ける）。空文字は日付単位の
+   // 既定ファイル名へフォールバックする指定として許可する。
+   if(StringLen(config.audit_run_id)>0)
+     {
+      if(StringLen(config.audit_run_id)>128)
+        { error="INVALID_AUDIT_RUN_ID"; return false; }
+      for(int audit_run_id_index=0; audit_run_id_index<StringLen(config.audit_run_id); audit_run_id_index++)
+        {
+         const ushort audit_run_id_char=StringGetCharacter(config.audit_run_id,audit_run_id_index);
+         if(!((audit_run_id_char>='A' && audit_run_id_char<='Z') || (audit_run_id_char>='a' && audit_run_id_char<='z') ||
+              (audit_run_id_char>='0' && audit_run_id_char<='9') ||
+              audit_run_id_char=='.' || audit_run_id_char=='_' || audit_run_id_char=='-'))
+           { error="INVALID_AUDIT_RUN_ID"; return false; }
+        }
+     }
    if(config.decision_api_enabled)
      {
       if(StringFind(config.decision_api_url,"https://")!=0 ||

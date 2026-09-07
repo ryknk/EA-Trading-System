@@ -180,13 +180,16 @@ Strategy Testerだけで `InpTesterDecisionMode` を使用できる。0はフェ
 
 | 設定 | 初期値 | 意味 |
 |---|---:|---|
-| `InpAuditFileEnabled` | true | 日別JSONL監査 |
-| `InpAuditLogDirectory` | `EaTradingSystem\\Audit` | `MQL5\\Files`配下の出力先 |
+| `InpAuditFileEnabled` | true | JSONL監査 |
+| `InpAuditLogDirectory` | `EaTradingSystem\\Audit` | `Common\\Files`配下の出力先（2026-09-07変更、旧: `MQL5\\Files`配下） |
+| `InpAuditRunId` | 空 | 監査ファイル名を`audit-<run_id>.jsonl`にする実行単位の識別子。空の場合（既定値、通常運用）は従来どおり日付単位の`audit-YYYYMMDD.jsonl`にフォールバックする |
 | `InpTelemetryEnabled` | false | AWS監査送信 |
 | `InpTelemetryApiUrl` | 空 | `/v1/trade-events`で終わるHTTPS URL |
 | `InpTelemetryTimeoutMs` | 1500 | 監査送信timeout |
 
 Telemetry失敗は取引判断や既存ポジション管理へ影響しない。ローカルJSONLを先に保存し、AWS欠損時の正本とする。
+
+**2026-09-07変更: 監査JSONLの保存先を`FILE_COMMON`へ変更した。** 従来はサンドボックス化された`<data folder>\MQL5\Files\<InpAuditLogDirectory>`（Strategy Tester実行時はTester Agent固有のサンドボックス配下）に保存していたが、VM実行でMT5終了後にTester Agentのサンドボックスがcleanupされると、HTM reportは回収できるのに監査JSONLだけ消失する問題があった。`FILE_COMMON`（`Terminal\Common\Files\<InpAuditLogDirectory>`、同一Windowsユーザーの全MT5ターミナルで共有）はTester Agentのサンドボックスの外にあるため影響を受けない。`tools/run-strategy-tester.ps1`はStrategy Tester実行のたびにReport名と同一の値を`InpAuditRunId`へ設定し、`audit-<ReportName>.jsonl`という実行単位で一意なファイル名にする（Common領域が複数ターミナル・複数実行で共有されるため、実行間・ケース間のログ混入を防ぐ目的）。詳細は`docs/backtesting.md`とDECISIONS.md DEC-030を参照。
 
 ## AWS CDK context
 

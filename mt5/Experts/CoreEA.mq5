@@ -105,6 +105,7 @@ input double          InpMlMinWinProbability=0.60;
 input double          InpMlMinExpectedReturn=0.0;
 input bool            InpAuditFileEnabled=true;
 input string          InpAuditLogDirectory="EaTradingSystem\\Audit";
+input string          InpAuditRunId="";
 input bool            InpTelemetryEnabled=false;
 input string          InpTelemetryApiUrl="";
 input int             InpTelemetryTimeoutMs=1500;
@@ -219,6 +220,7 @@ int OnInit(void)
    config.ml_min_expected_return=InpMlMinExpectedReturn;
    config.audit_file_enabled=InpAuditFileEnabled;
    config.audit_log_directory=InpAuditLogDirectory;
+   config.audit_run_id=InpAuditRunId;
    config.telemetry_enabled=InpTelemetryEnabled;
    config.telemetry_api_url=InpTelemetryApiUrl;
    config.telemetry_timeout_ms=InpTelemetryTimeoutMs;

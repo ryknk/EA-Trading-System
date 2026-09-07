@@ -123,7 +123,8 @@ VM実行時の接続方式はVM設定ファイルの`connectionType`で選択す
 * **`Start-Process -RedirectStandardOutput/-RedirectStandardError`経由の`$process.ExitCode`取得が、引数が長い・複雑なvmrun呼び出しで不定に失敗する。** Windows PowerShell 5.1（.NET Framework）での既知の癖。`System.Diagnostics.Process`を直接使い、`BeginOutputReadLine`/`BeginErrorReadLine`による非同期イベント読み取りへ置き換えて対応した。
 * **`System.Diagnostics.ProcessStartInfo.ArgumentList`はWindows PowerShell 5.1（.NET Framework）に存在しない。** .NET Core専用のプロパティのため、Framework/Core両方で動くWin32互換の手動エスケープ＋`Arguments`（単一文字列）方式で実装している。対話的なPowerShell 7セッションで動作確認しても、実運用のWindows PowerShell 5.1では動かないことがある点に注意（このモジュールの動作確認は必ず`powershell.exe`＝5.1で行うこと）。
 * **要素数1の配列を`return`すると、PowerShellがスカラーへ自動アンラップすることがある。** ディレクトリ同期結果（`StagingRoots`）で発生し、呼び出し側の`$stagingRoots[0]`が文字列の先頭1文字になる不具合があった。`return , $array`と`,`演算子で配列化を強制する必要がある。
-* **VM内のTerminalDataフォルダ全体を無条件に同期すると、tickヒストリカルデータ（`bases`フォルダ）で数百MB〜GBに膨らみタイムアウトする。** report/audit生成物はTerminalData直下・Tester配下に留まるため、VM設定`vmSyncExcludeNames`（既定`@("bases")`）で除外する。同期タイムアウトは`vmSyncTimeoutSeconds`（既定300秒）で調整できる。
+* **VM内のTerminalDataフォルダ全体を無条件に同期すると、tickヒストリカルデータ（`bases`フォルダ）で数百MB〜GBに膨らみタイムアウトする。** report生成物はTerminalData直下に留まるため、VM設定`vmSyncExcludeNames`（既定`@("bases")`）で除外する。同期タイムアウトは`vmSyncTimeoutSeconds`（既定300秒）で調整できる。
+* **監査JSONLはStrategy Tester Agentのサンドボックス配下に保存され、MT5終了後にサンドボックスがcleanupされると消失する（2026-09-07発見）。** VM実行はMT5終了後にTerminalData等をzip化して回収するため、HTM reportは回収できるのに監査JSONLだけ消失していた。監査JSONLを`FILE_COMMON`（`Terminal\Common\Files`配下、サンドボックスの外）で保存するよう変更し、VM設定へ`vmCommonDataPath`（省略時は`vmTerminalData`の兄弟フォルダ`Terminal\Common`を自動使用）を追加して、Common配下のAuditディレクトリだけを別途同期するようにした（詳細はDECISIONS.md DEC-030を参照）。
 * VMware Toolsの`runProgramInGuest`を使う前に、対象VMがVMware Workstationのウィンドウ上で実際に起動し、ゲストOSへサインイン済み（ログイン画面のままではない）状態にしておくこと。
 * **VM側の電源設定でスリープ・ディスプレイタイムアウトを無効化しておくこと。** 有効なままだと自動実行中にVMがスリープし、vmrunコマンドが原因不明のエラー（認証エラー等）で間欠的に失敗する。ゲスト内管理者PowerShellで次を実行する。
   ```powershell
@@ -142,3 +143,11 @@ VM実行時の接続方式はVM設定ファイルの`connectionType`で選択す
 * Hostモードの単体実行・MQL5単体テストは、上記VM検証と並行して回帰なしを再確認済み
 
 `connectionType: "WinRm"`側は未検証（ユーザー環境がVMware Workstationのため）。CaseFileによる複数ケース実行のVMモードは未検証。
+
+**2026-09-07、監査JSONLのFILE_COMMON化をHost・VM/vmrun両方で実機確認した。** Hostモードで`InpAuditFileEnabled=true`のままStrategy Testerを実行し、`Terminal\Common\Files\EaTradingSystem\Audit\audit-<ReportName>.jsonl`が生成され、`results/backtests/<run>/audit/`へ従来どおり複製されること、複製したJSONLが`python.analysis.reports`で正常に分析できることを確認した。
+
+続けて実VM（`D:\VMware\MT5-Tester\MT5-Tester.vmx`）でも実機確認した。まずVM側の`mt5`ソースコピーが本セッションの変更前（2026-09-06セットアップ時点）のままだったため、`Config.mqh`・`TradeLogger.mqh`・`CoreEA.mq5`・`TestProductionSafetyRules.mq5`をvmrunの`copyFileFromHostToGuest`で既存ジャンクション先へ転送し、VM上でMetaEditor64.exeにより全13ターゲットを再コンパイル（0 errors, 0 warnings）した後、`run-mql5-tests.ps1 -ExecutionMode VM`（全12テストPASS）・`run-strategy-tester.ps1 -ExecutionMode VM`（`exit=0`、`STRATEGY_TESTER_AUDIT_COPIED mode=VM`）を実行し、`Get-Mt5VmCommonAuditPath`が導出した`vmTerminalData`の兄弟フォルダ`Terminal\Common`配下からAuditディレクトリが正しく同期され、`results/backtests/<run>/audit/`へ複製されることを確認した。複製したJSONLは`python.analysis.reports`で正常に分析できた。これによりTASKS.md 8.1節の「audit JSONL VM実行時回収の実機確認」は完了した。
+
+この過程で新たに以下を発見した（`tools/lib/Mt5ExecutionBackend.psm1`は未修正のツール操作手順上の注意点であり、恒久対応が必要な場合は次回以降検討する）。
+
+* **VMゲストのPowerShell実行ポリシーが`Restricted`の場合、`runProgramInGuest`経由での`.ps1`スクリプトファイル実行（`-File`、`&`によるスクリプト呼び出し、`.`によるdot-source）はいずれもサイレントに失敗する。** vmrunは`Guest program exited with non-zero exit code: 1`のような具体的なメッセージを返さず、単に`vmrunコマンドが失敗しました（exit=1）`という汎用エラーのみを返すため原因の特定が難しい。一方、`-Command`に渡すインラインのcmdlet呼び出し（`Get-Content`・`Test-Path`・`Write-Output`等）や、`Start-Process`によるプロセス起動（本モジュールがMT5起動に使っている方式）は実行ポリシーの制約を受けず問題なく動作する。ゲスト側で`.ps1`ファイルを直接実行する必要がある場合は、`powershell.exe`の引数へ`-ExecutionPolicy Bypass`を追加すること。

@@ -74,6 +74,26 @@ void OnStart(void)
    AssertTrue(!ValidateConfig(mode_config,mode_error) && mode_error=="INVALID_STRATEGY_MODE",
               "out-of-range strategy_mode is rejected");
 
+   SEaConfig audit_run_id_config;
+   SetDefaultConfig(audit_run_id_config);
+   string audit_run_id_error;
+   AssertTrue(ValidateConfig(audit_run_id_config,audit_run_id_error),
+              "default config has empty audit_run_id and validates");
+   audit_run_id_config.audit_run_id="ets-20260907-153000-USDJPY-H1";
+   AssertTrue(ValidateConfig(audit_run_id_config,audit_run_id_error),
+              "safe audit_run_id (letters/digits/./_/-) validates");
+   audit_run_id_config.audit_run_id="run/id";
+   AssertTrue(!ValidateConfig(audit_run_id_config,audit_run_id_error) && audit_run_id_error=="INVALID_AUDIT_RUN_ID",
+              "audit_run_id with path separator is rejected");
+   audit_run_id_config.audit_run_id="run:id";
+   AssertTrue(!ValidateConfig(audit_run_id_config,audit_run_id_error) && audit_run_id_error=="INVALID_AUDIT_RUN_ID",
+              "audit_run_id with ':' is rejected (avoids drive-letter confusion in a filename)");
+   string long_audit_run_id="";
+   for(int long_id_index=0; long_id_index<129; long_id_index++) long_audit_run_id+="a";
+   audit_run_id_config.audit_run_id=long_audit_run_id;
+   AssertTrue(!ValidateConfig(audit_run_id_config,audit_run_id_error) && audit_run_id_error=="INVALID_AUDIT_RUN_ID",
+              "audit_run_id longer than 128 chars is rejected");
+
    if(g_failures==0) Print("TEST_SUITE_PASS TestProductionSafetyRules");
    else PrintFormat("TEST_SUITE_FAIL TestProductionSafetyRules failures=%d",g_failures);
   }

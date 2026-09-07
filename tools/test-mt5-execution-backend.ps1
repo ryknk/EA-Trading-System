@@ -248,5 +248,28 @@ $resultHostNoVm = Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $cmdEx
 Assert-True ($resultHostNoVm.Success -eq $true) "Host実行時のVmSettingsPath無視: 正常終了すること"
 Write-Host "PASS Host実行時VmSettingsPath無視"
 
+# --- Get-Mt5VmCommonAuditPath: vmCommonDataPath未設定時はvmTerminalDataの兄弟Commonフォルダを既定値とすること ---
+$derivedSettings = [PSCustomObject]@{ vmTerminalData = "C:\Users\mt5runner\AppData\Roaming\MetaQuotes\Terminal\REPLACE_ID" }
+$derivedPath = Get-Mt5VmCommonAuditPath -Settings $derivedSettings -AuditLogDirectory "EaTradingSystem\Audit"
+Assert-True ($derivedPath -eq "C:\Users\mt5runner\AppData\Roaming\MetaQuotes\Terminal\Common\Files\EaTradingSystem\Audit") `
+    "Get-Mt5VmCommonAuditPath: vmTerminalDataから兄弟Commonフォルダを導出できること (実際: $derivedPath)"
+Write-Host "PASS Get-Mt5VmCommonAuditPath 既定導出"
+
+# --- Get-Mt5VmCommonAuditPath: vmCommonDataPath明示指定時はそちらを優先すること ---
+$overrideSettings = [PSCustomObject]@{
+    vmTerminalData  = "C:\Users\mt5runner\AppData\Roaming\MetaQuotes\Terminal\REPLACE_ID"
+    vmCommonDataPath = "D:\CustomCommon"
+}
+$overridePath = Get-Mt5VmCommonAuditPath -Settings $overrideSettings -AuditLogDirectory "EaTradingSystem\Audit"
+Assert-True ($overridePath -eq "D:\CustomCommon\Files\EaTradingSystem\Audit") `
+    "Get-Mt5VmCommonAuditPath: vmCommonDataPath明示指定時はそちらを使うこと (実際: $overridePath)"
+Write-Host "PASS Get-Mt5VmCommonAuditPath 明示指定優先"
+
+# --- Get-Mt5VmCommonAuditPath: どちらの設定も無ければ$nullを返すこと（ベストエフォートでスキップできるように） ---
+$noPathSettings = [PSCustomObject]@{ userName = "dummy-user" }
+$noPath = Get-Mt5VmCommonAuditPath -Settings $noPathSettings -AuditLogDirectory "EaTradingSystem\Audit"
+Assert-True ($null -eq $noPath) "Get-Mt5VmCommonAuditPath: 設定が無ければnullを返すこと"
+Write-Host "PASS Get-Mt5VmCommonAuditPath 設定なし"
+
 Write-Host "MT5_EXECUTION_BACKEND_TEST_PASS"
 Write-Host "NOTE: 実VMへのVmrun接続・実行・ファイル同期の成功系は本テストでは検証していません（run-mql5-tests.ps1/run-strategy-tester.ps1を-ExecutionMode VMで実際のVMに対して実行することで別途確認する。2026-09-06に実機確認済み、DECISIONS.md DEC-029参照）。WinRM/PSRemoting接続は未検証。"

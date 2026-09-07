@@ -271,6 +271,29 @@ function Get-Mt5VmSyncTimeoutSeconds {
     return 300
 }
 
+# EA側監査JSONL（TradeLogger.mqh）はFILE_COMMONで保存されるため、VM上のTerminalData配下ではなく
+# Terminal\Common\Files配下に出力される（Strategy Tester Agentのサンドボックスの外＝MT5終了後の
+# サンドボックスcleanupの影響を受けない）。この関数はVM側のCommon監査ディレクトリのパスを算出する。
+# vmCommonDataPath（Terminal\Commonフォルダ自体）が明示設定されていればそれを使用し、未設定なら
+# vmTerminalData（Terminal\<TerminalID>）の兄弟フォルダ（Terminal\Common）を既定値として使う
+# （MQL5のFILE_COMMONは常にインストールに紐づくTerminalディレクトリ直下のCommonフォルダを指すため、
+# TerminalDataから機械的に導出できる）。どちらも得られない場合は$nullを返す（呼び出し側はベストエフォート
+# として扱い、Audit同期をスキップする）。
+function Get-Mt5VmCommonAuditPath {
+    param(
+        [Parameter(Mandatory)]$Settings,
+        [Parameter(Mandatory)][string]$AuditLogDirectory
+    )
+    $commonDataPath = $null
+    if (($Settings.PSObject.Properties.Name -contains "vmCommonDataPath") -and -not [string]::IsNullOrWhiteSpace([string]$Settings.vmCommonDataPath)) {
+        $commonDataPath = [string]$Settings.vmCommonDataPath
+    } elseif (($Settings.PSObject.Properties.Name -contains "vmTerminalData") -and -not [string]::IsNullOrWhiteSpace([string]$Settings.vmTerminalData)) {
+        $commonDataPath = Join-Path (Split-Path -Parent ([string]$Settings.vmTerminalData).TrimEnd('\')) "Common"
+    }
+    if ([string]::IsNullOrWhiteSpace($commonDataPath)) { return $null }
+    return Join-Path (Join-Path $commonDataPath "Files") $AuditLogDirectory
+}
+
 # vmrun呼び出し共通の認証引数（-gu/-gp、vmEncrypted時は-vpも）を構築する。
 function Get-Mt5VmrunAuthArgs {
     param(
@@ -771,5 +794,6 @@ Export-ModuleMember -Function @(
     "Get-Mt5VmCredential",
     "Get-Mt5VmEncryptionPassword",
     "Sync-Mt5VmPaths",
-    "Get-Mt5VmRemoteLineCount"
+    "Get-Mt5VmRemoteLineCount",
+    "Get-Mt5VmCommonAuditPath"
 )

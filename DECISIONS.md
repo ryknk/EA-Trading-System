@@ -680,3 +680,44 @@ VMware VM暗号化（Encryption）が有効な場合、ゲストOSログイン�
 * また、VM側の電源設定（ディスプレイ・スタンバイのタイムアウト）を無効化する必要があることが分かった。有効なままだと実行中にVMがスリープし、vmrunコマンドが原因不明のエラーで間欠的に失敗する（`docs/mt5-development.md`に事前準備手順として追記）
 * 上記修正後、VM内にコンパイル済みEA・テストスクリプトを配置した状態で、`run-mql5-tests.ps1 -ExecutionMode VM`（全12テストPASS、Hostモードと同一結果）・`run-strategy-tester.ps1 -ExecutionMode VM`（`exit=0`、report/pngが正しくホスト側へ回収される）の両方が実機で成功することを確認した。Hostモードの回帰（単体実行・MQL5単体テスト）も再確認済み
 * WinRm方式は今回未検証のまま（ユーザー環境がVMware Workstationのため）
+
+---
+
+# DEC-030: 監査JSONLはFILE_COMMON・Run ID単位のファイル名で保存する（Strategy Tester Agentサンドボックスのcleanupに影響されないようにする）
+
+**状態:** 採用
+
+## 背景
+
+DEC-029でVM/vmrun実行のフル動作確認を行った際、`InpAuditFileEnabled`を有効にした監査JSONL回収は未検証のまま残っていた（TASKS.md 8.1節）。検証にあたり原因を調査したところ、次の設計上の問題が判明した。
+
+* `CTradeLogger`（`mt5/Include/Logging/TradeLogger.mqh`）は通常の`FileOpen()`（`FILE_COMMON`なし）を使っており、監査JSONLはサンドボックス化された`<data folder>\MQL5\Files\EaTradingSystem\Audit`（Strategy Tester実行時はTester Agent固有のサンドボックス配下）に保存される。
+* `tools/run-strategy-tester.ps1`のVM実行モードは、MT5終了後にTerminalData等をディレクトリごとzip化してホストへ回収する設計（DEC-029）だが、Tester Agentのサンドボックスは（ローカルAgentの実装上）MT5終了後にcleanupされるため、回収時点では既に監査JSONLが消えている。HTM reportはTerminalData直下（サンドボックスの外）に生成されるため正常に回収できており、この非対称性がHostモードでは表面化しにくく気づかれていなかった。
+* 加えて、従来のファイル名は日付単位（`audit-YYYYMMDD.jsonl`）で複数実行が同一ファイルへ追記される設計だったため、`run-strategy-tester.ps1`は各実行前に既存の`audit-*.jsonl`を削除する事前クリーンアップを行っていた（2026-08-22追加）。この削除ロジックは日付単位の共有ファイルを前提にしており、後述のFILE_COMMON化で複数ターミナル・複数実行がCommonフォルダを共有するようになると、他の実行のログを誤って削除するリスクが生じる。
+
+## 判断
+
+1. **監査JSONLの保存先を`FILE_COMMON`へ変更する。** `TradeLogger.mqh`の`FileOpen()`・`FolderCreate()`へ`FILE_COMMON`フラグを追加し、`Terminal\Common\Files\<InpAuditLogDirectory>`（Strategy Tester Agentのサンドボックスの外）へ保存する。Host/VM/Strategy Tester/MQL5単体テストいずれで実行しても同じ実装を使う。
+2. **ファイル名をRun ID単位にする。** `SEaConfig`・EA input（`InpAuditRunId`、既定空文字）を追加し、`CTradeLogger::FileName()`は`audit_run_id`が非空なら`audit-<run_id>.jsonl`、空（既定値、通常運用）なら従来どおり`audit-YYYYMMDD.jsonl`にフォールバックする。Run IDには新しいID生成基盤を追加せず、`tools/run-strategy-tester.ps1`が既に生成している実行単位の識別子（単体実行・CaseFileいずれもReport名`$ReportName`と同一の値）をそのまま`InpAuditRunId`として渡す。ファイル名がWindowsのファイル名として安全な文字集合（英数字・`.`・`_`・`-`）であることを`ValidateConfig`で検証し、`:`（ドライブ区切りとの混同を避ける）や`/`\`\`は許可しない。
+3. **VM実行時、Common配下のAuditディレクトリだけを追加で同期する。** `tools/lib/Mt5ExecutionBackend.psm1`へ`Get-Mt5VmCommonAuditPath`を追加し、VM設定`vmCommonDataPath`（省略時は`vmTerminalData`の兄弟フォルダ`Terminal\Common`を自動導出）から同期元パスを算出する。既存の汎用ディレクトリ同期関数（`Copy-Mt5VmrunPathsToStaging`/`Copy-Mt5VmPathsToStaging`、vmrun/WinRm共通）へ同期元パスとして追加するだけで、vmrun/WinRmいずれでも動作する。Commonフォルダ全体ではなくAuditディレクトリのみを同期対象にする（Commonフォルダは他の用途のデータも置かれ得るため）。
+4. **実行前の`audit-*.jsonl`削除処理は廃止する。** ファイル名がRun ID単位で一意になったため、日付単位の共有ファイルを前提にした事前削除は不要になった。むしろFILE_COMMON化後に残すと、Commonフォルダを共有する他の実行・他ターミナルのログを誤って削除するリスクがあるため、廃止した。
+5. **監査JSONLの検索をワイルドカードから完全一致へ変更する。** `tools/run-strategy-tester.ps1`は、report検索と同様に`audit-*.jsonl`＋パス部分一致でファイルを探していたが、ファイル名がRun ID単位で一意になったことを利用し、`audit-<ReportName>.jsonl`という完全一致（拡張子込み、ワイルドカードなし）で検索するよう変更した。VM同期後のステージングフォルダ名はソースパスをスラッシュ置換した名前になり元のディレクトリ構造（`\EaTradingSystem\Audit\`）を保持しないため、パス部分一致方式のままではVM同期後のファイルを発見できない問題も同時に解消した。
+6. **既存のベストエフォート仕様は維持する。** 監査JSONLが見つからない場合でもStrategy Tester自体の成功判定には影響させない（従来どおり）。ただしVM実行時は`STRATEGY_TESTER_AUDIT_COPIED`/`STRATEGY_TESTER_AUDIT_NOT_FOUND`ログへ`mode=VM`を含めて明示する。
+
+## 理由
+
+* FILE_COMMONはMQL5標準機能であり、Tester Agentのサンドボックスという「MT5終了時にcleanupされ得る一時領域」の外にあるため、根本原因（サンドボックスの外へ出す）を修正できる。回避策（VM終了前に非同期でファイルを吸い出す等）は複雑さの割に確実性が低いため採用しなかった
+* Run ID単位のファイル名は、既存のreport命名（`ReportName`）をそのまま再利用でき、新しいID生成基盤を追加する必要がない。Report名は既に実行・ケースごとに一意であることが保証されている（`run-strategy-tester.ps1`が生成時に重複チェック済み）
+* ファイル名を実行単位で一意にすることで、「実行前に削除」という前提の脆いクリーンアップ処理が不要になり、FILE_COMMON化で顕在化する「他の実行のログを誤って削除するリスク」も同時に解消できる
+* 監査JSONL検索を完全一致にすることで、VM同期後のステージングディレクトリ名がパス構造を保持しない問題を、新たな特殊ケース分岐を追加せずに解消できる
+* Common領域は同一Windowsユーザーの全MT5ターミナルで共有されるため、複数ブローカーのターミナルを併用する環境では監査ディレクトリが混在し得るが、ファイル名がRun ID単位で一意なため実害はない
+* 通常運用（Live/Demo、`InpAuditRunId`未設定）ではファイル名を従来どおり日付単位のままとし、既存の運用・分析手順（日別JSONLの複数ファイル読み込み）に影響を与えない設計とした
+
+## 影響
+
+* 変更: `mt5/Include/Core/Config.mqh`（`audit_run_id`フィールド追加・検証）、`mt5/Experts/CoreEA.mq5`（`InpAuditRunId`追加）、`mt5/Include/Logging/TradeLogger.mqh`（`FILE_COMMON`・Run ID単位ファイル名）、`mt5/Tests/TestProductionSafetyRules.mq5`（`audit_run_id`検証のテスト追加）、`tools/lib/Mt5ExecutionBackend.psm1`（`Get-Mt5VmCommonAuditPath`追加）、`tools/run-strategy-tester.ps1`（`InpAuditRunId`設定、Common Audit同期、検索を完全一致へ変更、事前削除処理の廃止）、`tools/config/mt5-vm.settings.example.json`（`vmCommonDataPath`追加）、`tools/test-mt5-execution-backend.ps1`（`Get-Mt5VmCommonAuditPath`のユニットテスト追加）
+* `run-mql5-tests.ps1`は監査ログを扱わないため変更なし
+* **2026-09-07、Hostモードで実機確認した。** `.\tools\compile-mql5.ps1`（全対象0 errors, 0 warnings）、`.\tools\run-mql5-tests.ps1`（全12テストPASS、`TestProductionSafetyRules`の新規`audit_run_id`検証を含む）、`.\tools\run-strategy-tester.ps1`（1ヶ月分の短期間実行、`exit=0`、`STRATEGY_TESTER_AUDIT_COPIED`で`Terminal\Common\Files\EaTradingSystem\Audit\audit-<ReportName>.jsonl`が`results/backtests/<run>/audit/`へ正しく複製されることを確認）、複製したJSONLを`python.analysis.reports`へ渡して正常に分析できることを確認した
+* **2026-09-07、実VM（`D:\VMware\MT5-Tester\MT5-Tester.vmx`、vmrun経由）でVM/vmrun側も実機確認した。** VM側の`mt5`ソースコピーが本セッションの変更前のままだったため、変更した4ファイルを`copyFileFromHostToGuest`で転送し全13ターゲットを再コンパイル（0 errors, 0 warnings）した上で、`run-mql5-tests.ps1 -ExecutionMode VM`（全12テストPASS）・`run-strategy-tester.ps1 -ExecutionMode VM`（`exit=0`、`STRATEGY_TESTER_AUDIT_COPIED mode=VM`）を実行し、`Get-Mt5VmCommonAuditPath`が導出した同期先から監査JSONLが正しく回収され`results/backtests/<run>/audit/`へ複製されること、`python.analysis.reports`で正常に分析できることを確認した。TASKS.md 8.1節の該当項目は完了とした。`connectionType: "WinRm"`側は今回も未検証のまま
+* **上記VM実機確認の過程で新たな制約を発見した。** VMゲストのPowerShell実行ポリシーが`Restricted`の場合、`runProgramInGuest`経由での`.ps1`スクリプトファイル実行（`-File`・`&`によるスクリプト呼び出し・`.`によるdot-source）はいずれもサイレントに失敗し、vmrunは具体的な原因を示さない汎用的な`exit=1`のみを返す（原因特定に切り分けの手間を要した）。一方、`-Command`のインラインcmdlet呼び出しや`Start-Process`によるプロセス起動（本モジュールの既存実装が使っている方式）は制約を受けない。この制約は今回の一時的な検証用スクリプト実行（VMへのソース転送・再コンパイル）でのみ踏んだものであり、`tools/lib/Mt5ExecutionBackend.psm1`の既存実装（`Invoke-Mt5ExecutionVmrun`等）は元々`-Command`＋`Start-Process`方式のみを使っているため影響を受けない。今後ゲスト側で`.ps1`ファイルを直接実行する処理を追加する場合は`-ExecutionPolicy Bypass`が必要になる点を`docs/mt5-development.md`に記録した
+* 通常運用（Live/Demo）の監査ログ保存先が`MQL5\Files`から`Common\Files`へ変わる。Demo/実口座運用時にAudit JSONLを手動で確認する際は保存先の変更に注意が必要（`docs/configuration.md`参照）

@@ -1581,7 +1581,7 @@ Strategy Tester・MQL5単体テスト実行中にホストの対話デスクト�
 * [x] VM内へリポジトリの`mt5`ソースを転送し、`link-mt5.ps1`相当のジャンクション作成・`compile-mql5.ps1`相当のEA/テストスクリプトコンパイルをvmrun経由で実施する
 * [x] `-ExecutionMode VM`で実際のMT5起動・終了コード取得・report/ログのVM→ホスト同期が成功することを実機確認する（`run-mql5-tests.ps1`: 全12テストPASS、`run-strategy-tester.ps1`: `exit=0`でreport/png回収成功）
 * [ ] `-ExecutionMode VM`でのCaseFileによる複数ケース実行の実機確認（単体実行のみ確認済み）
-* [ ] audit JSONL（`InpAuditFileEnabled`）を有効にした状態でのVM実行時audit回収の実機確認（今回のテンプレートでは無効だったため未確認、Host版では`STRATEGY_TESTER_AUDIT_COPIED`実績あり）
+* [x] audit JSONL（`InpAuditFileEnabled`）を有効にした状態でのVM実行時audit回収の実機確認（2026-09-07、監査JSONLの保存先をFILE_COMMONへ変更しStrategy Tester Agentサンドボックスcleanupの影響を受けないよう修正した＝DECISIONS.md DEC-030。実VM（vmrun）でHost/VM両方の`STRATEGY_TESTER_AUDIT_COPIED`・python分析への受け渡しを実機確認済み。付随してVMゲストのPowerShell実行ポリシーがRestrictedの場合`.ps1`スクリプトファイル実行が`-File`/`&`/dot-source問わずサイレント失敗する制約を発見した＝`docs/mt5-development.md`参照）
 * [ ] `connectionType: "WinRm"`側（汎用WinRM/PSRemoting）も、使う場合は同様に実機確認する
 * [x] 確認結果を`docs/mt5-development.md`へ反映する
 

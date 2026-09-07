@@ -50,6 +50,30 @@ function Get-CompactDate {
     return ($DotDate -replace '\.', '')
 }
 
+# [TesterInputs]セクションのEA input行（Inp<Key>=<Value>）を設定する。既に同名の行があれば値を置き換え、
+# なければ[TesterInputs]セクションへ新規行として追加する（テンプレートが当該inputを持たない場合に対応）。
+function Set-IniTesterInput {
+    param([string[]]$Content, [Parameter(Mandatory)][string]$Key, [Parameter(Mandatory)][string]$Value)
+    $pattern = "^$Key=.*$"
+    if ($Content -match $pattern) {
+        return $Content -replace $pattern, ("$Key=" + $Value)
+    }
+    $result = New-Object System.Collections.Generic.List[string]
+    $inserted = $false
+    foreach ($line in $Content) {
+        $result.Add($line)
+        if (-not $inserted -and $line -eq "[TesterInputs]") {
+            $result.Add("$Key=$Value")
+            $inserted = $true
+        }
+    }
+    if (-not $inserted) {
+        $result.Add("[TesterInputs]")
+        $result.Add("$Key=$Value")
+    }
+    return , $result.ToArray()
+}
+
 # 1ケース分のStrategy Tester実行を共通化した処理。単体実行・複数ケース実行の両方から呼び出す。
 function Invoke-StrategyTesterCase {
     param(
@@ -68,6 +92,16 @@ function Invoke-StrategyTesterCase {
     )
 
     $terminal = Join-Path $InstallPath "terminal64.exe"
+
+    $templatePath = if ([System.IO.Path]::IsPathRooted($Template)) { $Template } else { Join-Path $Root $Template }
+    if (-not (Test-Path -LiteralPath $templatePath)) { throw "Template not found: $templatePath" }
+    $templateSha256 = (Get-FileHash -LiteralPath $templatePath -Algorithm SHA256).Hash
+
+    # 監査JSONLはFILE_COMMON（Terminal\Common\Files配下）で保存されるため、そのディレクトリ名は
+    # テンプレートのInpAuditLogDirectory（未指定時はEA既定値と同じEaTradingSystem\Audit）に従う。
+    $auditLogDirectory = Read-IniValue $templatePath "InpAuditLogDirectory"
+    if ([string]::IsNullOrWhiteSpace($auditLogDirectory)) { $auditLogDirectory = "EaTradingSystem\Audit" }
+
     $vmSettingsFullPath = ""
     $vmSyncSourcePaths = @()
     if ($ExecutionMode -eq "VM") {
@@ -78,14 +112,20 @@ function Invoke-StrategyTesterCase {
         if ($vmSyncSourcePaths.Count -eq 0) {
             throw "VM設定ファイルにvmTerminalDataまたはvmInstallPathが必要です（report/audit取得のため）: $vmSettingsFullPath"
         }
+        # 監査JSONLはFILE_COMMON（Strategy Tester Agentのサンドボックスの外）へ保存されるため、
+        # TerminalData/InstallPathの同期とは別にCommon配下のAuditディレクトリだけを同期対象へ追加する
+        # （Commonフォルダ全体は同期しない）。vmCommonDataPath/vmTerminalDataのいずれからも算出できない
+        # 場合はベストエフォートとして同期をスキップする（既存の成功判定には影響させない）。
+        $vmCommonAuditPath = Get-Mt5VmCommonAuditPath -Settings $vmSettings -AuditLogDirectory $auditLogDirectory
+        if ($vmCommonAuditPath) {
+            $vmSyncSourcePaths += $vmCommonAuditPath
+        } else {
+            Write-Host "STRATEGY_TESTER_VM_COMMON_AUDIT_PATH_UNKNOWN note=vmCommonDataPathまたはvmTerminalDataからAudit同期先を算出できませんでした"
+        }
     } else {
         if (-not (Test-Path -LiteralPath $terminal)) { throw "Terminal not found: $terminal" }
         if (Get-Process terminal64 -ErrorAction SilentlyContinue) { throw "自動実行前に起動中のMetaTrader 5を終了してください。" }
     }
-
-    $templatePath = if ([System.IO.Path]::IsPathRooted($Template)) { $Template } else { Join-Path $Root $Template }
-    if (-not (Test-Path -LiteralPath $templatePath)) { throw "Template not found: $templatePath" }
-    $templateSha256 = (Get-FileHash -LiteralPath $templatePath -Algorithm SHA256).Hash
 
     New-Item -ItemType Directory -Path $ResultDir -Force | Out-Null
     $config = Join-Path $ResultDir "tester.ini"
@@ -99,6 +139,9 @@ function Invoke-StrategyTesterCase {
         $content = $content -replace '^Symbol=.*$', ("Symbol=" + $Symbol)
         $content = $content -replace '^InpSymbol=.*$', ("InpSymbol=" + $Symbol)
     }
+    # 監査JSONLのファイル名をRun ID単位（audit-<ReportName>.jsonl）にする。Reportと同じ識別子を再利用し、
+    # 実行間・ケース間でのログ混入を防ぐ（重複するID生成基盤は追加しない）。
+    $content = Set-IniTesterInput -Content $content -Key "InpAuditRunId" -Value $ReportName
     Set-Content -LiteralPath $config -Value $content -Encoding Unicode
 
     $expert = Read-IniValue $config "Expert"
@@ -110,21 +153,13 @@ function Invoke-StrategyTesterCase {
 
     $searchRoots = @($Root, $TerminalData, $InstallPath, (Join-Path $env:APPDATA "MetaQuotes")) | Select-Object -Unique
 
-    # 監査JSONL（audit-*.jsonl）はEA側がFILE_WRITE|FILE_SHARE_READでSEEK_END追記するため、
-    # Tester Agentフォルダ（単一Agentが実行間で使い回される）に残っていると前回以前の実行分が
-    # 累積したまま残る。今回の実行結果とは無関係な過去データが後段のコピー対象へ混入し、
-    # python.analysis.trade_breakdown等の分析が別実行のデータで汚染される（2026-08-22発見）。
-    # 複数ケース実行でもケース間の混入を防ぐため、各ケース開始前に必ず実行する。
-    $staleAuditFiles = foreach ($searchRoot in $searchRoots) {
-        if (Test-Path -LiteralPath $searchRoot) {
-            Get-ChildItem -LiteralPath $searchRoot -Recurse -File -Filter "audit-*.jsonl" -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -match '\\EaTradingSystem\\Audit\\' }
-        }
-    }
-    if ($staleAuditFiles) {
-        foreach ($stale in $staleAuditFiles) { Remove-Item -LiteralPath $stale.FullName -Force }
-        Write-Host "STRATEGY_TESTER_STALE_AUDIT_CLEARED count=$($staleAuditFiles.Count)"
-    }
+    # 監査JSONLはRun ID単位のファイル名（audit-<ReportName>.jsonl、上記Set-IniTesterInput参照）で
+    # 保存されるため、実行前に前回分のaudit-*.jsonlを削除する処理は不要になった。かつてはEA側が
+    # 日付単位のファイル名（audit-YYYYMMDD.jsonl）へSEEK_END追記する設計だったため、Tester Agent
+    # フォルダに残る前回実行分との混入を避けるための事前削除が必要だったが（2026-08-22発見）、
+    # FILE_COMMON化・Run ID単位のファイル名化により実行ごとに別ファイルへ分離されたため解消した。
+    # なお、FILE_COMMON化後のCommonフォルダは複数ターミナル・複数実行で共有されるため、もし削除処理を
+    # 残すと他の実行のaudit-*.jsonlを誤って削除するリスクがある。
 
     $execResult = Invoke-Mt5Execution -ExecutionMode $ExecutionMode -ExecutablePath $terminal `
         -ConfigFilePath $config -TimeoutSeconds $TimeoutSeconds `
@@ -148,27 +183,31 @@ function Invoke-StrategyTesterCase {
         $reportFiles += $generated.Name
     }
 
-    # InpAuditFileEnabled=trueの場合、EaTradingSystem\Audit配下に監査JSONLが出力される（Tester Agentのサンドボックス配下を含む）。
-    # 分析（python.analysis.trade_breakdown等）用に、生成されていればresult配下へ複製する。ベストエフォートであり、
-    # 見つからなくてもStrategy Tester自体の成功判定には影響させない。
+    # InpAuditFileEnabled=trueの場合、FILE_COMMON配下（Terminal\Common\Files\<AuditLogDirectory>、
+    # Strategy Tester Agentのサンドボックスの外）へ audit-<ReportName>.jsonl が出力される。ファイル名が
+    # 本実行のReportNameで一意なため、検索は拡張子付きの完全一致（ワイルドカードなし）で行い、
+    # 他の実行・他ターミナルのaudit-*.jsonlを誤って回収しない。分析（python.analysis.trade_breakdown等）
+    # 用に、生成されていればresult配下へ複製する。ベストエフォートであり、見つからなくてもStrategy
+    # Tester自体の成功判定には影響させない（VM実行時は回収結果を明示的にログ出力する）。
+    $auditFileName = "audit-$ReportName.jsonl"
     $auditFiles = foreach ($searchRoot in $searchRoots) {
         if (Test-Path -LiteralPath $searchRoot) {
-            Get-ChildItem -LiteralPath $searchRoot -Recurse -File -Filter "audit-*.jsonl" -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -match '\\EaTradingSystem\\Audit\\' }
+            Get-ChildItem -LiteralPath $searchRoot -Recurse -File -Filter $auditFileName -ErrorAction SilentlyContinue
         }
     }
+    $auditFiles = @($auditFiles | Sort-Object -Property FullName -Unique)
     $auditDir = $null
     $auditFileNames = @()
-    if ($auditFiles) {
+    if ($auditFiles.Count -gt 0) {
         $auditDir = Join-Path $ResultDir "audit"
         New-Item -ItemType Directory -Path $auditDir -Force | Out-Null
         foreach ($generated in $auditFiles) {
             Copy-Item -LiteralPath $generated.FullName -Destination (Join-Path $auditDir $generated.Name) -Force
             $auditFileNames += $generated.Name
         }
-        Write-Host "STRATEGY_TESTER_AUDIT_COPIED count=$($auditFiles.Count) dir=$auditDir"
+        Write-Host "STRATEGY_TESTER_AUDIT_COPIED count=$($auditFiles.Count) dir=$auditDir mode=$ExecutionMode"
     } else {
-        Write-Host "STRATEGY_TESTER_AUDIT_NOT_FOUND note=InpAuditFileEnabledの設定を確認してください"
+        Write-Host "STRATEGY_TESTER_AUDIT_NOT_FOUND note=InpAuditFileEnabledの設定を確認してください mode=$ExecutionMode expected=$auditFileName"
     }
 
     Write-Host "STRATEGY_TESTER_COMPLETED exit=$exitCode result=$ResultDir"
