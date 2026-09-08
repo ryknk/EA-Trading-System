@@ -65,7 +65,7 @@ Phase 12時点でAWS実装は存在するが、AWS accountへのdeploy、実モ�
 
 ## Strategy Tester / MQL5単体テストのVM実行（2026-09-06追加）
 
-Strategy Tester・MQL5単体テスト実行中、Host実行では既定でMT5 GUIを非表示デスクトップ上（対話デスクトップとは別のCreateDesktop）で起動するため、画面表示・フォーカス奪取は発生しない（詳細な設計判断は`DECISIONS.md` DEC-031を参照）。これとは別に、MT5そのものを隔離VM内で実行することもできる（詳細な設計判断は`DECISIONS.md` DEC-029を参照）。
+Strategy Tester・MQL5単体テスト実行中、Host実行では既定でMT5 GUIを非表示デスクトップ上（対話デスクトップとは別のCreateDesktop）で起動するため、画面表示・フォーカス奪取は発生しない（詳細な設計判断は`DECISIONS.md` DEC-031を参照）。非表示デスクトップは実行のたびに作り捨てず、PowerShellプロセスの生存期間中1つを使い回す（作り捨てるとデスクトップヒープ枯渇によりterminal64.exeが数回の実行後に起動失敗する現象が実機のバッチ実行で確認されたため。詳細な設計判断は`DECISIONS.md` DEC-033を参照）。これとは別に、MT5そのものを隔離VM内で実行することもできる（詳細な設計判断は`DECISIONS.md` DEC-029を参照）。
 
 `tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`はいずれも`-ExecutionMode Host|VM`を受け付ける（既定`Host`、省略時は従来どおりホスト上で直接実行する）。実際のMT5起動・待機・タイムアウト・終了コード取得・VM実行時の結果ファイル同期は、共通モジュール`tools/lib/Mt5ExecutionBackend.psm1`が担う。
 

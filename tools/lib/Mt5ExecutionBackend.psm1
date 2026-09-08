@@ -23,7 +23,10 @@ Set-StrictMode -Version Latest
 # Hostでは画面に表示されてしまう（実機検証済み）。対話ログオン中のウィンドウステーション内に
 # 現在の既定デスクトップ（Default）とは別の非表示デスクトップをCreateDesktopで作成し、その上で
 # CreateProcessによりterminal64.exeを起動することで、ウィンドウが対話デスクトップへ一切描画されず
-# フォーカス奪取も発生しないようにする。
+# フォーカス奪取も発生しないようにする。非表示デスクトップは実行のたびに作り捨てず、モジュールを
+# インポートしたPowerShellプロセスの生存期間中は1つを使い回す（Get-Mt5HiddenDesktopName参照。
+# 作り捨てるとウィンドウステーションのデスクトップヒープが枯渇し数回の実行後にterminal64.exeの
+# 起動が失敗する現象が実機で確認されたため、DEC-033で使い回し方式へ変更した）。
 $script:Mt5HiddenDesktopSource = @'
 using System;
 using System.ComponentModel;
@@ -112,9 +115,12 @@ namespace Mt5ExecutionBackend
             public int ExitCode;
         }
 
-        // desktopNameの非表示デスクトップを作成し、その上でexecutablePathをcommandLineで起動する。
-        // timeoutMillisecondsを超えた場合はTerminateProcessで強制終了しTimedOut=trueを返す。
-        public static HiddenDesktopResult RunProcess(string executablePath, string commandLine, string desktopName, int timeoutMilliseconds)
+        // desktopNameの非表示デスクトップを作成しハンドルを返す。呼び出し側が生存期間中
+        // 使い回し、不要になったらCloseHiddenDesktopで解放すること（実行のたびにCreateDesktop/
+        // CloseDesktopを繰り返すと、ウィンドウステーションのデスクトップヒープが枯渇し、
+        // terminal64.exeのようなGDIリソースを多用する大規模GUIアプリが数回の実行後に
+        // 起動失敗する現象が実機で確認されたため、使い回し方式にしている。DECISIONS.md DEC-033参照）。
+        public static IntPtr CreateHiddenDesktop(string desktopName)
         {
             IntPtr hDesktop = CreateDesktop(desktopName, IntPtr.Zero, IntPtr.Zero, 0, GENERIC_ALL, IntPtr.Zero);
             if (hDesktop == IntPtr.Zero)
@@ -122,7 +128,19 @@ namespace Mt5ExecutionBackend
                 throw new InvalidOperationException(
                     "CreateDesktopに失敗しました: " + new Win32Exception(Marshal.GetLastWin32Error()).Message);
             }
+            return hDesktop;
+        }
 
+        public static void CloseHiddenDesktop(IntPtr hDesktop)
+        {
+            if (hDesktop != IntPtr.Zero) { CloseDesktop(hDesktop); }
+        }
+
+        // 既存の非表示デスクトップ（desktopNameで指定、CreateHiddenDesktopで作成済み）上で
+        // executablePathをcommandLineで起動する。デスクトップ自体の作成・破棄はここでは行わない。
+        // timeoutMillisecondsを超えた場合はTerminateProcessで強制終了しTimedOut=trueを返す。
+        public static HiddenDesktopResult RunProcess(string executablePath, string commandLine, string desktopName, int timeoutMilliseconds)
+        {
             IntPtr hProcess = IntPtr.Zero;
             IntPtr hThread = IntPtr.Zero;
             try
@@ -166,7 +184,6 @@ namespace Mt5ExecutionBackend
             {
                 if (hThread != IntPtr.Zero) { CloseHandle(hThread); }
                 if (hProcess != IntPtr.Zero) { CloseHandle(hProcess); }
-                CloseDesktop(hDesktop);
             }
         }
     }
@@ -179,6 +196,25 @@ function Add-Mt5HiddenDesktopType {
     if (-not ("Mt5ExecutionBackend.HiddenDesktopLauncher" -as [type])) {
         Add-Type -TypeDefinition $script:Mt5HiddenDesktopSource -Language CSharp
     }
+}
+
+$script:Mt5HiddenDesktopHandle = [IntPtr]::Zero
+$script:Mt5HiddenDesktopName = $null
+
+# 非表示デスクトップは実行のたびに作り捨てず、このモジュールをインポートしたPowerShellプロセスの
+# 生存期間中は1つを使い回す（初回呼び出し時に遅延生成しキャッシュする）。実行のたびにCreateDesktop/
+# CloseDesktopを繰り返すと、ウィンドウステーションのデスクトップヒープが枯渇し、terminal64.exeの
+# ような多数のGDIリソースを扱う大規模GUIアプリが数回の実行後に起動（ウィンドウ初期化）に失敗する
+# 現象が実機のバッチ実行（80ケース中3ケースのみ成功、4ケース目以降Journal記録すら残らないまま
+# ハング・プロセス残留）で確認されたため、使い回し方式にしている（DECISIONS.md DEC-033参照）。
+function Get-Mt5HiddenDesktopName {
+    Add-Mt5HiddenDesktopType
+    if ($script:Mt5HiddenDesktopHandle -eq [IntPtr]::Zero) {
+        $desktopName = "Mt5Hidden_" + [Guid]::NewGuid().ToString("N")
+        $script:Mt5HiddenDesktopHandle = [Mt5ExecutionBackend.HiddenDesktopLauncher]::CreateHiddenDesktop($desktopName)
+        $script:Mt5HiddenDesktopName = $desktopName
+    }
+    return $script:Mt5HiddenDesktopName
 }
 
 function Test-Mt5VmSettings {
@@ -326,7 +362,8 @@ function ConvertFrom-Mt5SecureStringPlain {
 # ホスト上でterminal64.exeを起動し、待機・タイムアウト・終了コード取得を行う。
 # 通常の-WindowStyle HiddenはGUIサブシステムアプリ（terminal64.exe等）には効かず画面に表示されて
 # しまうため、既定（UseHiddenDesktop=true）では対話デスクトップとは別の非表示デスクトップ上で
-# CreateProcessする方式を使う（フォーカス奪取・一瞬の表示も含めて発生しない。DECISIONS.md DEC-031/032参照）。
+# CreateProcessする方式を使う（フォーカス奪取・一瞬の表示も含めて発生しない。DECISIONS.md DEC-031/032/033参照）。
+# 非表示デスクトップは使い回す（Get-Mt5HiddenDesktopName、DEC-033）。
 # UseHiddenDesktop=falseの場合は従来の-WindowStyle Hidden方式にフォールバックする
 # （セキュリティソフトの誤検知や権限制約でCreateDesktopが使えない環境向けの回避手段）。
 function Invoke-Mt5ExecutionHost {
@@ -353,9 +390,8 @@ function Invoke-Mt5ExecutionHost {
         }
     }
 
-    Add-Mt5HiddenDesktopType
     $commandLine = ConvertTo-Mt5Win32CommandLine -Arguments (@($ExecutablePath) + $ExecutableArguments)
-    $desktopName = "Mt5Hidden_" + [Guid]::NewGuid().ToString("N")
+    $desktopName = Get-Mt5HiddenDesktopName
     $result = [Mt5ExecutionBackend.HiddenDesktopLauncher]::RunProcess($ExecutablePath, $commandLine, $desktopName, ($TimeoutSeconds * 1000))
     if ($result.TimedOut) {
         throw "MT5実行がタイムアウトしました（Host, $TimeoutSeconds 秒）: $ExecutablePath"
@@ -987,5 +1023,6 @@ Export-ModuleMember -Function @(
     "Get-Mt5VmEncryptionPassword",
     "Sync-Mt5VmPaths",
     "Get-Mt5VmRemoteLineCount",
-    "Get-Mt5VmCommonAuditPath"
+    "Get-Mt5VmCommonAuditPath",
+    "Get-Mt5HiddenDesktopName"
 )

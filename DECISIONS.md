@@ -795,3 +795,42 @@ DEC-031の変更は関数シグネチャ・戻り値・例外メッセージを�
 * 変更: `tools/lib/Mt5ExecutionBackend.psm1`（`Invoke-Mt5ExecutionHost`・`Invoke-Mt5Execution`）、`tools/run-strategy-tester.ps1`（トップレベルパラメータ・`Invoke-StrategyTesterCase`関数・2箇所の呼び出し）、`tools/run-mql5-tests.ps1`（トップレベルパラメータ・呼び出し）、`tools/test-mt5-execution-backend.ps1`（`HostUseHiddenDesktop=$false`の正常系・タイムアウトテスト追加）、`docs/mt5-development.md`（切替方法の説明・実行コマンド例追加）
 * `tools/test-mt5-execution-backend.ps1`の全テスト（既存分＋今回追加した`HostUseHiddenDesktop=$false`の正常系・タイムアウト2件）がPASSすることを確認した（2026-09-08、Host環境で実行）。PowerShellパーサーによる構文チェックも実施し、3ファイルとも構文エラー無し
 * `-HostUseHiddenDesktop $false`経路での実機Strategy Tester実行（terminal64.exeが画面表示されること・DEC-031の既定経路との差異）は未確認
+
+---
+
+# DEC-033: 非表示デスクトップは実行のたびに作り捨てず、PowerShellプロセスの生存期間中1つを使い回す
+
+**状態:** 採用
+
+## 背景
+
+DEC-031導入後、80ケース（`USDJPY`/`EURJPY`/`EURUSD`/`GBPJPY` × 複数パラメータ × 複数年）のバッチスイープを実機実行したところ、**3ケース成功後、4ケース目でterminal64.exeが正常終了せず残留し、以降76ケース全てが「起動中のMetaTrader 5を終了してください」の事前チェック（[run-strategy-tester.ps1:131](../tools/run-strategy-tester.ps1)）で連鎖的に失敗した。**
+
+ユーザーが提供したログ2種を確認した。
+
+* `run-strategy-tester.ps1`の実行ログ：ケース1〜3は`STRATEGY_TESTER_COMPLETED exit=0`で正常完了。ケース4は`Strategy Testerは終了しましたがreportが生成されませんでした`で失敗（＝`Invoke-Mt5ExecutionHost`はタイムアウト例外を投げずに正常リターンしていた）。
+* MT5 Tester Journal：ケース3終了（`21:57:11.891 connection closed`）を最後に、ケース4のJournal記録が一切存在しない（＝terminal64.exeはJournal書き込みが始まるごく初期段階、GUI初期化の途中でハングしたと推定される）。ケース3終了時点のログには`2920 Mb memory used ... 2560 Mb of cached tick data`という記述があり、Strategy Testerが大量のティックデータをメモリキャッシュすることも確認された。
+
+この組み合わせ（3回までは正常、4回目で初期化段階から失敗、蓄積型のパターン）から、**Windowsの「デスクトップヒープ」枯渇**が原因と推定した。`CreateDesktop`は呼び出しのたびにウィンドウステーション内へ新しいデスクトップオブジェクト（ウィンドウ・GDIオブジェクト管理用の専用カーネルメモリを持つ）を作成する。DEC-031の実装は実行ごとに一意な名前で使い捨てのデスクトップを作成・破棄していたため、`CloseDesktop`を呼んでいても、terminal64.exeのような大量のGDIリソース（多数のウィンドウ・チャート描画・大量のティックデータキャッシュ）を扱う大規模GUIアプリが確保したリソースの解放が完全には追いつかず、数回の実行でウィンドウステーション全体のデスクトップヒープが枯渇し、新しいデスクトップ上でのGUI初期化自体が失敗するようになった、という仮説である。Windows Event Viewerでのクラッシュ記録確認までは行っておらず断定はできないが、状況証拠と整合する。
+
+## 判断
+
+非表示デスクトップを実行のたびに作り捨てず、モジュールをインポートしたPowerShellプロセスの生存期間中は1つだけを使い回す方式へ変更する。
+
+1. `tools/lib/Mt5ExecutionBackend.psm1`の`HiddenDesktopLauncher`（C#）を、デスクトップの作成・破棄（`CreateHiddenDesktop`/`CloseHiddenDesktop`）とプロセス起動（`RunProcess`）に分離する。`RunProcess`は既存デスクトップ名を受け取って`CreateProcess`するだけになり、`CreateDesktop`/`CloseDesktop`は呼ばなくなった。
+2. PowerShell側にモジュールスコープ変数（`$script:Mt5HiddenDesktopHandle`・`$script:Mt5HiddenDesktopName`）と、それを遅延生成・キャッシュする`Get-Mt5HiddenDesktopName`関数を追加する。`Invoke-Mt5ExecutionHost`は毎回このキャッシュされたデスクトップ名を使う。
+3. デスクトップの明示的なクリーンアップ（`CloseHiddenDesktop`の呼び出し）は行わない。PowerShellプロセス終了時にOSが自動的にウィンドウステーション・デスクトップ関連のハンドル・カーネルオブジェクトを回収するため、実害はないと判断した。
+4. `Get-Mt5HiddenDesktopName`を`Export-ModuleMember`へ追加し、テストから直接呼べるようにする。
+
+## 理由
+
+* デスクトップオブジェクトの生成・破棄の繰り返しがデスクトップヒープ枯渇の原因であるという仮説が正しければ、使い回しにより数回で1回しかデスクトップを生成しなくなるため、根本的に解消できる
+* 複数ケースを順次実行する現在の呼び出しパターン（同時に2つのterminal64.exeが動くことはない）では、デスクトップを共有しても安全性上の問題は無い。各プロセスが確保したウィンドウ・GDIオブジェクトはそのプロセスの終了時にOSが自動的に解放するため、次のプロセスに残留リソースが影響することは無い
+* 明示的なクリーンアップ関数を追加しない設計にすることで、実装をシンプルに保った（プロセス終了時の自動回収に委ねる）
+
+## 影響
+
+* 変更: `tools/lib/Mt5ExecutionBackend.psm1`（`HiddenDesktopLauncher.CreateHiddenDesktop`/`CloseHiddenDesktop`追加、`RunProcess`からデスクトップ管理を分離、`Get-Mt5HiddenDesktopName`追加、`Invoke-Mt5ExecutionHost`更新、`Export-ModuleMember`更新）、`tools/test-mt5-execution-backend.ps1`（20回連続実行して同一デスクトップ名が使われ続けることを検証するテスト追加）
+* `tools/test-mt5-execution-backend.ps1`の全テスト（既存分＋新規追加分）がPASSすることを確認した（2026-09-08、Host環境で実行）。PowerShellパーサーによる構文チェックも実施し構文エラー無し
+* **80ケースの実機バッチスイープでの再検証は未実施。** 今回のテストは「デスクトップが使い回されること」「`cmd.exe`のような軽量プロセスを20回連続実行しても正常終了すること」の確認に留まり、terminal64.exe自体を使った連続実行での改善効果（デスクトップヒープ枯渇仮説が正しいかどうか）は実証できていない。ユーザーに実機で同一のCaseFileを再実行してもらい、80ケース全てが成功することの確認が必要
+* 仮に本対応でも4回目以降の失敗が再現する場合、デスクトップヒープ枯渇以外の原因（Strategy Tester自体のメモリ管理、非表示デスクトップとGDI/Direct2D初期化の相性等）を疑う必要がある。その場合はDEC-032の`-HostUseHiddenDesktop $false`で従来方式へ切り替えるか、DEC-031時点で検討した方法B（タスクスケジューラでの非対話セッション実行）への切替を再検討する

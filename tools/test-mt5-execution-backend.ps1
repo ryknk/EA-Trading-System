@@ -61,6 +61,16 @@ Start-Sleep -Milliseconds 500
 Assert-True (-not (Get-Process -Name "PING" -ErrorAction SilentlyContinue)) "Hostタイムアウト: タイムアウト後にpingプロセスが残っていないこと"
 Write-Host "PASS Hostタイムアウト"
 
+# --- 非表示デスクトップは実行のたびに作り捨てず使い回すこと（DEC-033）。
+# 繰り返し実行で毎回同じデスクトップ名になり、かつ全て正常終了することを確認する
+# （作り捨て方式に戻ってしまうリグレッションの検知が目的。実際のterminal64.exe起動失敗の再現ではない）。
+$desktopNames = 1..20 | ForEach-Object {
+    Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $cmdExe -ExecutableArguments @("/c", "exit", "0") -TimeoutSeconds 10 | Out-Null
+    Get-Mt5HiddenDesktopName
+}
+Assert-True (($desktopNames | Select-Object -Unique).Count -eq 1) "非表示デスクトップ使い回し: 20回の実行で同一のデスクトップ名が使われ続けること"
+Write-Host "PASS 非表示デスクトップ使い回し"
+
 # --- HostUseHiddenDesktop=$false: 従来の-WindowStyle Hidden方式（フォールバック）でも正常系が動くこと ---
 $resultFallback = Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $cmdExe -ExecutableArguments @("/c", "exit", "0") -TimeoutSeconds 10 -HostUseHiddenDesktop $false
 Assert-True ($resultFallback.Success -eq $true) "HostUseHiddenDesktop=false正常系: Successがtrueであること"
