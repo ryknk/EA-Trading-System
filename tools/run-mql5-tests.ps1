@@ -7,7 +7,10 @@ param(
     # MT5実行バックエンド（既定Host、従来どおりホスト上で直接terminal64.exeを起動する）。
     # VM指定時はホストのGUIフォーカスを奪わず、WinRM/PSRemoting経由でVM上のMT5を実行する。
     [ValidateSet("Host", "VM")][string]$ExecutionMode = "Host",
-    [string]$VmSettingsPath = "tools\config\mt5-vm.settings.json"
+    [string]$VmSettingsPath = "tools\config\mt5-vm.settings.json",
+    # ExecutionMode=Host専用。既定trueで非表示デスクトップ経由（フォーカス奪取・画面表示無し、DEC-031）を
+    # 使う。falseにすると従来の-WindowStyle Hidden方式へフォールバックする（DEC-032）。
+    [bool]$HostUseHiddenDesktop = $true
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,7 +50,7 @@ $exitCodes = @{}
 foreach ($test in $tests) {
     $config = Join-Path $configDir ($test + ".ini")
     if ($ExecutionMode -eq "Host") {
-        $execResult = Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $terminal -ConfigFilePath $config -TimeoutSeconds 30
+        $execResult = Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $terminal -ConfigFilePath $config -TimeoutSeconds 30 -HostUseHiddenDesktop $HostUseHiddenDesktop
     } else {
         $execResult = Invoke-Mt5Execution -ExecutionMode VM -VmSettingsPath $vmSettingsFullPath -ConfigFilePath $config -TimeoutSeconds 30
     }

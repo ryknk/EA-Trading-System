@@ -5,6 +5,13 @@
 # 成功系は本スクリプトの対象外（実機でのVMware Workstation VM検証は別途
 # run-mql5-tests.ps1 -ExecutionMode VM / run-strategy-tester.ps1 -ExecutionMode VM を
 # 実際のVM設定で実行して確認する。2026-09-06に実機確認済み、DECISIONS.md DEC-029参照）。
+#
+# Host実行はDEC-031により非表示デスクトップ経由（CreateDesktop+CreateProcess）を既定とした。
+# 本スクリプトではプロセス起動・待機・タイムアウト・終了コード取得の正常系のみを検証しており、
+# terminal64.exe起動時に対話デスクトップへ一切描画されずフォーカス奪取も発生しないことは、
+# 実機でrun-strategy-tester.ps1 -ExecutionMode Hostを実行して目視確認する必要がある（未確認）。
+# DEC-032により-HostUseHiddenDesktop $falseで従来の-WindowStyle Hidden方式へ切替可能にしており、
+# 本スクリプトではその経路（正常系・タイムアウト）も検証している。
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -53,6 +60,20 @@ Assert-ThrowsMatching -Action {
 Start-Sleep -Milliseconds 500
 Assert-True (-not (Get-Process -Name "PING" -ErrorAction SilentlyContinue)) "Hostタイムアウト: タイムアウト後にpingプロセスが残っていないこと"
 Write-Host "PASS Hostタイムアウト"
+
+# --- HostUseHiddenDesktop=$false: 従来の-WindowStyle Hidden方式（フォールバック）でも正常系が動くこと ---
+$resultFallback = Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $cmdExe -ExecutableArguments @("/c", "exit", "0") -TimeoutSeconds 10 -HostUseHiddenDesktop $false
+Assert-True ($resultFallback.Success -eq $true) "HostUseHiddenDesktop=false正常系: Successがtrueであること"
+Assert-True ($resultFallback.ExitCode -eq 0) "HostUseHiddenDesktop=false正常系: ExitCodeが0であること"
+Write-Host "PASS HostUseHiddenDesktop=false正常系"
+
+# --- HostUseHiddenDesktop=$false: タイムアウトでも例外になり、プロセスが残らないこと ---
+Assert-ThrowsMatching -Action {
+    Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $pingExe -ExecutableArguments @("-n", "30", "127.0.0.1") -TimeoutSeconds 2 -HostUseHiddenDesktop $false
+} -Pattern "タイムアウト" -Message "HostUseHiddenDesktop=falseタイムアウト: タイムアウト例外が発生すること"
+Start-Sleep -Milliseconds 500
+Assert-True (-not (Get-Process -Name "PING" -ErrorAction SilentlyContinue)) "HostUseHiddenDesktop=falseタイムアウト: タイムアウト後にpingプロセスが残っていないこと"
+Write-Host "PASS HostUseHiddenDesktop=falseタイムアウト"
 
 # --- ConfigFilePath指定時は /config:<パス> 引数が自動生成されること（バッチファイルで引数を捕捉して検証） ---
 $echoArgsBat = Join-Path $env:TEMP "mt5-exec-backend-test-echo-args.cmd"

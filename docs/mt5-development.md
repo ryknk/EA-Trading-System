@@ -65,9 +65,11 @@ Phase 12時点でAWS実装は存在するが、AWS accountへのdeploy、実モ�
 
 ## Strategy Tester / MQL5単体テストのVM実行（2026-09-06追加）
 
-Strategy Tester・MQL5単体テスト実行中はMT5 GUIがホストの対話デスクトップへ一瞬表示されるため、ホスト側の作業・ゲームのフォーカスが奪われることがある。これを避けたい場合、MT5を隔離VM内で実行できる（詳細な設計判断は`DECISIONS.md` DEC-029を参照）。
+Strategy Tester・MQL5単体テスト実行中、Host実行では既定でMT5 GUIを非表示デスクトップ上（対話デスクトップとは別のCreateDesktop）で起動するため、画面表示・フォーカス奪取は発生しない（詳細な設計判断は`DECISIONS.md` DEC-031を参照）。これとは別に、MT5そのものを隔離VM内で実行することもできる（詳細な設計判断は`DECISIONS.md` DEC-029を参照）。
 
 `tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`はいずれも`-ExecutionMode Host|VM`を受け付ける（既定`Host`、省略時は従来どおりホスト上で直接実行する）。実際のMT5起動・待機・タイムアウト・終了コード取得・VM実行時の結果ファイル同期は、共通モジュール`tools/lib/Mt5ExecutionBackend.psm1`が担う。
+
+`-ExecutionMode Host`時のみ有効な`-HostUseHiddenDesktop $true|$false`（既定`$true`）で、非表示デスクトップ経由の起動と従来の`-WindowStyle Hidden`方式を切り替えられる。セキュリティソフトの誤検知やウィンドウステーション操作権限の制約でCreateDesktopが使えない環境向けの回避手段であり、通常は既定のままでよい（詳細な設計判断は`DECISIONS.md` DEC-032を参照）。
 
 VM実行時の接続方式はVM設定ファイルの`connectionType`で選択する（詳細な設計判断は`DECISIONS.md` DEC-029を参照）。
 
@@ -100,8 +102,11 @@ VM実行時の接続方式はVM設定ファイルの`connectionType`で選択す
 ### 実行コマンド例
 
 ```powershell
-# Host実行（既定、従来どおり）
+# Host実行（既定、非表示デスクトップ経由でterminal64.exeを起動しフォーカス奪取・画面表示無し）
 .\tools\run-strategy-tester.ps1 -Symbol USDJPY -FromDate 2017.09.01 -ToDate 2020.12.31 -Template mt5\test-config\StrategyTester-USDJPY-H1.ini
+
+# Host実行・従来の-WindowStyle Hidden方式へフォールバック（非表示デスクトップが使えない環境向け）
+.\tools\run-strategy-tester.ps1 -HostUseHiddenDesktop $false -Symbol USDJPY -FromDate 2017.09.01 -ToDate 2020.12.31 -Template mt5\test-config\StrategyTester-USDJPY-H1.ini
 
 # VM実行（VM設定ファイルのconnectionTypeで接続方式を選択）
 .\tools\run-strategy-tester.ps1 -ExecutionMode VM -Symbol USDJPY -FromDate 2017.09.01 -ToDate 2020.12.31 -Template mt5\test-config\StrategyTester-USDJPY-H1.ini

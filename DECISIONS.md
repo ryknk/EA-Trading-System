@@ -721,3 +721,77 @@ DEC-029でVM/vmrun実行のフル動作確認を行った際、`InpAuditFileEnab
 * **2026-09-07、実VM（`D:\VMware\MT5-Tester\MT5-Tester.vmx`、vmrun経由）でVM/vmrun側も実機確認した。** VM側の`mt5`ソースコピーが本セッションの変更前のままだったため、変更した4ファイルを`copyFileFromHostToGuest`で転送し全13ターゲットを再コンパイル（0 errors, 0 warnings）した上で、`run-mql5-tests.ps1 -ExecutionMode VM`（全12テストPASS）・`run-strategy-tester.ps1 -ExecutionMode VM`（`exit=0`、`STRATEGY_TESTER_AUDIT_COPIED mode=VM`）を実行し、`Get-Mt5VmCommonAuditPath`が導出した同期先から監査JSONLが正しく回収され`results/backtests/<run>/audit/`へ複製されること、`python.analysis.reports`で正常に分析できることを確認した。TASKS.md 8.1節の該当項目は完了とした。`connectionType: "WinRm"`側は今回も未検証のまま
 * **上記VM実機確認の過程で新たな制約を発見した。** VMゲストのPowerShell実行ポリシーが`Restricted`の場合、`runProgramInGuest`経由での`.ps1`スクリプトファイル実行（`-File`・`&`によるスクリプト呼び出し・`.`によるdot-source）はいずれもサイレントに失敗し、vmrunは具体的な原因を示さない汎用的な`exit=1`のみを返す（原因特定に切り分けの手間を要した）。一方、`-Command`のインラインcmdlet呼び出しや`Start-Process`によるプロセス起動（本モジュールの既存実装が使っている方式）は制約を受けない。この制約は今回の一時的な検証用スクリプト実行（VMへのソース転送・再コンパイル）でのみ踏んだものであり、`tools/lib/Mt5ExecutionBackend.psm1`の既存実装（`Invoke-Mt5ExecutionVmrun`等）は元々`-Command`＋`Start-Process`方式のみを使っているため影響を受けない。今後ゲスト側で`.ps1`ファイルを直接実行する処理を追加する場合は`-ExecutionPolicy Bypass`が必要になる点を`docs/mt5-development.md`に記録した
 * 通常運用（Live/Demo）の監査ログ保存先が`MQL5\Files`から`Common\Files`へ変わる。Demo/実口座運用時にAudit JSONLを手動で確認する際は保存先の変更に注意が必要（`docs/configuration.md`参照）
+
+---
+
+# DEC-031: Host実行のterminal64.exe起動は非表示デスクトップ経由（CreateDesktop+CreateProcess）とし、`-WindowStyle Hidden`には依存しない
+
+**状態:** 採用
+
+## 背景
+
+`Invoke-Mt5ExecutionHost`（`tools/lib/Mt5ExecutionBackend.psm1`）は従来`Start-Process -WindowStyle Hidden`でterminal64.exeを起動していたが、Hostで実行すると画面にウィンドウが表示されることが判明した。同一の`-WindowStyle Hidden`指定を使うVM側（vmrun経由のゲスト内`Start-Process`）では画面に何も表示されないことも実機確認済みだった。
+
+原因を調査したところ、`-WindowStyle Hidden`は`CreateProcess`の`STARTUPINFO.wShowWindow`（`SW_HIDE`）という表示状態の「ヒント」に過ぎず、実際に尊重するかはプロセス側の実装次第であることが分かった。terminal64.exeはGUIサブシステムのアプリで、自身のメインウィンドウ表示を独自ロジックで制御するため、このヒントを無視して通常表示してしまう。Host実行は対話ログオン中のデスクトップ上で直接起動するため、この「無視された結果」がそのままユーザーに見える。一方VM側は`vmrun runProgramInGuest`を`-interactive`なしで呼んでいるため、そもそも対話デスクトップにアタッチされない非対話セッションでプロセスが生成されており、`-WindowStyle Hidden`の効果とは無関係にウィンドウが不可視になっていた（`-activeWindow`は`-interactive`を伴わない限りゲスト側の対話デスクトップへのアタッチを保証しない）。
+
+対策として「起動後にウィンドウハンドルを取得しShowWindow(SW_HIDE)で隠す」方式も検討したが、ウィンドウ生成からHide呼び出しまでの間は必ず一瞬表示され、Windowsの既定挙動で新規ウィンドウがフォアグラウンド化されるためフォーカスも奪われる。これは目視でのちらつき・作業中の他ウィンドウからのフォーカス移動として実害があるため採用しなかった。
+
+## 判断
+
+Host実行を、現在の対話デスクトップとは別の非表示デスクトップ上でterminal64.exeを起動する方式へ変更する。
+
+1. `tools/lib/Mt5ExecutionBackend.psm1`へ`Add-Type`でP/Invokeラッパー（`Mt5ExecutionBackend.HiddenDesktopLauncher`、`user32.dll`の`CreateDesktop`/`CloseDesktop`、`kernel32.dll`の`CreateProcess`/`WaitForSingleObject`/`GetExitCodeProcess`/`TerminateProcess`）を追加する。
+2. `Invoke-Mt5ExecutionHost`は、実行のたびに一意な名前（GUIDベース）の非表示デスクトップを`CreateDesktop`で作成し、その`lpDesktop`を指定した`STARTUPINFO`で`CreateProcess`により起動する。コマンドライン文字列は既存の`ConvertTo-Mt5Win32CommandLine`（Vmrun経路で既に使っているWin32互換エスケープ関数）をそのまま再利用して構築する。
+3. 待機・タイムアウト・終了コード取得は、.NETの`Process.GetProcessById`（PID再利用によるレースコンディションの余地がある）を経由せず、`CreateProcess`が返すネイティブの`hProcess`ハンドルに対して直接`WaitForSingleObject`・`GetExitCodeProcess`・`TerminateProcess`を呼ぶ形でC#側に閉じ込める。
+4. `dwCreationFlags`に`CREATE_NO_WINDOW`を指定する（コンソールサブシステムの子プロセスが親のコンソールを共有し標準出力が漏れる問題への対処。GUIサブシステムのterminal64.exeには無関係）。
+5. `Invoke-Mt5ExecutionHost`の関数シグネチャ・戻り値（`ExecutionMode`/`ExitCode`/`Success`/`StagingRoots`）・タイムアウト時の例外メッセージは変更しない。呼び出し側（`run-strategy-tester.ps1`・`run-mql5-tests.ps1`）は無変更で動作する。
+6. VM側（`Invoke-Mt5ExecutionVmrun`・`Invoke-Mt5ExecutionVmWinRm`）の`Start-Process -WindowStyle Hidden`はそのまま維持する（非対話セッションで実行されるため実害がなく、変更の必要がない）。
+
+## 理由
+
+* 非表示デスクトップは対話デスクトップとは独立したウィンドウステーション内オブジェクトであり、その上で生成されたウィンドウは対話デスクトップへ一切描画されない。そのためウィンドウ生成の瞬間も含めて表示されず、フォーカスも奪わない（後からHideする方式の「一瞬表示される」問題を構造的に回避できる）
+* VM側の`vmrun runProgramInGuest`（`-interactive`なし）が非対話セッションでプロセスを生成する仕組みと同じ原理であり、既存VM実装の観察結果と整合する
+* ネイティブハンドルに対して直接`WaitForSingleObject`/`GetExitCodeProcess`を使うことで、.NET`Process.GetProcessById`のPID再利用によるレースコンディション（起動直後にプロセスが即終了しPIDが別プロセスへ再利用される可能性）を避けられる
+* 既存の`ConvertTo-Mt5Win32CommandLine`を再利用することで、コマンドラインエスケープロジックの重複実装を避けた
+* 関数シグネチャ・戻り値・例外メッセージを変更しないことで、呼び出し側・既存テストへの影響を最小化した
+
+## 影響
+
+* 変更: `tools/lib/Mt5ExecutionBackend.psm1`（`Add-Mt5HiddenDesktopType`・`Invoke-Mt5ExecutionHost`）、`tools/test-mt5-execution-backend.ps1`（冒頭コメント更新）
+* `tools/test-mt5-execution-backend.ps1`の既存テスト（Host正常系・ExitCode伝播・タイムアウト・ConfigFilePath自動引数生成、他VM設定検証系）は全てPASSすることを確認した（2026-09-08、Host環境で実行）
+* **terminal64.exeが実際に対話デスクトップへ描画されずフォーカス奪取も発生しないことは未確認。** 本テストはコンソールアプリ（`cmd.exe`・`PING.EXE`）でのプロセス起動・待機・終了コード取得の正常系のみを検証しており、GUIアプリでの画面非表示・フォーカス非奪取の実証は含まない。`.\tools\run-strategy-tester.ps1`（Hostモード）を実際に実行し、目視でterminal64.exeのウィンドウが表示されないこと・作業中の他ウィンドウのフォーカスが奪われないことを確認する必要がある
+* `.\tools\compile-mql5.ps1`・`.\tools\run-mql5-tests.ps1`・Development Release Gateは未実行（PowerShellモジュールのみの変更でMQL5ソースに変更はないが、Host実行経路を通るため`run-mql5-tests.ps1`の実機確認は別途必要）
+
+---
+
+# DEC-032: DEC-031の非表示デスクトップ経由起動を`-HostUseHiddenDesktop`で無効化できるようにする（既定は有効のまま）
+
+**状態:** 採用
+
+## 背景
+
+DEC-031でHost実行を非表示デスクトップ経由（`CreateDesktop`+`CreateProcess`）へ変更したが、`CreateDesktop`はウィンドウステーション内にオブジェクトを作成するAPIであり、環境によっては次のような理由で使えない可能性がある。
+
+* グループポリシー等でウィンドウステーション操作が制限された特殊なユーザーアカウント
+* 「別デスクトップでプロセスを起動する」挙動をマルウェアの隠蔽実行手法と誤認するEDR/アンチウイルス製品による検知・ブロック
+
+DEC-031の変更は関数シグネチャ・戻り値・例外メッセージを変えていないため呼び出し側への影響は無いが、上記のような環境では新方式が失敗しHost実行そのものが止まってしまう。従来の`-WindowStyle Hidden`方式（GUIアプリには効かず画面表示されるが、動作自体は問題ない）へ切り替えられる退避手段が必要と判断した。
+
+## 判断
+
+1. `Invoke-Mt5ExecutionHost`（`tools/lib/Mt5ExecutionBackend.psm1`）に`[bool]$UseHiddenDesktop = $true`パラメータを追加する。`$true`（既定）ならDEC-031の非表示デスクトップ経由、`$false`なら従来の`Start-Process -WindowStyle Hidden`（`Process.WaitForExit`/`Stop-Process`によるタイムアウト処理を含む）にフォールバックする。
+2. 共通エントリポイント`Invoke-Mt5Execution`に`[bool]$HostUseHiddenDesktop = $true`パラメータを追加する。`ExecutionMode=Host`の場合のみ`Invoke-Mt5ExecutionHost`へ引き渡し、`ExecutionMode=VM`の場合は無視する（VM側は元々非対話セッションで実行され実害がないため、DEC-031同様に対象外のまま）。
+3. `tools/run-strategy-tester.ps1`（`Invoke-StrategyTesterCase`関数と単体実行・CaseFile実行の両呼び出し経路）・`tools/run-mql5-tests.ps1`に、同名の`-HostUseHiddenDesktop`（既定`$true`）パラメータを追加し、CLIから切替可能にする。
+4. 既定値は`$true`（DEC-031の非表示デスクトップ経由）のまま変更しない。
+
+## 理由
+
+* 既定を変えずオプトアウト方式にすることで、DEC-031で解決したフォーカス奪取・画面表示問題を通常運用では引き続き回避しつつ、新方式が使えない環境でのみ明示的に無効化できる
+* パラメータ名を`HostUseHiddenDesktop`とし、Host実行専用であることをVM設定（`VmSettingsPath`等）と紛れないよう明示した
+* `Invoke-Mt5ExecutionHost`単体でも`UseHiddenDesktop`パラメータを持たせることで、`Invoke-Mt5Execution`を経由しない直接呼び出し（将来的なテスト・ツール追加時）でも切替できるようにした
+
+## 影響
+
+* 変更: `tools/lib/Mt5ExecutionBackend.psm1`（`Invoke-Mt5ExecutionHost`・`Invoke-Mt5Execution`）、`tools/run-strategy-tester.ps1`（トップレベルパラメータ・`Invoke-StrategyTesterCase`関数・2箇所の呼び出し）、`tools/run-mql5-tests.ps1`（トップレベルパラメータ・呼び出し）、`tools/test-mt5-execution-backend.ps1`（`HostUseHiddenDesktop=$false`の正常系・タイムアウトテスト追加）、`docs/mt5-development.md`（切替方法の説明・実行コマンド例追加）
+* `tools/test-mt5-execution-backend.ps1`の全テスト（既存分＋今回追加した`HostUseHiddenDesktop=$false`の正常系・タイムアウト2件）がPASSすることを確認した（2026-09-08、Host環境で実行）。PowerShellパーサーによる構文チェックも実施し、3ファイルとも構文エラー無し
+* `-HostUseHiddenDesktop $false`経路での実機Strategy Tester実行（terminal64.exeが画面表示されること・DEC-031の既定経路との差異）は未確認
