@@ -25,9 +25,11 @@ param(
     # VM指定時はホストのGUIフォーカスを奪わず、WinRM/PSRemoting経由でVM上のMT5を実行する。
     [ValidateSet("Host", "VM")][string]$ExecutionMode = "Host",
     [string]$VmSettingsPath = "tools\config\mt5-vm.settings.json",
-    # ExecutionMode=Host専用。既定trueで非表示デスクトップ経由（フォーカス奪取・画面表示無し、DEC-031）を
-    # 使う。falseにすると従来の-WindowStyle Hidden方式へフォールバックする（DEC-032）。
-    [bool]$HostUseHiddenDesktop = $true
+    # ExecutionMode=Host専用。既定trueでタスクスケジューラ経由の非対話セッション実行
+    # （フォーカス奪取・画面表示無し、DEC-034/035）を使う。事前に管理者権限で
+    # tools\setup-mt5-scheduled-task.ps1 を実行しタスクを登録しておく必要がある。
+    # falseにすると従来の-WindowStyle Hidden方式へフォールバックする（タスク未登録の環境向け）。
+    [bool]$HostUseIsolatedSession = $true
 )
 
 $ErrorActionPreference = "Stop"
@@ -92,7 +94,7 @@ function Invoke-StrategyTesterCase {
         [Parameter(Mandatory)][string]$ReportName,
         [ValidateSet("Host", "VM")][string]$ExecutionMode = "Host",
         [string]$VmSettingsPath = "",
-        [bool]$HostUseHiddenDesktop = $true
+        [bool]$HostUseIsolatedSession = $true
     )
 
     $terminal = Join-Path $InstallPath "terminal64.exe"
@@ -168,7 +170,7 @@ function Invoke-StrategyTesterCase {
     $execResult = Invoke-Mt5Execution -ExecutionMode $ExecutionMode -ExecutablePath $terminal `
         -ConfigFilePath $config -TimeoutSeconds $TimeoutSeconds `
         -VmSettingsPath $vmSettingsFullPath -SyncSourcePaths $vmSyncSourcePaths `
-        -StagingRoot (Join-Path $ResultDir "_vm-staging") -HostUseHiddenDesktop $HostUseHiddenDesktop
+        -StagingRoot (Join-Path $ResultDir "_vm-staging") -HostUseIsolatedSession $HostUseIsolatedSession
     $exitCode = $execResult.ExitCode
     # VM実行時は、共通実行バックエンドがVM側TerminalData/InstallPathをホスト側へ同期した結果を
     # 検索対象へ追加する。以降のreport/audit検索ロジックはHost/VMで変更しない。
@@ -251,7 +253,7 @@ if ([string]::IsNullOrEmpty($CaseFile)) {
     Invoke-StrategyTesterCase -Root $root -InstallPath $InstallPath -TerminalData $TerminalData `
         -TimeoutSeconds $TimeoutSeconds -Template $Template -FromDate $FromDate -ToDate $ToDate `
         -Symbol $symbolOverride -ResultDir $resultDir -ReportName $reportName `
-        -ExecutionMode $ExecutionMode -VmSettingsPath $VmSettingsPath -HostUseHiddenDesktop $HostUseHiddenDesktop | Out-Null
+        -ExecutionMode $ExecutionMode -VmSettingsPath $VmSettingsPath -HostUseIsolatedSession $HostUseIsolatedSession | Out-Null
     return
 }
 
@@ -334,7 +336,7 @@ foreach ($case in $cases) {
         $execResult = Invoke-StrategyTesterCase -Root $root -InstallPath $InstallPath -TerminalData $TerminalData `
             -TimeoutSeconds $TimeoutSeconds -Template $template -FromDate $fromDate -ToDate $toDate `
             -Symbol $symbol -ResultDir $caseResultDir -ReportName $reportName `
-            -ExecutionMode $ExecutionMode -VmSettingsPath $VmSettingsPath -HostUseHiddenDesktop $HostUseHiddenDesktop
+            -ExecutionMode $ExecutionMode -VmSettingsPath $VmSettingsPath -HostUseIsolatedSession $HostUseIsolatedSession
 
         $caseRecord.status = "Succeeded"
         $caseRecord.exit_code = $execResult.ExitCode

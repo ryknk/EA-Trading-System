@@ -15,206 +15,112 @@
 Set-StrictMode -Version Latest
 
 # ============================================================
-# 非表示デスクトップ経由のHost実行（フォーカス奪取・画面表示無しでterminal64.exeを起動する）
+# タスクスケジューラ経由のHost実行（非対話セッションでterminal64.exeを起動する）
 # ============================================================
 #
-# -WindowStyle HiddenはSTARTUPINFO.wShowWindowのヒストリック（表示状態のヒント）に過ぎず、
+# -WindowStyle HiddenはSTARTUPINFO.wShowWindowのヒント（表示状態のヒント）に過ぎず、
 # terminal64.exe等のGUIサブシステムアプリは自身のウィンドウ表示ロジックでこれを無視するため
-# Hostでは画面に表示されてしまう（実機検証済み）。対話ログオン中のウィンドウステーション内に
-# 現在の既定デスクトップ（Default）とは別の非表示デスクトップをCreateDesktopで作成し、その上で
-# CreateProcessによりterminal64.exeを起動することで、ウィンドウが対話デスクトップへ一切描画されず
-# フォーカス奪取も発生しないようにする。非表示デスクトップは実行のたびに作り捨てず、モジュールを
-# インポートしたPowerShellプロセスの生存期間中は1つを使い回す（Get-Mt5HiddenDesktopName参照。
-# 作り捨てるとウィンドウステーションのデスクトップヒープが枯渇し数回の実行後にterminal64.exeの
-# 起動が失敗する現象が実機で確認されたため、DEC-033で使い回し方式へ変更した）。
-$script:Mt5HiddenDesktopSource = @'
-using System;
-using System.ComponentModel;
-using System.Runtime.InteropServices;
-using System.Text;
+# Hostでは画面に表示されてしまう（実機検証済み）。
+#
+# 対策として当初、対話デスクトップとは別の非表示デスクトップをCreateDesktopで作成しその上で
+# CreateProcessする方式（DEC-031〜033）を試みたが、Windows再起動直後（デスクトップヒープが
+# 確実にリセットされた状態）の1回目の実行から、terminal64.exeがGUI初期化のごく初期段階
+# （Tester Journalへの書き込みが始まる前）でハングする現象が実機で再現した。これはデスクトップ
+# ヒープ枯渇という蓄積型の問題ではなく、CreateDesktop上でのterminal64.exe起動自体に構造的な
+# 相性問題（DirectX/Direct2D初期化やウィンドウステーション権限継承等が疑わしいが未特定）が
+# あることを示しており、CreateDesktop方式は放棄した（DEC-034参照）。
+#
+# 代わりに、Windowsタスクスケジューラ（S4Uログオン、パスワード不要）でterminal64.exeを
+# 非対話セッション上で起動する。これはVM実行（vmrun runProgramInGuestを-interactiveなしで
+# 呼ぶ）が非対話セッションでプロセスを生成するためウィンドウが一切見えなくなるのと同じ原理を
+# Host側でも再現するものであり、terminal64.exe自体はそもそも対話デスクトップに一切アタッチ
+# されない（後から隠す・別デスクトップに置くのではなく、最初から対話セッションの外で実行する）。
+#
+# 実機検証の結果、S4Uログオンでのタスク登録(Register-ScheduledTask)・Action変更
+# (Set-ScheduledTask)には管理者権限が必要な一方、既存タスクの起動(Start-ScheduledTask)は
+# 通常権限でも可能なことが判明した。そのため、固定名のタスク（tools/setup-mt5-scheduled-task.ps1
+# で管理者権限により事前登録、Actionはランナースクリプトtools/lib/Mt5ScheduledTaskRunner.ps1を
+# 呼ぶだけの固定内容）を使い回し、実行対象の情報（実行ファイルパス・引数）はリクエストファイル
+# 経由で受け渡すことで、日常のHost実行から管理者権限を排除している（DECISIONS.md DEC-035参照）。
 
-namespace Mt5ExecutionBackend
-{
-    public static class HiddenDesktopLauncher
-    {
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-        private struct STARTUPINFO
-        {
-            public int cb;
-            public string lpReserved;
-            public string lpDesktop;
-            public string lpTitle;
-            public int dwX;
-            public int dwY;
-            public int dwXSize;
-            public int dwYSize;
-            public int dwXCountChars;
-            public int dwYCountChars;
-            public int dwFillAttribute;
-            public int dwFlags;
-            public short wShowWindow;
-            public short cbReserved2;
-            public IntPtr lpReserved2;
-            public IntPtr hStdInput;
-            public IntPtr hStdOutput;
-            public IntPtr hStdError;
-        }
+$script:Mt5ScheduledTaskName = "Mt5HostIsolatedRunner"
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct PROCESS_INFORMATION
-        {
-            public IntPtr hProcess;
-            public IntPtr hThread;
-            public int dwProcessId;
-            public int dwThreadId;
-        }
-
-        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-        private static extern IntPtr CreateDesktop(
-            string lpszDesktop, IntPtr lpszDevice, IntPtr pDevmode,
-            int dwFlags, uint dwDesiredAccess, IntPtr lpsa);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool CloseDesktop(IntPtr hDesktop);
-
-        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-        private static extern bool CreateProcess(
-            string lpApplicationName,
-            StringBuilder lpCommandLine,
-            IntPtr lpProcessAttributes,
-            IntPtr lpThreadAttributes,
-            bool bInheritHandles,
-            uint dwCreationFlags,
-            IntPtr lpEnvironment,
-            string lpCurrentDirectory,
-            ref STARTUPINFO lpStartupInfo,
-            out PROCESS_INFORMATION lpProcessInformation);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool CloseHandle(IntPtr hObject);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool GetExitCodeProcess(IntPtr hProcess, out uint lpExitCode);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool TerminateProcess(IntPtr hProcess, uint uExitCode);
-
-        private const uint GENERIC_ALL = 0x10000000;
-        private const uint WAIT_TIMEOUT = 0x00000102;
-        // フラグ無しの場合、コンソールサブシステムの子プロセス（cmd.exe等）は親プロセスの
-        // コンソールを共有し標準出力が漏れる（別デスクトップ指定はコンソール共有には影響しない）。
-        // CREATE_NO_WINDOWで新規コンソールの作成自体を抑止する（GUIサブシステムのterminal64.exe等には無関係）。
-        private const uint CREATE_NO_WINDOW = 0x08000000;
-
-        public class HiddenDesktopResult
-        {
-            public bool TimedOut;
-            public int ExitCode;
-        }
-
-        // desktopNameの非表示デスクトップを作成しハンドルを返す。呼び出し側が生存期間中
-        // 使い回し、不要になったらCloseHiddenDesktopで解放すること（実行のたびにCreateDesktop/
-        // CloseDesktopを繰り返すと、ウィンドウステーションのデスクトップヒープが枯渇し、
-        // terminal64.exeのようなGDIリソースを多用する大規模GUIアプリが数回の実行後に
-        // 起動失敗する現象が実機で確認されたため、使い回し方式にしている。DECISIONS.md DEC-033参照）。
-        public static IntPtr CreateHiddenDesktop(string desktopName)
-        {
-            IntPtr hDesktop = CreateDesktop(desktopName, IntPtr.Zero, IntPtr.Zero, 0, GENERIC_ALL, IntPtr.Zero);
-            if (hDesktop == IntPtr.Zero)
-            {
-                throw new InvalidOperationException(
-                    "CreateDesktopに失敗しました: " + new Win32Exception(Marshal.GetLastWin32Error()).Message);
-            }
-            return hDesktop;
-        }
-
-        public static void CloseHiddenDesktop(IntPtr hDesktop)
-        {
-            if (hDesktop != IntPtr.Zero) { CloseDesktop(hDesktop); }
-        }
-
-        // 既存の非表示デスクトップ（desktopNameで指定、CreateHiddenDesktopで作成済み）上で
-        // executablePathをcommandLineで起動する。デスクトップ自体の作成・破棄はここでは行わない。
-        // timeoutMillisecondsを超えた場合はTerminateProcessで強制終了しTimedOut=trueを返す。
-        public static HiddenDesktopResult RunProcess(string executablePath, string commandLine, string desktopName, int timeoutMilliseconds)
-        {
-            IntPtr hProcess = IntPtr.Zero;
-            IntPtr hThread = IntPtr.Zero;
-            try
-            {
-                STARTUPINFO si = new STARTUPINFO();
-                si.cb = Marshal.SizeOf(typeof(STARTUPINFO));
-                si.lpDesktop = desktopName;
-
-                PROCESS_INFORMATION pi;
-                StringBuilder cmdLineBuffer = new StringBuilder(commandLine, commandLine.Length + 256);
-                bool created = CreateProcess(
-                    executablePath, cmdLineBuffer, IntPtr.Zero, IntPtr.Zero,
-                    false, CREATE_NO_WINDOW, IntPtr.Zero, null, ref si, out pi);
-                if (!created)
-                {
-                    throw new InvalidOperationException(
-                        "CreateProcessに失敗しました: " + new Win32Exception(Marshal.GetLastWin32Error()).Message + " (" + executablePath + ")");
-                }
-                hProcess = pi.hProcess;
-                hThread = pi.hThread;
-
-                uint waitResult = WaitForSingleObject(hProcess, (uint)timeoutMilliseconds);
-                HiddenDesktopResult result = new HiddenDesktopResult();
-                if (waitResult == WAIT_TIMEOUT)
-                {
-                    TerminateProcess(hProcess, 1);
-                    WaitForSingleObject(hProcess, 5000);
-                    result.TimedOut = true;
-                    result.ExitCode = -1;
-                }
-                else
-                {
-                    uint exitCode;
-                    GetExitCodeProcess(hProcess, out exitCode);
-                    result.TimedOut = false;
-                    result.ExitCode = unchecked((int)exitCode);
-                }
-                return result;
-            }
-            finally
-            {
-                if (hThread != IntPtr.Zero) { CloseHandle(hThread); }
-                if (hProcess != IntPtr.Zero) { CloseHandle(hProcess); }
-            }
-        }
-    }
-}
-'@
-
-# Add-Typeは同一AppDomain内で同名の型を再定義できないため、Import-Module -Forceでの
-# 再読み込み時に備えて型の存在チェックでガードする。
-function Add-Mt5HiddenDesktopType {
-    if (-not ("Mt5ExecutionBackend.HiddenDesktopLauncher" -as [type])) {
-        Add-Type -TypeDefinition $script:Mt5HiddenDesktopSource -Language CSharp
-    }
+function Get-Mt5ScheduledTaskRequestFilePath {
+    Join-Path $env:TEMP "Mt5ScheduledTaskRequest.json"
 }
 
-$script:Mt5HiddenDesktopHandle = [IntPtr]::Zero
-$script:Mt5HiddenDesktopName = $null
+function Get-Mt5ScheduledTaskResultFilePath {
+    Join-Path $env:TEMP "Mt5ScheduledTaskResult.json"
+}
 
-# 非表示デスクトップは実行のたびに作り捨てず、このモジュールをインポートしたPowerShellプロセスの
-# 生存期間中は1つを使い回す（初回呼び出し時に遅延生成しキャッシュする）。実行のたびにCreateDesktop/
-# CloseDesktopを繰り返すと、ウィンドウステーションのデスクトップヒープが枯渇し、terminal64.exeの
-# ような多数のGDIリソースを扱う大規模GUIアプリが数回の実行後に起動（ウィンドウ初期化）に失敗する
-# 現象が実機のバッチ実行（80ケース中3ケースのみ成功、4ケース目以降Journal記録すら残らないまま
-# ハング・プロセス残留）で確認されたため、使い回し方式にしている（DECISIONS.md DEC-033参照）。
-function Get-Mt5HiddenDesktopName {
-    Add-Mt5HiddenDesktopType
-    if ($script:Mt5HiddenDesktopHandle -eq [IntPtr]::Zero) {
-        $desktopName = "Mt5Hidden_" + [Guid]::NewGuid().ToString("N")
-        $script:Mt5HiddenDesktopHandle = [Mt5ExecutionBackend.HiddenDesktopLauncher]::CreateHiddenDesktop($desktopName)
-        $script:Mt5HiddenDesktopName = $desktopName
+# 事前登録済みの固定タスク（tools/setup-mt5-scheduled-task.ps1）経由でterminal64.exeを
+# 非対話セッションで起動し、待機・タイムアウト・終了コード取得を行う。
+function Invoke-Mt5ExecutionHostViaScheduledTask {
+    param(
+        [Parameter(Mandatory)][string]$ExecutablePath,
+        [string[]]$ExecutableArguments = @(),
+        [Parameter(Mandatory)][int]$TimeoutSeconds
+    )
+
+    $taskName = $script:Mt5ScheduledTaskName
+    if (-not (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
+        throw "タスクスケジューラにタスク '$taskName' が登録されていません。事前に管理者権限で tools\setup-mt5-scheduled-task.ps1 を実行してください。"
     }
-    return $script:Mt5HiddenDesktopName
+
+    $requestFilePath = Get-Mt5ScheduledTaskRequestFilePath
+    $resultFilePath = Get-Mt5ScheduledTaskResultFilePath
+    Remove-Item -LiteralPath $resultFilePath -Force -ErrorAction SilentlyContinue
+
+    [PSCustomObject]@{
+        ExecutablePath = $ExecutablePath
+        Arguments      = @($ExecutableArguments)
+    } | ConvertTo-Json | Set-Content -LiteralPath $requestFilePath -Encoding UTF8
+
+    $startedAt = Get-Date
+    try {
+        Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
+    } catch {
+        throw "タスクスケジューラでのタスク開始に失敗しました: $($_.Exception.Message)"
+    }
+
+    $deadline = $startedAt.AddSeconds($TimeoutSeconds)
+    $timedOut = $false
+    $pollCount = 0
+    while ($true) {
+        $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+        $pollCount++
+        if ($task.State -ne "Running") { break }
+        if ((Get-Date) -gt $deadline) { $timedOut = $true; break }
+        Start-Sleep -Milliseconds 500
+    }
+    $elapsedSeconds = [Math]::Round(((Get-Date) - $startedAt).TotalSeconds, 1)
+
+    if ($timedOut) {
+        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+        throw "MT5実行がタイムアウトしました（Host/ScheduledTask, $TimeoutSeconds 秒）: $ExecutablePath"
+    }
+
+    if (-not (Test-Path -LiteralPath $resultFilePath)) {
+        throw "タスクスケジューラ経由の実行結果ファイルが見つかりません（$resultFilePath）。ランナースクリプト自体の起動に失敗した可能性があります: $ExecutablePath"
+    }
+    $result = Get-Content -LiteralPath $resultFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    Remove-Item -LiteralPath $requestFilePath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $resultFilePath -Force -ErrorAction SilentlyContinue
+
+    if ($result.Error) {
+        throw "タスクスケジューラ経由のMT5実行に失敗しました: $($result.Error)"
+    }
+
+    # 原因調査用デバッグログ（実機検証中、terminal64.exeが起動直後に終了しreportが生成されない
+    # 事例があったため、実経過時間を出力して切り分けられるようにする）。
+    Write-Host "MT5_SCHEDULED_TASK_DEBUG taskName=$taskName exitCode=$($result.ExitCode) elapsedSeconds=$elapsedSeconds pollCount=$pollCount finalState=$($task.State)"
+
+    return [PSCustomObject]@{
+        ExecutionMode = "Host"
+        ExitCode      = $result.ExitCode
+        Success       = $true
+        StagingRoots  = @()
+    }
 }
 
 function Test-Mt5VmSettings {
@@ -361,22 +267,24 @@ function ConvertFrom-Mt5SecureStringPlain {
 
 # ホスト上でterminal64.exeを起動し、待機・タイムアウト・終了コード取得を行う。
 # 通常の-WindowStyle HiddenはGUIサブシステムアプリ（terminal64.exe等）には効かず画面に表示されて
-# しまうため、既定（UseHiddenDesktop=true）では対話デスクトップとは別の非表示デスクトップ上で
-# CreateProcessする方式を使う（フォーカス奪取・一瞬の表示も含めて発生しない。DECISIONS.md DEC-031/032/033参照）。
-# 非表示デスクトップは使い回す（Get-Mt5HiddenDesktopName、DEC-033）。
-# UseHiddenDesktop=falseの場合は従来の-WindowStyle Hidden方式にフォールバックする
-# （セキュリティソフトの誤検知や権限制約でCreateDesktopが使えない環境向けの回避手段）。
+# しまうため、既定（UseIsolatedSession=true）ではタスクスケジューラ（S4Uログオン）経由で
+# 非対話セッション上で起動する方式を使う（画面表示・フォーカス奪取が原理的に発生しない。
+# DECISIONS.md DEC-034/035参照。CreateDesktop方式（DEC-031〜033）はterminal64.exeとの構造的な
+# 相性問題が実機で確認されたため放棄した）。事前に管理者権限でtools\setup-mt5-scheduled-task.ps1
+# を実行しタスクを登録しておく必要がある（未登録の場合は明確な例外になる）。
+# UseIsolatedSession=falseの場合は従来の-WindowStyle Hidden方式にフォールバックする
+# （タスクの事前登録がまだの環境向けの回避手段）。
 function Invoke-Mt5ExecutionHost {
     param(
         [Parameter(Mandatory)][string]$ExecutablePath,
         [string[]]$ExecutableArguments = @(),
         [Parameter(Mandatory)][int]$TimeoutSeconds,
-        [bool]$UseHiddenDesktop = $true
+        [bool]$UseIsolatedSession = $true
     )
 
     if (-not (Test-Path -LiteralPath $ExecutablePath)) { throw "実行ファイルが見つかりません: $ExecutablePath" }
 
-    if (-not $UseHiddenDesktop) {
+    if (-not $UseIsolatedSession) {
         $process = Start-Process -FilePath $ExecutablePath -ArgumentList $ExecutableArguments -PassThru -WindowStyle Hidden
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
@@ -390,19 +298,7 @@ function Invoke-Mt5ExecutionHost {
         }
     }
 
-    $commandLine = ConvertTo-Mt5Win32CommandLine -Arguments (@($ExecutablePath) + $ExecutableArguments)
-    $desktopName = Get-Mt5HiddenDesktopName
-    $result = [Mt5ExecutionBackend.HiddenDesktopLauncher]::RunProcess($ExecutablePath, $commandLine, $desktopName, ($TimeoutSeconds * 1000))
-    if ($result.TimedOut) {
-        throw "MT5実行がタイムアウトしました（Host, $TimeoutSeconds 秒）: $ExecutablePath"
-    }
-
-    return [PSCustomObject]@{
-        ExecutionMode = "Host"
-        ExitCode      = $result.ExitCode
-        Success       = $true
-        StagingRoots  = @()
-    }
+    return Invoke-Mt5ExecutionHostViaScheduledTask -ExecutablePath $ExecutablePath -ExecutableArguments $ExecutableArguments -TimeoutSeconds $TimeoutSeconds
 }
 
 # ============================================================
@@ -995,15 +891,15 @@ function Invoke-Mt5Execution {
         [string]$VmSettingsPath,
         [string[]]$SyncSourcePaths = @(),
         [string]$StagingRoot,
-        # ExecutionMode=Host専用。既定trueで非表示デスクトップ経由（DEC-031）を使う。
-        # falseにすると従来の-WindowStyle Hidden方式へフォールバックする（DEC-032）。VM実行時は無視される。
-        [bool]$HostUseHiddenDesktop = $true
+        # ExecutionMode=Host専用。既定trueでタスクスケジューラ経由の非対話セッション実行（DEC-034）を使う。
+        # falseにすると従来の-WindowStyle Hidden方式へフォールバックする。VM実行時は無視される。
+        [bool]$HostUseIsolatedSession = $true
     )
 
     if ($ExecutionMode -eq "Host") {
         if ([string]::IsNullOrWhiteSpace($ExecutablePath)) { throw "ExecutionMode=Hostの場合はExecutablePathが必須です。" }
         $args = if (-not [string]::IsNullOrWhiteSpace($ConfigFilePath)) { @("/config:$ConfigFilePath") } else { $ExecutableArguments }
-        return Invoke-Mt5ExecutionHost -ExecutablePath $ExecutablePath -ExecutableArguments $args -TimeoutSeconds $TimeoutSeconds -UseHiddenDesktop $HostUseHiddenDesktop
+        return Invoke-Mt5ExecutionHost -ExecutablePath $ExecutablePath -ExecutableArguments $args -TimeoutSeconds $TimeoutSeconds -UseIsolatedSession $HostUseIsolatedSession
     }
 
     if ([string]::IsNullOrWhiteSpace($VmSettingsPath)) { throw "ExecutionMode=VMの場合はVmSettingsPathが必須です。" }
@@ -1023,6 +919,5 @@ Export-ModuleMember -Function @(
     "Get-Mt5VmEncryptionPassword",
     "Sync-Mt5VmPaths",
     "Get-Mt5VmRemoteLineCount",
-    "Get-Mt5VmCommonAuditPath",
-    "Get-Mt5HiddenDesktopName"
+    "Get-Mt5VmCommonAuditPath"
 )

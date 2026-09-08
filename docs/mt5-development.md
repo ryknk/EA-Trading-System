@@ -65,11 +65,23 @@ Phase 12時点でAWS実装は存在するが、AWS accountへのdeploy、実モ�
 
 ## Strategy Tester / MQL5単体テストのVM実行（2026-09-06追加）
 
-Strategy Tester・MQL5単体テスト実行中、Host実行では既定でMT5 GUIを非表示デスクトップ上（対話デスクトップとは別のCreateDesktop）で起動するため、画面表示・フォーカス奪取は発生しない（詳細な設計判断は`DECISIONS.md` DEC-031を参照）。非表示デスクトップは実行のたびに作り捨てず、PowerShellプロセスの生存期間中1つを使い回す（作り捨てるとデスクトップヒープ枯渇によりterminal64.exeが数回の実行後に起動失敗する現象が実機のバッチ実行で確認されたため。詳細な設計判断は`DECISIONS.md` DEC-033を参照）。これとは別に、MT5そのものを隔離VM内で実行することもできる（詳細な設計判断は`DECISIONS.md` DEC-029を参照）。
+Strategy Tester・MQL5単体テスト実行中、Host実行では既定でterminal64.exeをWindowsタスクスケジューラ（S4Uログオン、パスワード不要）経由の非対話セッション上で起動するため、画面表示・フォーカス奪取は発生しない（詳細な設計判断は`DECISIONS.md` DEC-034/035を参照）。
+
+当初、対話デスクトップとは別の非表示デスクトップをCreateDesktopで作成しその上でCreateProcessする方式（DEC-031〜033）を試みたが、Windows再起動直後（デスクトップヒープが確実にリセットされた状態）の1回目の実行からterminal64.exeがGUI初期化のごく初期段階でハングする現象が実機で再現し、デスクトップヒープ枯渇ではなくterminal64.exeとの構造的な相性問題があると判断してこの方式は放棄した。これとは別に、MT5そのものを隔離VM内で実行することもできる（詳細な設計判断は`DECISIONS.md` DEC-029を参照）。
+
+### 初回セットアップ（管理者権限で1回だけ）
+
+タスクスケジューラでのタスク登録・Action変更には管理者権限が必要なため、Host実行を使う前に一度だけ、管理者権限のPowerShellから次を実行してタスクを事前登録しておく必要がある（実機検証済み、DEC-035参照）。
+
+```powershell
+.\tools\setup-mt5-scheduled-task.ps1
+```
+
+これにより固定タスク`Mt5HostIsolatedRunner`が登録される。以降の`run-strategy-tester.ps1`・`run-mql5-tests.ps1`の実行（既存タスクの起動のみ）は通常権限のPowerShellから行える。タスクが未登録の状態でHost実行（既定）すると、明確なエラーで停止する。
 
 `tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`はいずれも`-ExecutionMode Host|VM`を受け付ける（既定`Host`、省略時は従来どおりホスト上で直接実行する）。実際のMT5起動・待機・タイムアウト・終了コード取得・VM実行時の結果ファイル同期は、共通モジュール`tools/lib/Mt5ExecutionBackend.psm1`が担う。
 
-`-ExecutionMode Host`時のみ有効な`-HostUseHiddenDesktop $true|$false`（既定`$true`）で、非表示デスクトップ経由の起動と従来の`-WindowStyle Hidden`方式を切り替えられる。セキュリティソフトの誤検知やウィンドウステーション操作権限の制約でCreateDesktopが使えない環境向けの回避手段であり、通常は既定のままでよい（詳細な設計判断は`DECISIONS.md` DEC-032を参照）。
+`-ExecutionMode Host`時のみ有効な`-HostUseIsolatedSession $true|$false`（既定`$true`）で、タスクスケジューラ経由の非対話セッション実行と従来の`-WindowStyle Hidden`方式を切り替えられる。上記の初回セットアップをまだ行っていない環境向けの回避手段であり、セットアップ済みなら通常は既定のままでよい（詳細な設計判断は`DECISIONS.md` DEC-034/035を参照）。
 
 VM実行時の接続方式はVM設定ファイルの`connectionType`で選択する（詳細な設計判断は`DECISIONS.md` DEC-029を参照）。
 
@@ -102,11 +114,14 @@ VM実行時の接続方式はVM設定ファイルの`connectionType`で選択す
 ### 実行コマンド例
 
 ```powershell
-# Host実行（既定、非表示デスクトップ経由でterminal64.exeを起動しフォーカス奪取・画面表示無し）
+# 初回セットアップ（管理者権限で1回だけ）
+.\tools\setup-mt5-scheduled-task.ps1
+
+# Host実行（既定、タスクスケジューラ経由の非対話セッションでterminal64.exeを起動しフォーカス奪取・画面表示無し、通常権限でよい）
 .\tools\run-strategy-tester.ps1 -Symbol USDJPY -FromDate 2017.09.01 -ToDate 2020.12.31 -Template mt5\test-config\StrategyTester-USDJPY-H1.ini
 
-# Host実行・従来の-WindowStyle Hidden方式へフォールバック（非表示デスクトップが使えない環境向け）
-.\tools\run-strategy-tester.ps1 -HostUseHiddenDesktop $false -Symbol USDJPY -FromDate 2017.09.01 -ToDate 2020.12.31 -Template mt5\test-config\StrategyTester-USDJPY-H1.ini
+# Host実行・従来の-WindowStyle Hidden方式へフォールバック（初回セットアップ未実施の環境向け）
+.\tools\run-strategy-tester.ps1 -HostUseIsolatedSession $false -Symbol USDJPY -FromDate 2017.09.01 -ToDate 2020.12.31 -Template mt5\test-config\StrategyTester-USDJPY-H1.ini
 
 # VM実行（VM設定ファイルのconnectionTypeで接続方式を選択）
 .\tools\run-strategy-tester.ps1 -ExecutionMode VM -Symbol USDJPY -FromDate 2017.09.01 -ToDate 2020.12.31 -Template mt5\test-config\StrategyTester-USDJPY-H1.ini

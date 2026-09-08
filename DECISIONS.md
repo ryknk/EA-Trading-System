@@ -834,3 +834,80 @@ DEC-031導入後、80ケース（`USDJPY`/`EURJPY`/`EURUSD`/`GBPJPY` × 複数�
 * `tools/test-mt5-execution-backend.ps1`の全テスト（既存分＋新規追加分）がPASSすることを確認した（2026-09-08、Host環境で実行）。PowerShellパーサーによる構文チェックも実施し構文エラー無し
 * **80ケースの実機バッチスイープでの再検証は未実施。** 今回のテストは「デスクトップが使い回されること」「`cmd.exe`のような軽量プロセスを20回連続実行しても正常終了すること」の確認に留まり、terminal64.exe自体を使った連続実行での改善効果（デスクトップヒープ枯渇仮説が正しいかどうか）は実証できていない。ユーザーに実機で同一のCaseFileを再実行してもらい、80ケース全てが成功することの確認が必要
 * 仮に本対応でも4回目以降の失敗が再現する場合、デスクトップヒープ枯渇以外の原因（Strategy Tester自体のメモリ管理、非表示デスクトップとGDI/Direct2D初期化の相性等）を疑う必要がある。その場合はDEC-032の`-HostUseHiddenDesktop $false`で従来方式へ切り替えるか、DEC-031時点で検討した方法B（タスクスケジューラでの非対話セッション実行）への切替を再検討する
+
+---
+
+# DEC-034: Host実行はCreateDesktop方式を放棄し、タスクスケジューラ（S4Uログオン）経由の非対話セッション実行へ置き換える
+
+**状態:** 採用（DEC-031〜033を置き換え）
+
+## 背景
+
+DEC-033（非表示デスクトップの使い回し）を適用した上で、ユーザーがWindows再起動直後（デスクトップヒープが確実にリセットされた状態）に80ケーススイープの1ケース目からterminal64.exeを実行したところ、**再起動直後の初回実行から同じ症状（Tester Journalに1行も記録されないままハング）が再現した。**
+
+これはDEC-033時点の仮説（実行を繰り返すことによるデスクトップヒープの累積的な枯渇）と矛盾する。累積型のリソース枯渇が原因であれば、リソースがリセットされた直後の1回目は必ず成功するはずだが、実際には1回目から失敗した。この結果は、原因が蓄積型の問題ではなく、**`CreateDesktop`で作成した非表示デスクトップ上でterminal64.exeを起動すること自体に、より根本的な相性問題がある**ことを示している（DirectX/Direct2D初期化の失敗、ウィンドウステーションの権限継承の問題等が疑わしいが、Windows Event Viewerでのクラッシュ記録確認までは行っておらず具体的な原因は未特定）。
+
+DEC-031〜033で試みた「対話デスクトップとは別の非表示デスクトップを作成し、そこでGUIアプリを起動する」というアプローチ自体が、terminal64.exeのような大規模GUIアプリに対しては構造的に信頼性を欠くと判断し、放棄した。
+
+## 判断
+
+Host実行を、Windowsタスクスケジューラ（S4Uログオン、パスワード不要）経由でterminal64.exeを非対話セッション上で起動する方式へ置き換える。これはVM実行（`vmrun runProgramInGuest`を`-interactive`なしで呼ぶ）が非対話セッションでプロセスを生成するためウィンドウが一切見えなくなるのと同じ原理をHost側でも再現するものであり、「後から隠す・別デスクトップに置く」のではなく「最初から対話セッションの外で実行する」点がCreateDesktop方式と根本的に異なる。
+
+1. `tools/lib/Mt5ExecutionBackend.psm1`から`HiddenDesktopLauncher`（C#、CreateDesktop/CreateProcess）と関連コード（`Add-Mt5HiddenDesktopType`・`Get-Mt5HiddenDesktopName`・モジュールスコープ変数）を削除した。
+2. 新規`Invoke-Mt5ExecutionHostViaScheduledTask`関数を追加した。実行のたびに一意な名前（GUID）のタスクを`Register-ScheduledTask`（`New-ScheduledTaskPrincipal -LogonType S4U -RunLevel Limited`）で登録し、`Start-ScheduledTask`で起動、`Get-ScheduledTask`の`State`をポーリングして完了・タイムアウトを検知し、`Get-ScheduledTaskInfo`の`LastTaskResult`から終了コードを取得、`finally`で`Unregister-ScheduledTask`により後始末する。
+3. `Invoke-Mt5ExecutionHost`のパラメータ名を`UseHiddenDesktop`から`UseIsolatedSession`へ変更した（意味が変わったため）。`Invoke-Mt5Execution`側も`HostUseHiddenDesktop`から`HostUseIsolatedSession`へ変更した。既定値は`$true`のまま維持し、`$false`で従来の`-WindowStyle Hidden`方式へフォールバックできる点も維持した（DEC-032の設計を踏襲）。
+4. `tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`のCLIパラメータも同様に`HostUseIsolatedSession`へリネームした。
+5. S4Uログオンタイプを選択した理由：パスワード不要で非対話的にタスクを実行できるため、資格情報をコード・設定へ保存する必要が無い（CLAUDE.mdのSecret管理方針に合致する）。ネットワークリソースへはアクセスできない制約があるが、Strategy Tester実行はローカルファイルシステムのみで完結するため影響しないと判断した（実機未検証）。
+
+## 理由
+
+* 「後から隠す」あらゆる方式（ShowWindow(SW_HIDE)、CreateDesktop）は、対話セッション内でプロセスを生成する以上、GUIサブシステム初期化時の何らかの相性問題を完全には排除できない。非対話セッションでの実行はVM実行と同じ実績のある原理であり、構造的に確実性が高い
+* S4Uはパスワード不要なため、Secret管理の負担が無い（DEC-031〜033のCreateDesktop方式も元々パスワード不要だった点は維持される）
+* 既定値・フォールバック機構の設計（DEC-032）は妥当だったため、パラメータの意味論はそのまま踏襲し、名前のみ実態に合わせて変更した
+
+## 影響
+
+* 変更: `tools/lib/Mt5ExecutionBackend.psm1`（`HiddenDesktopLauncher`関連コード全削除、`Invoke-Mt5ExecutionHostViaScheduledTask`追加、`Invoke-Mt5ExecutionHost`・`Invoke-Mt5Execution`のパラメータリネーム）、`tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`（`HostUseHiddenDesktop`→`HostUseIsolatedSession`リネーム）、`tools/test-mt5-execution-backend.ps1`（非表示デスクトップ使い回しテスト削除、タスクスケジューラ登録可否の事前チェック追加、パラメータ名更新）、`docs/mt5-development.md`（説明更新）
+* **重大な制約が判明した。** 本セッションの検証環境（Claude CodeのBash/PowerShellツール実行コンテキスト）では、`whoami /priv`で確認したところ非常に限定された特権のみが有効な制限付きトークンで動作しており、`Register-ScheduledTask`が「アクセスが拒否されました」で一貫して失敗した。このため、既定経路（`UseIsolatedSession=true`、タスクスケジューラ方式）の動作確認は本セッションでは一切できていない。`tools/test-mt5-execution-backend.ps1`は冒頭でタスク登録可否を事前確認し、不可の場合は該当テストをスキップする設計にした（実行結果に`SKIP_NOTE`として明示される）
+* 確認できたのは、フォールバック経路（`-HostUseIsolatedSession $false`、従来の`-WindowStyle Hidden`方式）の正常系・タイムアウト・ConfigFilePath自動引数生成・VM設定検証系のみ（2026-09-08、Host環境で実行、全PASS）。PowerShellパーサーによる構文チェックも4ファイルで実施し構文エラー無し
+* **タスクスケジューラ方式そのものが実際に動作するか（terminal64.exeが起動でき、画面表示・フォーカス奪取が無く、正常にreportを生成できるか）は完全に未検証。** ユーザーの実機（通常の対話ログオンセッション、UACの分割トークンではあるが管理者アカウントでの通常利用）で`Register-ScheduledTask`が成功するかどうかを含め、`run-strategy-tester.ps1`（Hostモード）を実際に実行して確認する必要がある
+* もしユーザーの実機でも同様に`Register-ScheduledTask`がアクセス拒否になる場合、S4Uログオンには`SeBatchLogonRight`相当の権利が必要になるケースがあるため、ローカルセキュリティポリシーでの権利付与（要管理者権限、ユーザーへの事前確認が必要）を検討するか、`-HostUseIsolatedSession $false`（画面表示は発生するが動作実績のある方式）を実運用の既定として使うことを検討する
+
+---
+
+# DEC-035: タスクスケジューラのタスク登録・Action変更は管理者権限で1回だけ行い、日常実行は固定タスクの起動のみで完結させる
+
+**状態:** 採用（DEC-034の実装詳細を修正）
+
+## 背景
+
+DEC-034で導入したタスクスケジューラ方式（`Invoke-Mt5ExecutionHostViaScheduledTask`、実行のたびに一意な名前のタスクを`Register-ScheduledTask`で作成）を実機検証したところ、次が判明した。
+
+* 通常の（管理者として昇格していない）PowerShellセッションから`Register-ScheduledTask`（S4Uログオンでのタスク登録）を呼ぶと「アクセスが拒否されました」になる。これはこの検証環境固有の制約ではなく、ユーザーの実機でも再現した。UACの権限分割トークン（Administratorsグループのメンバーであっても、昇格していないセッションは制限されたトークンで動作する）が原因と考えられる。
+* 管理者として昇格したPowerShellセッションからは`Register-ScheduledTask`が成功し、`run-strategy-tester.ps1`（Hostモード）の単発実行・5回連続実行いずれもterminal64.exeの起動からreport生成まで安定して成功した（`elapsedSeconds`が21.8〜22.1秒で安定）。
+* 追加検証として、事前に登録済みのタスクに対して`Set-ScheduledTask`（Actionの更新）を非昇格セッションから呼んだところ、これも「アクセスが拒否されました」になった。一方、同じ非昇格セッションから`Start-ScheduledTask`（既存タスクの起動）を呼んだところ**成功した**。
+
+この結果から、「タスクの新規作成・設定変更」には管理者権限が必要だが、「既存タスクを起動するだけ」なら通常権限で可能、という非対称な権限要件があることが分かった。DEC-034の実装は実行のたびに`Register-ScheduledTask`を呼ぶ設計だったため、日常のHost実行のたびに管理者権限が必要になってしまう欠点があった。
+
+## 判断
+
+タスクの作成・設定は初回セットアップ時に管理者権限で1回だけ行い、日常の実行は非昇格セッションからの`Start-ScheduledTask`のみで完結する設計に変更する。
+
+1. 新規`tools/setup-mt5-scheduled-task.ps1`を追加した。管理者権限で実行することを強制し（`WindowsPrincipal.IsInRole(Administrator)`チェック）、固定名`Mt5HostIsolatedRunner`のタスクを登録する。Actionは固定（`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<repo>\tools\lib\Mt5ScheduledTaskRunner.ps1"`）にし、以降変更しない。既存タスクがあれば削除してから再登録する（再実行しても冪等）。`ExecutionTimeLimit`は呼び出しごとに異なる実際のタイムアウト秒数の検知を呼び出し側のポーリングに委ねるための最終防衛ラインとして、十分大きい固定値（12時間）にする。
+2. 新規`tools/lib/Mt5ScheduledTaskRunner.ps1`を追加した。タスクから呼ばれる固定のランナースクリプトで、実行対象の情報（実行ファイルパス・引数）を`%TEMP%\Mt5ScheduledTaskRequest.json`から読み込み、`Start-Process -Wait`でterminal64.exeを起動し、終了コードを`%TEMP%\Mt5ScheduledTaskResult.json`へ書き出す。Actionが固定なため、動的な実行対象の受け渡しにはこのファイル経由の方式が必要（既存のVM/vmrun実行がExitCodeファイルを書き出して回収する設計と同じ思想）。
+3. `Invoke-Mt5ExecutionHostViaScheduledTask`（`tools/lib/Mt5ExecutionBackend.psm1`）を書き換え、`Register-ScheduledTask`を呼ばなくなった。固定タスク`Mt5HostIsolatedRunner`が登録済みであることを確認し（未登録なら明確な例外）、リクエストファイルへ実行対象を書き込んでから`Start-ScheduledTask`を呼ぶ。待機・タイムアウト検知・結果ファイル回収のロジックはDEC-034のポーリング設計を踏襲する。
+4. `tools/test-mt5-execution-backend.ps1`の事前チェックを、「一時タスクを試しに`Register-ScheduledTask`できるか」から「固定タスク`Mt5HostIsolatedRunner`が既に登録されているか」の確認に変更した。
+
+## 理由
+
+* 実機検証で「タスク作成・設定変更」と「タスク起動」の権限要件が異なることが判明したため、この非対称性を活かせば管理者権限を初回セットアップの1回に限定できる
+* Actionを固定にしファイル経由で実行対象を受け渡す設計は、既存のVmrun実行（ExitCodeファイル書き出し・回収）と同じ思想であり、コードベース全体の一貫性を保てる
+* リクエスト・結果ファイルは`%TEMP%`（現在のユーザー専用の一時フォルダ）に置くため、他ユーザーからはアクセスできず、Secretも含まれない（実行ファイルパスと引数のみ）
+
+## 影響
+
+* 追加: `tools/setup-mt5-scheduled-task.ps1`（管理者権限で1回だけ実行する初回セットアップスクリプト）、`tools/lib/Mt5ScheduledTaskRunner.ps1`（タスクから呼ばれる固定ランナー）
+* 変更: `tools/lib/Mt5ExecutionBackend.psm1`（`Invoke-Mt5ExecutionHostViaScheduledTask`を固定タスク+リクエスト/結果ファイル方式へ書き換え）、`tools/test-mt5-execution-backend.ps1`（事前チェックを固定タスクの登録確認へ変更）、`docs/mt5-development.md`（初回セットアップ手順を追記）
+* **実機検証で確認済み**: 管理者権限での`Register-ScheduledTask`成功、非昇格セッションからの`Start-ScheduledTask`成功、`Set-ScheduledTask`は非昇格セッションでアクセス拒否（2026-09-08、ユーザー実機）
+* **本セッションでは新設計（固定タスク+リクエストファイル方式）自体の実機動作は未検証。** この開発環境ではタスクスケジューラへの登録権限が無いため、`tools/setup-mt5-scheduled-task.ps1`の実行、リクエスト/結果ファイル経由でのterminal64.exe起動、非昇格セッションでの日常実行が想定通り動作するかは、ユーザーの実機で確認する必要がある
+* 構文チェックは3ファイル（新規2件・変更1件）で実施し、エラー無し。`test-mt5-execution-backend.ps1`は固定タスク未登録のため既定経路がスキップされる形で全PASSすることを確認した（2026-09-08、Host環境で実行）
