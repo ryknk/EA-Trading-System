@@ -53,6 +53,17 @@ function Get-Mt5ScheduledTaskResultFilePath {
     Join-Path $env:TEMP "Mt5ScheduledTaskResult.json"
 }
 
+# タイムアウト時、呼び出し側（本セッション）からランナー（S4Uログオンの別セッション）が起動した
+# 子プロセスを直接Stop-Process/taskkillしようとすると、ログオンセッションが異なるためアクセス拒否になる
+# （実機検証で確認）。Stop-ScheduledTaskはランナー自身のプロセスを強制終了させるだけで、ランナーが
+# Start-Processで起動した子プロセス（terminal64.exe等）はジョブオブジェクトに連鎖されず孤立して
+# 生き残ることも実機検証で確認した。このため、子プロセスの終了はランナー自身（同一セッションのため
+# 権限がある）に協調的に行わせる。本ファイルの存在をランナーが定期的に確認し、見つけたら自身の
+# 子プロセスをStop-Processしてから終了する（DECISIONS.md DEC-036参照）。
+function Get-Mt5ScheduledTaskCancelFilePath {
+    Join-Path $env:TEMP "Mt5ScheduledTaskCancel.json"
+}
+
 # 事前登録済みの固定タスク（tools/setup-mt5-scheduled-task.ps1）経由でterminal64.exeを
 # 非対話セッションで起動し、待機・タイムアウト・終了コード取得を行う。
 function Invoke-Mt5ExecutionHostViaScheduledTask {
@@ -96,6 +107,24 @@ function Invoke-Mt5ExecutionHostViaScheduledTask {
     $elapsedSeconds = [Math]::Round(((Get-Date) - $startedAt).TotalSeconds, 1)
 
     if ($timedOut) {
+        # Stop-ScheduledTaskはランナー自身のプロセスを終了させるのみで、ランナーがStart-Processで
+        # 起動した子プロセス（terminal64.exe等）はジョブオブジェクトに連鎖されず孤立して生き残ることが
+        # 実機検証で判明した。かつ、その孤立プロセスは別ログオンセッション（S4U）で動作しているため、
+        # 本セッション側からStop-Process/taskkillで直接終了させようとするとアクセス拒否になる
+        # （実機検証で確認）。このため、キャンセルファイルを作成してランナー自身に子プロセスの終了を
+        # 委ねる（Mt5ScheduledTaskRunner.ps1参照、DECISIONS.md DEC-036）。ランナーが後始末を終えて
+        # 結果ファイルを書くまで待ってから例外を投げることで、呼び出し側が次のケースを起動する時点では
+        # 子プロセスが既に終了していることを保証する。待機上限を超えても終わらない場合は
+        # ベストエフォートとして諦める（タイムアウト自体は必ず例外として報告する）。
+        $cancelFilePath = Get-Mt5ScheduledTaskCancelFilePath
+        [PSCustomObject]@{ RequestedAt = (Get-Date).ToString("o") } | ConvertTo-Json | Set-Content -LiteralPath $cancelFilePath -Encoding UTF8
+        $cancelDeadline = (Get-Date).AddSeconds(15)
+        while ((Get-Date) -lt $cancelDeadline) {
+            if (Test-Path -LiteralPath $resultFilePath) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        Remove-Item -LiteralPath $cancelFilePath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $resultFilePath -Force -ErrorAction SilentlyContinue
         Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
         throw "MT5実行がタイムアウトしました（Host/ScheduledTask, $TimeoutSeconds 秒）: $ExecutablePath"
     }
