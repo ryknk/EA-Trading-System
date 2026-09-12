@@ -154,6 +154,44 @@ void OnStart(void)
    AssertTrue(!CTimeStopRules::HasReachedMinMfeR(POSITION_TYPE_BUY,150.00,150.00,150.50,0.5),
               "zero risk distance never reaches threshold");
 
+   AssertTrue(CTrendReversalExitRules::IsActivated(POSITION_TYPE_BUY,150.00,149.00,151.00,1.0),
+              "buy activation reaches exactly 1R peak favorable excursion");
+   AssertTrue(!CTrendReversalExitRules::IsActivated(POSITION_TYPE_BUY,150.00,149.00,150.99,1.0),
+              "buy activation below 1R peak favorable excursion does not activate");
+   AssertTrue(CTrendReversalExitRules::IsActivated(POSITION_TYPE_SELL,150.00,151.00,149.00,1.0),
+              "sell activation reaches exactly 1R peak favorable excursion");
+   AssertTrue(!CTrendReversalExitRules::IsActivated(POSITION_TYPE_SELL,150.00,151.00,149.01,1.0),
+              "sell activation below 1R peak favorable excursion does not activate");
+
+   AssertTrue(CTrendReversalExitRules::IsRetraced(POSITION_TYPE_BUY,150.00,149.00,151.00,150.50,0.5),
+              "buy retraces exactly 0.5R from peak");
+   AssertTrue(!CTrendReversalExitRules::IsRetraced(POSITION_TYPE_BUY,150.00,149.00,151.00,150.51,0.5),
+              "buy retracement below 0.5R does not trigger");
+   AssertTrue(!CTrendReversalExitRules::IsRetraced(POSITION_TYPE_BUY,150.00,149.00,151.00,151.00,0.5),
+              "buy at peak (no retracement) does not trigger");
+   AssertTrue(CTrendReversalExitRules::IsRetraced(POSITION_TYPE_SELL,150.00,151.00,149.00,149.50,0.5),
+              "sell retraces exactly 0.5R from peak");
+   AssertTrue(!CTrendReversalExitRules::IsRetraced(POSITION_TYPE_SELL,150.00,151.00,149.00,149.49,0.5),
+              "sell retracement below 0.5R does not trigger");
+   AssertTrue(!CTrendReversalExitRules::IsRetraced(POSITION_TYPE_BUY,150.00,149.00,151.00,150.50,0.0),
+              "zero retrace r multiple never triggers");
+   AssertTrue(!CTrendReversalExitRules::IsRetraced(POSITION_TYPE_BUY,150.00,0.0,151.00,150.50,0.5),
+              "missing initial stop loss never triggers retracement");
+   AssertTrue(!CTrendReversalExitRules::IsRetraced(POSITION_TYPE_BUY,150.00,150.00,151.00,150.50,0.5),
+              "zero risk distance never triggers retracement");
+
+   AssertTrue(CTrendReversalExitRules::HasConfirmedReversal(5,5),"reversal confirmed at exactly required ticks");
+   AssertTrue(CTrendReversalExitRules::HasConfirmedReversal(6,5),"reversal confirmed beyond required ticks");
+   AssertTrue(!CTrendReversalExitRules::HasConfirmedReversal(4,5),"reversal not confirmed before required ticks");
+   AssertTrue(!CTrendReversalExitRules::HasConfirmedReversal(5,0),"zero required ticks never confirms");
+
+   AssertNearDouble(CTrendReversalExitRules::RetracementRMultiple(POSITION_TYPE_BUY,150.00,149.00,151.00,150.50),0.5,
+                    "buy retracement r multiple is peak-to-current over risk distance");
+   AssertNearDouble(CTrendReversalExitRules::RetracementRMultiple(POSITION_TYPE_SELL,150.00,151.00,149.00,149.50),0.5,
+                    "sell retracement r multiple is current-to-peak over risk distance");
+   AssertTrue(CTrendReversalExitRules::RetracementRMultiple(POSITION_TYPE_BUY,150.00,150.00,151.00,150.50)==0.0,
+              "zero risk distance yields zero retracement r multiple");
+
    if(g_failures==0) Print("TEST_SUITE_PASS TestTradingRules");
    else PrintFormat("TEST_SUITE_FAIL TestTradingRules failures=%d",g_failures);
   }

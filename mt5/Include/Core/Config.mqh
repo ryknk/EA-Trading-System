@@ -118,6 +118,10 @@ struct SEaConfig
    int               max_holding_bars;
    bool              time_stop_require_min_mfe;
    double            time_stop_min_mfe_r_multiple;
+   bool              enable_trend_reversal_exit;
+   double            trend_reversal_activation_r_multiple;
+   double            trend_reversal_retrace_r_multiple;
+   int               trend_reversal_confirmation_ticks;
    bool              enable_entry_timing_analysis;
    int               entry_timing_max_wait_bars;
    int               entry_timing_max_holding_bars;
@@ -232,6 +236,12 @@ void SetDefaultConfig(SEaConfig &config)
    config.max_holding_bars          = 20;
    config.time_stop_require_min_mfe = false;
    config.time_stop_min_mfe_r_multiple = 0.5;
+   // 既定値はOFF（安全側）。OOS分析で確認された「含み益→反転→初期SL到達」の損失パターンを
+   // 抑制する目的の新規Exitのため、既存挙動を変えない既定値から開始し、有効化はユーザー判断とする。
+   config.enable_trend_reversal_exit = false;
+   config.trend_reversal_activation_r_multiple = 1.0;
+   config.trend_reversal_retrace_r_multiple = 0.5;
+   config.trend_reversal_confirmation_ticks = 5;
    config.enable_entry_timing_analysis = false;
    config.entry_timing_max_wait_bars   = 6;
    config.entry_timing_max_holding_bars = 20;
@@ -357,6 +367,10 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_TIME_STOP_MAX_HOLDING_BARS"; return false; }
    if(config.enable_time_stop && config.time_stop_require_min_mfe && config.time_stop_min_mfe_r_multiple<=0.0)
      { error="INVALID_TIME_STOP_MIN_MFE"; return false; }
+   if(config.enable_trend_reversal_exit &&
+      (config.trend_reversal_activation_r_multiple<=0.0 || config.trend_reversal_retrace_r_multiple<=0.0 ||
+       config.trend_reversal_confirmation_ticks<1))
+     { error="INVALID_TREND_REVERSAL_EXIT_CONFIG"; return false; }
    if(config.enable_entry_timing_analysis &&
       (config.entry_timing_max_wait_bars<1 || config.entry_timing_max_holding_bars<1))
      { error="INVALID_ENTRY_TIMING_ANALYSIS_CONFIG"; return false; }

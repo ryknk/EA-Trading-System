@@ -22,6 +22,7 @@ void OnStart(void)
    AssertTrue(!CTradeLogRules::SafeEventType("BUY"),"unknown event type rejected");
    AssertTrue(CTradeLogRules::SafeEventType("BREAKOUT_TIMING_SETUP"),"breakout timing setup event type accepted");
    AssertTrue(CTradeLogRules::SafeEventType("BREAKOUT_TIMING_TRADE"),"breakout timing trade event type accepted");
+   AssertTrue(CTradeLogRules::SafeEventType("TREND_REVERSAL_EXIT"),"trend reversal exit event type accepted");
 
    ResetLastError();
    if(g_failures==0) Print("TEST_SUITE_PASS TestAuditRules");

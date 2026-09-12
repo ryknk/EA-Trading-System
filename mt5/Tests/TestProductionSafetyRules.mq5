@@ -94,6 +94,34 @@ void OnStart(void)
    AssertTrue(!ValidateConfig(audit_run_id_config,audit_run_id_error) && audit_run_id_error=="INVALID_AUDIT_RUN_ID",
               "audit_run_id longer than 128 chars is rejected");
 
+   SEaConfig trend_reversal_config;
+   SetDefaultConfig(trend_reversal_config);
+   string trend_reversal_error;
+   AssertTrue(!trend_reversal_config.enable_trend_reversal_exit,
+              "trend reversal exit defaults to disabled (safe-by-default)");
+   AssertTrue(ValidateConfig(trend_reversal_config,trend_reversal_error),
+              "default config (trend reversal exit disabled) validates");
+   trend_reversal_config.enable_trend_reversal_exit=true;
+   AssertTrue(ValidateConfig(trend_reversal_config,trend_reversal_error),
+              "trend reversal exit enabled with default thresholds validates");
+   trend_reversal_config.trend_reversal_activation_r_multiple=0.0;
+   AssertTrue(!ValidateConfig(trend_reversal_config,trend_reversal_error) &&
+              trend_reversal_error=="INVALID_TREND_REVERSAL_EXIT_CONFIG",
+              "zero activation r multiple is rejected when enabled");
+   trend_reversal_config.trend_reversal_activation_r_multiple=1.0;
+   trend_reversal_config.trend_reversal_retrace_r_multiple=0.0;
+   AssertTrue(!ValidateConfig(trend_reversal_config,trend_reversal_error) &&
+              trend_reversal_error=="INVALID_TREND_REVERSAL_EXIT_CONFIG",
+              "zero retrace r multiple is rejected when enabled");
+   trend_reversal_config.trend_reversal_retrace_r_multiple=0.5;
+   trend_reversal_config.trend_reversal_confirmation_ticks=0;
+   AssertTrue(!ValidateConfig(trend_reversal_config,trend_reversal_error) &&
+              trend_reversal_error=="INVALID_TREND_REVERSAL_EXIT_CONFIG",
+              "zero confirmation ticks is rejected when enabled");
+   trend_reversal_config.trend_reversal_confirmation_ticks=5;
+   AssertTrue(ValidateConfig(trend_reversal_config,trend_reversal_error),
+              "trend reversal exit config restored to valid thresholds validates");
+
    if(g_failures==0) Print("TEST_SUITE_PASS TestProductionSafetyRules");
    else PrintFormat("TEST_SUITE_FAIL TestProductionSafetyRules failures=%d",g_failures);
   }

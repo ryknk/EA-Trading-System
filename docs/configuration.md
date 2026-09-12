@@ -62,6 +62,29 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
 
 既存方式（false）と段階的方式（true）の比較は、同一IS期間で`InpEntryUseStagedPipeline`のみを変更した2回のStrategy Tester実行を、`docs/backtesting.md`の既存手順（Net Profit・Profit Factor・Sharpe・取引数等）で比較する。段階的方式のみ、`ENTRY_PIPELINE`ログから各Stageの棄却件数も追加で確認できる。
 
+### トレンド継続反転Exit（`InpEnableTrendReversalExit`、2026-09-12追加）
+
+OOS分析（`python.analysis.trade_breakdown`の`reversal_from_profit`/`giveback_from_peak_profit`）で、トレンド相場の負けトレードの多くが「含み益に到達→反転→初期SL到達」のパターンを辿っていることが確認された。本Exitは、初期SL/TPの契約自体を変更せず、トレンド継続が崩れたと判断できる場合に初期SLへ到達する前の早期決済を行う。
+
+**対象**: `InpMagicNumber`（トレンドフォロー戦略）が保有するポジションのみ。レンジ戦略（`InpMeanReversionMagicNumber`）は対象外（既存のRange Filter/BB Width Exitで別途管理する）。
+
+**判定フロー（反転検知→継続確認→Exit）**:
+
+```text
+1. Trendレジーム確認: CMarketRegimeClassifierの現在値（既存のH1 ADX/EMA(Fast)ハンドル・regime_*設定を再利用）が
+   TrendUp/TrendDownの間のみ有効。Range/Unknownへ変わったら監視状態を破棄し、既存のSL/TP・他のExitへ委ねる。
+2. Activation: 含み益ピーク（Peak Favorable Price、Tick単位で追跡）が「建値〜当初SL距離（初期リスク）」の
+   InpTrendReversalActivationR倍以上に到達するまでは監視しない。
+3. 反転検知: Peakからの逆行がInpTrendReversalRetraceR倍（R）以上になったら「反転」を検知する。
+4. 継続確認: 反転検知がInpTrendReversalConfirmationTicks回連続で継続したら決済する（一時的なTickノイズによる
+   誤Exitを防ぐ）。Peak方向へ戻れば確認カウンタは0へリセットされ、再度反転すればカウントをやり直す。
+5. Exit: 市場成行で決済する（初期SL/TP自体は変更しない）。
+```
+
+Long/Short対称に実装されている（`CTrendReversalExitRules`、`mt5/Include/Trading/PositionManager.mqh`）。当初SL（`initial_stop_loss`）はATRトレーリング等によるSL変更の影響を受けないよう、初回検知時にCTimeStopTrackerと同じ考え方で固定する（`CTrendReversalTracker`、CTimeStopTrackerとは目的が異なる別系統として独立管理し、`InpEnableTimeStop`の有効・無効に関わらず動作する）。
+
+決済時、監査ログへ`TREND_REVERSAL_EXIT`イベント（`reason_code`固定値`TrendReversalConfirmed`、`trend_direction`、`peak_price`、`peak_mfe_r_multiple`、`retracement_r_multiple`、`confirmation_count`）が記録される（ローカル監査のみ、TIME_STOP_EXIT/RANGE_EXITと同じく既存TRADE_CLOSEDの契約は変更しない）。`python.analysis.trade_breakdown.trend_reversal_exit_summary()`でBaseline（`InpEnableTrendReversalExit=false`）とON（true）のバックテスト結果を比較できる。詳細は`docs/backtesting.md`「トレンド継続反転Exit比較分析」を参照。
+
 ## リスク・注文設定
 
 | 設定 | 初期値 | 意味 |
@@ -102,6 +125,10 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
 | `InpEnableEntryTimingAnalysis` | false | Entry Timing比較分析（分析専用、実注文なし）を有効化する（2026-08-22追加）。プルバックSetupについて即時Entry・1本待ち・2本待ち・Trigger待ちの4方式をShadow Tradeとして並行シミュレートし監査ログへ記録する。falseの間はIndicatorハンドルすら作成せずコスト0で、既存の売買判断・発注には一切影響しない。詳細は`docs/backtesting.md`「Entry Timing比較分析」を参照 |
 | `InpEntryTimingMaxWaitBars` | 6 | Trigger待ち(WAIT_TRIGGER)方式がTriggerの成立を探す最大バー数。この本数を超えてもTriggerが成立しない場合はWAIT_TRIGGERのShadow Tradeを生成しない（`InpEnableEntryTimingAnalysis=true`時は1以上が必須） |
 | `InpEntryTimingMaxHoldingBars` | 20 | Shadow Trade（IMMEDIATE/WAIT_1_BAR/WAIT_2_BARS/WAIT_TRIGGERいずれも）の最大追跡バー数。SL/TP未到達のままこの本数へ達すると`EXPIRED`としてその時点の価格で打ち切る（`InpEnableEntryTimingAnalysis=true`時は1以上が必須） |
+| `InpEnableTrendReversalExit` | false | トレンド継続反転Exit（Trend Reversal Exit）の有効化（2026-09-12追加）。OOS分析で確認された「含み益ピーク→反転→初期SL到達」の損失パターンを、初期SLへ到達する前の早期決済で抑制する。`InpEnableTradeMutations=false`では発動しない。既定値はOFF（安全側）。詳細は本節末尾「トレンド継続反転Exit」を参照 |
+| `InpTrendReversalActivationR` | 1.0 | 反転監視を開始する最低到達ライン。含み益ピークが「建値〜当初SL距離（初期リスク）」のこの倍数（R）以上に達するまでは監視自体を行わない。`InpEnableTrendReversalExit=true`時は0より大きい値が必須 |
+| `InpTrendReversalRetraceR` | 0.5 | 反転検知の閾値。含み益ピークからの逆行が初期リスクのこの倍数（R）以上になったら「反転」として検知する。`InpEnableTrendReversalExit=true`時は0より大きい値が必須 |
+| `InpTrendReversalConfirmationTicks` | 5 | 反転検知が何Tick連続で継続したら決済するか（一時的なTickノイズによる誤Exitを防ぐ継続確認）。Peak方向へ戻れば0へリセットされる。`InpEnableTrendReversalExit=true`時は1以上が必須 |
 
 `InpEnableTradeMutations` は最後に有効化する。Risk Manager、Decision API、LLMがALLOWでも、この値がfalseなら新規発注しない。本番ゲート未達の状態でtrueにしてはならない。
 

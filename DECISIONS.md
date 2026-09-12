@@ -768,3 +768,35 @@ Host実行（`Invoke-Mt5ExecutionHost`、既定`UseIsolatedSession=true`）は�
 * 実機検証: 単体実行・連続実行（9回）・80ケースバッチスイープ（`STRATEGY_TESTER_BATCH_COMPLETED total=80 succeeded=80 failed=0`、エラー・例外ログ0件）のいずれも、画面表示・フォーカス奪取・タイムアウト・report未生成のいずれも発生せず完走することを確認した（2026-09-08〜12）
 * `HostUseIsolatedSession=$false`（従来の`-WindowStyle Hidden`方式へのフォールバック）は変更せず維持している
 * 既存のタスクスケジューラ上に登録済みの固定タスク`Mt5HostIsolatedRunner`はコードから参照されなくなったが、削除は本対応の範囲外とした（不要になったタスクの削除はユーザー判断で行う）
+
+---
+
+# DEC-032: トレンド継続反転Exitは既存Exitと独立した状態・判断ロジックを持つ加算的なオプトイン層とする
+
+**状態:** 採用
+
+## 背景
+
+OOS分析（`python.analysis.trade_breakdown`、TASKS.md 2.1.3節）で、トレンド戦略の負けトレードの90〜100%が一度含み益（MFE>0）に達してからSLへ到達しており、Peak後の逆行幅（中央値-1.1R）がPeak到達時の含み益（中央値0.18R）自体より常に大きいことが判明した。既存のExit機構（建値ストップ・ATRトレーリングストップ）はいずれもSLを「動かす」方式であり、Fold1-5・4銘柄の再検証でも反転発生率自体（94〜95%）はパラメータを変えても解消できないことが確認済みだった（TASKS.md 2.1.3節）。2026-09-06時点で「Peakでの早期利確・建値ストップの早期化が有効な対策候補」と示唆されていたが未検証のまま残っていた。
+
+## 判断
+
+1. **既存のCTimeStopTracker・CRangeExitGraceTrackerを拡張・流用せず、独立した`CTrendReversalTracker`・`CTrendReversalExitRules`を新設する**（`mt5/Include/Trading/PositionManager.mqh`）。CTimeStopTrackerは`enable_time_stop`のライフサイクルに結び付いており、Trend Reversal Exitを独立した`enable_trend_reversal_exit`で有効・無効化する設計（既存Exitと組み合わせを自由に選べる）とは相容れない。CMeanReversionStrategyが独自の`CRangeExitGraceTracker`を持つのと同じ理由（目的も判定基準も異なる状態を、既存トラッカーへの追記ではなく別クラスとして分離する）を踏襲した。
+2. **反転検知の継続確認はTick数（`InpTrendReversalConfirmationTicks`）とし、実時間秒数（レンジ戦略の`InpMeanReversionBreakConfirmSeconds`と同じ方式）は採用しない。** 建値ストップ・ATRトレーリング・Time Stop（MFEピーク追跡）がいずれも「価格ベースのPeak追跡」を採用しており、Tick数はこれらと同じ粒度で統一でき、実装・テストの両面でシンプルになる。反転検知自体は「Peakから何R逆行したか」という価格ベースの条件であり、継続確認だけを秒数にする理由はないと判断した。
+3. **Activation判定（`IsActivated`）はCTimeStopRules::HasReachedMinMfeRをそのまま再利用する。** 「建値〜当初SL距離＝初期リスク」をR単位の基準とする計算はTime Stopの最低MFE判定と完全に同一の数式であり、重複実装を避けた。
+4. **トレンド判定は`CMarketRegimeClassifier`の現在値をライブに問い合わせる新規メソッド`CTrendFollowingStrategy::CurrentMarketRegimeTrend()`を追加し、既存の`CANDIDATE`イベント記録用の判定（Evaluate()内、Entry時点固定）とは別に評価する。** 保有中ポジションの継続監視には毎Tickでの最新レジーム判定が必要であり、Entry時点で固定されるCANDIDATEの`market_regime_trend`を使い回すことはできない。既存のH1 ADX/EMA(Fast)ハンドルとregime_*設定をそのまま再利用し、新規Indicatorは追加しない。
+5. **SLは動かさず、市場成行での早期決済のみとする。** 既存のSL/TP・Risk Manager・Position Managerとの責務境界を変えず、`CloseOnTrendReversal`を`CloseOnTimeStop`/`CloseOnSignalInvalidation`と同じ冪等性パターン（専用GlobalVariableキー接頭辞）で独立したメカニズムとして追加した。
+6. **既定値はOFF（`InpEnableTrendReversalExit=false`）とし、Activation/Retrace/Confirmationのいずれも「最適値」を決め打ちしない。** Baseline（false）とON（true）のバックテスト結果を比較する運用を前提とし、Strategy Testerによる比較検証は本Decisionの実装範囲に含めない（TASKS.md 2.1.3節に次の一手として記録）。
+
+## 理由
+
+* 独立したトラッカーにすることで、既存Exit（Time Stop・建値ストップ・ATRトレーリング・シグナル失効Exit）のON/OFF状態に関わらず、Trend Reversal Exit単体の効果をBaseline比較で切り分けられる。
+* Tick単位の継続確認は、既存のPeak追跡（CTimeStopTracker、TradeAnalyticsTracker）と同じ「毎Tick更新」の粒度に統一され、実装・単体テストの一貫性を保てる。
+* ライブなレジーム再問い合わせにより、レジームがRange/Unknownへ変わった保有ポジションでは自動的に監視状態を破棄でき（false-safe）、Range相場でのトレンド戦略ポジション（信号失効Exit等の既存機構が対応する既存ケース）への誤発動を避けられる。
+* SLを動かさない設計により、Risk Manager・既存のSL/TP契約・Position Managerの責務境界を一切変更せずに済み、レビュー・ロールバックの範囲を最小化できる。
+
+## 影響
+
+* 追加: `mt5/Include/Trading/PositionManager.mqh`（`CTrendReversalExitRules`・`CTrendReversalTracker`・`CloseOnTrendReversal`）、`mt5/Include/Trading/PositionExitEvaluator.mqh`（`EvaluateTrendReversalExits`）、`mt5/Include/Strategy/TrendFollowingStrategy.mqh`（`CurrentMarketRegimeTrend`）
+* 変更: `mt5/Include/Core/Config.mqh`・`mt5/Experts/CoreEA.mq5`（設定4件）、`mt5/Include/Core/EAController.mqh`（OnTick呼び出し追加）、`mt5/Include/Logging/TradeLogger.mqh`・`python/analysis/reports.py`（新規イベント`TREND_REVERSAL_EXIT`許可リスト追加）、`python/analysis/trade_breakdown.py`（`trend_reversal_exit_summary`）、`contracts/trade-breakdown-report.schema.json`
+* MQL5コンパイル（13ターゲット、0 errors/0 warnings）・全12 Script Test PASS、Pythonテスト70件PASS確認済み（2026-09-12）。Strategy TesterによるBaseline/ON比較・OOS/Final Holdoutでの効果検証は未実施（NOT VERIFIED、TASKS.md 2.1.3節参照）。

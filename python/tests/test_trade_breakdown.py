@@ -15,6 +15,7 @@ from python.analysis.trade_breakdown import (
     range_exit_summary,
     reversal_from_profit_summary,
     time_stop_summary,
+    trend_reversal_exit_summary,
     write_report,
 )
 
@@ -39,7 +40,9 @@ TRADES = [
          range_exit_reason_code="RANGE_BREAK"),
     dict(id="c3", direction="BUY", open="2025-01-08T15:00:00Z", close="2025-01-08T20:00:00Z",
          pnl=-100.0, atr=0.10, adx=22.0, spread=9.0, mfe=-20.0, mae=-110.0,
-         regime_trend="TrendUp", regime_volatility="NormalVolatility", close_reason="SL"),
+         regime_trend="TrendUp", regime_volatility="NormalVolatility", close_reason="EXPERT",
+         trend_reversal_trend_direction="TrendUp", trend_reversal_peak_mfe_r_multiple=0.3,
+         trend_reversal_retracement_r_multiple=0.6, trend_reversal_confirmation_count=5),
     dict(id="c4", direction="SELL", open="2025-01-09T19:00:00Z", close="2025-01-10T02:00:00Z",
          pnl=200.0, atr=0.12, adx=25.0, spread=11.0, mfe=210.0, mae=-40.0,
          regime_trend="TrendDown", regime_volatility="HighVolatility", close_reason="TP"),
@@ -88,6 +91,15 @@ def write_audit_file(directory: Path) -> Path:
             records.append(audit_event("RANGE_EXIT", trade["id"], trade["close"], {
                 "position_ticket": str(1000 + index), "reason_code": range_exit_reason_code,
                 "elapsed_bars": 5,
+            }))
+        trend_reversal_trend_direction = trade.get("trend_reversal_trend_direction")
+        if trend_reversal_trend_direction is not None:
+            records.append(audit_event("TREND_REVERSAL_EXIT", trade["id"], trade["close"], {
+                "position_ticket": str(1000 + index), "reason_code": "TrendReversalConfirmed",
+                "trend_direction": trend_reversal_trend_direction, "peak_price": 146.0,
+                "peak_mfe_r_multiple": trade["trend_reversal_peak_mfe_r_multiple"],
+                "retracement_r_multiple": trade["trend_reversal_retracement_r_multiple"],
+                "confirmation_count": trade["trend_reversal_confirmation_count"],
             }))
     path = directory / "audit-20250106.jsonl"
     path.write_text("\n".join(json.dumps(row) for row in records), encoding="utf-8")
@@ -244,8 +256,8 @@ class TradeBreakdownTests(unittest.TestCase):
             trades = build_trade_context([path])
         rows = {row["close_reason"]: row for row in breakdown_by(trades, "close_reason")}
         self.assertEqual(2, rows["TP"]["number_of_trades"])
-        self.assertEqual(2, rows["SL"]["number_of_trades"])
-        self.assertEqual(1, rows["EXPERT"]["number_of_trades"])
+        self.assertEqual(1, rows["SL"]["number_of_trades"])
+        self.assertEqual(2, rows["EXPERT"]["number_of_trades"])
 
     def test_giveback_summary_computes_ratio_and_full_reversal_share(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -299,6 +311,80 @@ class TradeBreakdownTests(unittest.TestCase):
         self.assertAlmostEqual(0.0, summary["win_rate"])
         self.assertIn("RANGE_BREAK", summary["by_reason_code"])
         self.assertEqual(1, summary["by_reason_code"]["RANGE_BREAK"]["number_of_trades"])
+
+    def test_build_trade_context_flags_trend_reversal_triggered_trades(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_audit_file(Path(directory))
+            trades = build_trade_context([path])
+        by_id = trades.set_index("trade_candidate_id")
+        self.assertEqual("TrendReversalConfirmed", by_id.loc["c3", "trend_reversal_reason_code"])
+        self.assertEqual("TrendUp", by_id.loc["c3", "trend_reversal_trend_direction"])
+        self.assertAlmostEqual(0.3, by_id.loc["c3", "trend_reversal_peak_mfe_r_multiple"])
+        self.assertAlmostEqual(0.6, by_id.loc["c3", "trend_reversal_retracement_r_multiple"])
+        self.assertTrue(bool(by_id.loc["c3", "trend_reversal_triggered"]))
+        for candidate_id in ("c1", "c2", "c4", "c5"):
+            self.assertFalse(bool(by_id.loc[candidate_id, "trend_reversal_triggered"]))
+            self.assertTrue(pd.isna(by_id.loc[candidate_id, "trend_reversal_reason_code"]))
+
+    def test_trend_reversal_exit_summary_counts_trades_and_pnl_by_direction(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_audit_file(Path(directory))
+            trades = build_trade_context([path])
+        summary = trend_reversal_exit_summary(trades)
+        self.assertEqual(1, summary["trades_closed_by_trend_reversal_exit"])
+        self.assertAlmostEqual(-100.0, summary["net_profit"])
+        self.assertAlmostEqual(0.0, summary["win_rate"])
+        self.assertAlmostEqual(0.3, summary["average_peak_mfe_r_multiple"])
+        self.assertAlmostEqual(0.6, summary["average_retracement_r_multiple"])
+        self.assertIn("TrendUp", summary["by_trend_direction"])
+        self.assertEqual(1, summary["by_trend_direction"]["TrendUp"]["number_of_trades"])
+        # c3のmfe(-20)は一度も含み益に転じていないため、TP相当到達済みの取りこぼし候補ではない。
+        self.assertEqual(0, summary["trades_that_would_likely_have_reached_tp"])
+
+    def test_trend_reversal_exit_summary_flags_trades_that_would_likely_have_reached_tp(self) -> None:
+        # 反転Exitで決済されたが、MFEがTP相当R以上に達していた（早期Exitで利益機会を
+        # 取りこぼした可能性がある）ケースを検証する。risk_reward_ratio=2.0、risk_budget=1000.0のため、
+        # mfe=2500(mfe_r=2.5)はTP相当R以上に到達している。
+        records = [
+            audit_event("CANDIDATE", "tr1", "2025-03-01T00:00:00Z", {
+                "direction": "BUY", "pattern": "TREND_BREAKOUT", "entry_price": 145.0,
+                "stop_loss": 144.0, "take_profit": 147.0, "risk_reward_ratio": 2.0,
+                "atr": 0.1, "adx": 25.0, "spread_points": 10.0,
+                "market_regime_trend": "TrendUp", "market_regime_volatility": "NormalVolatility",
+                "hour": 0, "day_of_week": 5, "reason_code": "TREND_BREAKOUT", "reason": "ok",
+            }),
+            audit_event("RISK_DECISION", "tr1", "2025-03-01T00:00:00Z", {
+                "status": "APPROVED", "reason_code": "OK", "reason": "ok", "volume": 0.1,
+                "risk_budget": 1000.0, "estimated_stop_loss": -1000.0, "required_margin": 100.0,
+                "daily_loss_rate": 0.0, "drawdown_rate": 0.0,
+            }),
+            audit_event("TRADE_CLOSED", "tr1", "2025-03-01T05:00:00Z", {
+                "position_ticket": "1", "direction": "BUY",
+                "open_time": "2025-03-01T00:00:00Z", "close_time": "2025-03-01T05:00:00Z",
+                "volume": 0.1, "open_price": 145.0, "close_price": 145.8,
+                "close_reason": "EXPERT", "pnl": 800.0, "commission": -10.0, "swap": 0.0,
+                "exit_spread_points": 1.0, "point_value": 100.0,
+            }),
+            audit_event("TRADE_ANALYTICS", "tr1", "2025-03-01T05:00:00Z", {
+                "position_ticket": "1", "mfe": 2500.0, "mae": -100.0,
+                "mfe_time": "2025-03-01T02:00:00Z", "post_peak_mae": 800.0,
+            }),
+            audit_event("TREND_REVERSAL_EXIT", "tr1", "2025-03-01T05:00:00Z", {
+                "position_ticket": "1", "reason_code": "TrendReversalConfirmed",
+                "trend_direction": "TrendUp", "peak_price": 147.5,
+                "peak_mfe_r_multiple": 2.5, "retracement_r_multiple": 0.55, "confirmation_count": 5,
+            }),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audit-trend-reversal.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in records), encoding="utf-8")
+            trades = build_trade_context([path])
+        by_id = trades.set_index("trade_candidate_id")
+        self.assertTrue(bool(by_id.loc["tr1", "reached_tp_equivalent_r"]))
+        summary = trend_reversal_exit_summary(trades)
+        self.assertEqual(1, summary["trades_closed_by_trend_reversal_exit"])
+        self.assertEqual(1, summary["trades_that_would_likely_have_reached_tp"])
+        self.assertAlmostEqual(800.0, summary["net_pnl_of_trades_that_would_likely_have_reached_tp"])
 
     def test_entry_pipeline_funnel_summary_counts_stages_when_events_present(self) -> None:
         records = [
@@ -393,6 +479,7 @@ class TradeBreakdownTests(unittest.TestCase):
             self.assertIn("reversal_from_profit", report)
             self.assertEqual(1, report["time_stop"]["trades_closed_by_time_stop"])
             self.assertEqual(1, report["range_exit"]["trades_closed_by_range_exit"])
+            self.assertEqual(1, report["trend_reversal_exit"]["trades_closed_by_trend_reversal_exit"])
             self.assertTrue(paths["markdown"].exists())
             self.assertTrue(paths["trades"].exists())
 

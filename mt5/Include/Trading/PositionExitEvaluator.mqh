@@ -21,6 +21,7 @@ private:
    CPositionManager        *m_position_manager;
    CAuditEventPublisher    *m_publisher;
    CTimeStopTracker         m_time_stop_tracker;
+   CTrendReversalTracker    m_trend_reversal_tracker;
 
    string JString(const string value) { return CAuditPayloadBuilder::JString(value); }
    string JNumber(const double value) { return CAuditPayloadBuilder::JNumber(value); }
@@ -139,6 +140,84 @@ public:
          payload+="\"mfe_r_multiple\":"+JNumber(mfe_r_multiple)+"}";
          // ローカル監査のみ。Time Stop識別は分析専用の新規イベントであり、既存TRADE_CLOSEDの契約は変更しない。
          Audit("TIME_STOP_EXIT",candidate_id,"",symbol,payload,false);
+        }
+     }
+
+   // 保有中のトレンド戦略ポジションについて、含み益ピークからの反転がConfirmationTicks回連続で
+   // 確認された場合、初期SLへ到達する前に市場成行で決済する（2026-09-12追加）。OOS分析で確認された
+   // 「含み益→反転→初期SL到達」の損失パターンを、SL/TPの契約自体は変更せず早期に打ち切ることが目的。
+   // このExitはトレンド相場でのみ有効（対象はレジームがTrendUp/TrendDownの間のみ）。判断
+   // （現在レジーム参照・Peak追跡・反転検知・Tick継続確認）はここで行い、メカニズム（決済実行）は
+   // PositionManagerへ委ねる（EvaluateSignalInvalidationExits/EvaluateTimeStopExitsと同じ責務境界）。
+   // レンジ戦略のポジション（mean_reversion_magic_number）は対象外（2引数版のIsManagedPosition）。
+   void EvaluateTrendReversalExits(void)
+     {
+      if(!m_config.enable_trend_reversal_exit || !m_config.enable_trade_mutations)
+         return;
+      const int total=PositionsTotal();
+      for(int index=0; index<total; index++)
+        {
+         const ulong ticket=PositionGetTicket(index);
+         if(ticket==0) continue;
+         if(!CPositionProtectionRules::IsManagedPosition(PositionGetInteger(POSITION_MAGIC),m_config.magic_number))
+            continue;
+         const double stop_loss=PositionGetDouble(POSITION_SL);
+         if(stop_loss<=0.0) continue; // 保護SL未確定のpositionはPositionManager::Monitorの緊急決済側の責務
+         const string symbol=PositionGetString(POSITION_SYMBOL);
+         const ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         const double open_price=PositionGetDouble(POSITION_PRICE_OPEN);
+         MqlTick tick;
+         if(!SymbolInfoTick(symbol,tick)) continue;
+         const double current_price=(type==POSITION_TYPE_BUY ? tick.bid : tick.ask);
+
+         // レジームがRange/Unknownへ変わったら反転監視状態（Peak・確認カウンタ）を破棄し、
+         // 既存のSL/TP・他のExit（シグナル失効・Time Stop等）へ委ねる（false-safe）。
+         EMarketRegimeTrend regime;
+         if(!m_strategy.CurrentMarketRegimeTrend(regime) ||
+            regime==MARKET_REGIME_TREND_RANGE || regime==MARKET_REGIME_TREND_UNKNOWN)
+           {
+            m_trend_reversal_tracker.Remove(ticket);
+            continue;
+           }
+
+         double initial_stop_loss,peak_favorable_price;
+         m_trend_reversal_tracker.Update(ticket,type,stop_loss,current_price,initial_stop_loss,peak_favorable_price);
+
+         if(!CTrendReversalExitRules::IsActivated(type,open_price,initial_stop_loss,peak_favorable_price,
+                                                  m_config.trend_reversal_activation_r_multiple))
+           { m_trend_reversal_tracker.ResetConfirmation(ticket); continue; }
+
+         if(!CTrendReversalExitRules::IsRetraced(type,open_price,initial_stop_loss,peak_favorable_price,current_price,
+                                                 m_config.trend_reversal_retrace_r_multiple))
+           { m_trend_reversal_tracker.ResetConfirmation(ticket); continue; }
+
+         const int confirmation_count=m_trend_reversal_tracker.IncrementConfirmation(ticket);
+         if(!CTrendReversalExitRules::HasConfirmedReversal(confirmation_count,m_config.trend_reversal_confirmation_ticks))
+            continue;
+
+         const string reason_code="TrendReversalConfirmed";
+         string close_error;
+         if(!m_position_manager.CloseOnTrendReversal(ticket,reason_code,close_error))
+           { PrintFormat("TREND_REVERSAL_EXIT_FAILED position=%I64u code=%s",ticket,close_error); continue; }
+         m_trend_reversal_tracker.Remove(ticket);
+
+         const double risk_distance=(type==POSITION_TYPE_BUY ? open_price-initial_stop_loss : initial_stop_loss-open_price);
+         const double favorable_distance=(type==POSITION_TYPE_BUY ? peak_favorable_price-open_price : open_price-peak_favorable_price);
+         const double peak_mfe_r_multiple=(risk_distance>0.0 ? favorable_distance/risk_distance : 0.0);
+         const double retracement_r_multiple=CTrendReversalExitRules::RetracementRMultiple(
+            type,open_price,initial_stop_loss,peak_favorable_price,current_price);
+         const ulong position_identifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+         const string candidate_id=CClosedPositionProcessor::CandidateForPosition(m_config.ea_id,position_identifier,symbol);
+         string payload="{";
+         payload+="\"position_ticket\":"+JString(StringFormat("%I64u",ticket))+",";
+         payload+="\"reason_code\":"+JString(reason_code)+",";
+         payload+="\"trend_direction\":"+JString(MarketRegimeTrendToString(regime))+",";
+         payload+="\"peak_price\":"+JNumber(peak_favorable_price)+",";
+         payload+="\"peak_mfe_r_multiple\":"+JNumber(peak_mfe_r_multiple)+",";
+         payload+="\"retracement_r_multiple\":"+JNumber(retracement_r_multiple)+",";
+         payload+="\"confirmation_count\":"+IntegerToString(confirmation_count)+"}";
+         // ローカル監査のみ。TIME_STOP_EXIT/RANGE_EXITと同じく、既存TRADE_CLOSEDの契約は変更しない。
+         Audit("TREND_REVERSAL_EXIT",candidate_id,"",symbol,payload,false);
         }
      }
 

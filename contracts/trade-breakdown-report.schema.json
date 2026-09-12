@@ -14,6 +14,7 @@
     "giveback_from_peak_profit": {"type": "object"},
     "time_stop": {"type": "object"},
     "range_exit": {"type": "object"},
+    "trend_reversal_exit": {"type": "object"},
     "breakdowns": {"type": "object"},
     "entry_pipeline_funnel": {"type": "object"}
   }

@@ -26,6 +26,15 @@ time_stop_triggered=Falseとなる。close_reasonはMT5のDEAL_REASONをその�
 MEAN_REVERSION_MAX_HOLDING_BARS）はRANGE_EXITイベント（EA側CEAController::
 EvaluateMeanReversionForcedExits/EvaluateMeanReversionTimeStopExitsが送出）のreason_codeで
 識別する。TIME_STOP_EXITと同じ理由でclose_reasonだけでは区別できないため、別イベントを用いる。
+
+トレンド継続反転Exit（`InpEnableTrendReversalExit`、2026-09-12追加）で決済されたトレードは
+TREND_REVERSAL_EXITイベント（EA側CPositionExitEvaluator::EvaluateTrendReversalExitsが送出）で
+識別する。同イベントはpeak_price・peak_mfe_r_multiple（含み益ピークのR倍数）・
+retracement_r_multiple（Peakからの逆行のR倍数）・confirmation_count（反転継続確認Tick数）・
+trend_direction（TrendUp/TrendDown）を記録する。TIME_STOP_EXIT/RANGE_EXITと同じ理由で
+close_reasonだけでは区別できないため、別イベントを用いる。`InpEnableTrendReversalExit=false`
+（既定値）のバックテストではTREND_REVERSAL_EXITイベントが記録されないため、
+trades_closed_by_trend_reversal_exitは常に0になる。
 """
 
 from __future__ import annotations
@@ -58,7 +67,7 @@ BREAKDOWN_COLUMNS = [
     "hold_time_band", "mfe_band", "mae_band",
     "market_regime_trend", "market_regime_volatility",
     "close_reason", "close_session", "close_weekday", "giveback_band",
-    "time_stop_reason_code", "range_exit_reason_code",
+    "time_stop_reason_code", "range_exit_reason_code", "trend_reversal_trend_direction",
 ]
 
 
@@ -146,6 +155,33 @@ def _extract_time_stop_context(records: list[dict[str, Any]]) -> pd.DataFrame:
         seen.add(candidate_id)
         rows.append({"trade_candidate_id": candidate_id, "time_stop_reason_code": payload.get("reason_code")})
     return pd.DataFrame(rows, columns=["trade_candidate_id", "time_stop_reason_code"])
+
+
+def _extract_trend_reversal_context(records: list[dict[str, Any]]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        if record.get("event_type") != "TREND_REVERSAL_EXIT":
+            continue
+        candidate_id = record.get("trade_candidate_id")
+        payload = record.get("payload")
+        if not isinstance(candidate_id, str) or candidate_id in seen or not isinstance(payload, dict):
+            continue
+        seen.add(candidate_id)
+        rows.append({
+            "trade_candidate_id": candidate_id,
+            "trend_reversal_reason_code": payload.get("reason_code"),
+            "trend_reversal_trend_direction": payload.get("trend_direction"),
+            "trend_reversal_peak_price": payload.get("peak_price"),
+            "trend_reversal_peak_mfe_r_multiple": payload.get("peak_mfe_r_multiple"),
+            "trend_reversal_retracement_r_multiple": payload.get("retracement_r_multiple"),
+            "trend_reversal_confirmation_count": payload.get("confirmation_count"),
+        })
+    return pd.DataFrame(rows, columns=[
+        "trade_candidate_id", "trend_reversal_reason_code", "trend_reversal_trend_direction",
+        "trend_reversal_peak_price", "trend_reversal_peak_mfe_r_multiple",
+        "trend_reversal_retracement_r_multiple", "trend_reversal_confirmation_count",
+    ])
 
 
 def _extract_range_exit_context(records: list[dict[str, Any]]) -> pd.DataFrame:
@@ -260,6 +296,9 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
         "close_reason", "close_weekday", "close_session", "giveback_ratio", "giveback_band",
         "time_stop_reason_code", "time_stop_triggered",
         "range_exit_reason_code", "range_exit_triggered",
+        "trend_reversal_reason_code", "trend_reversal_triggered", "trend_reversal_trend_direction",
+        "trend_reversal_peak_price", "trend_reversal_peak_mfe_r_multiple",
+        "trend_reversal_retracement_r_multiple", "trend_reversal_confirmation_count",
         "exit_spread_points", "point_value",
         "candidate_risk_reward_ratio", "mfe_time", "post_peak_mae", "post_peak_mae_r",
         "time_to_peak_hours", "peak_to_close_hours", "reached_tp_equivalent_r",
@@ -280,9 +319,12 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
     enriched = enriched.merge(_extract_closed_context(records), on="trade_candidate_id", how="left")
     enriched = enriched.merge(_extract_time_stop_context(records), on="trade_candidate_id", how="left")
     enriched = enriched.merge(_extract_range_exit_context(records), on="trade_candidate_id", how="left")
+    enriched = enriched.merge(_extract_trend_reversal_context(records), on="trade_candidate_id", how="left")
     for column in (
         "entry_atr", "entry_adx", "entry_spread_points", "risk_budget", "mfe", "mae",
         "exit_spread_points", "point_value", "candidate_risk_reward_ratio", "post_peak_mae",
+        "trend_reversal_peak_price", "trend_reversal_peak_mfe_r_multiple",
+        "trend_reversal_retracement_r_multiple", "trend_reversal_confirmation_count",
     ):
         enriched[column] = pd.to_numeric(enriched[column], errors="coerce")
     enriched["mfe_time"] = pd.to_datetime(enriched["mfe_time"], errors="coerce", utc=True)
@@ -325,6 +367,7 @@ def build_trade_context(paths: list[Path]) -> pd.DataFrame:
 
     enriched["time_stop_triggered"] = enriched["time_stop_reason_code"].notna()
     enriched["range_exit_triggered"] = enriched["range_exit_reason_code"].notna()
+    enriched["trend_reversal_triggered"] = enriched["trend_reversal_reason_code"].notna()
 
     enriched["atr_band"] = _quantile_band(enriched["entry_atr"], "ATR")
     enriched["adx_band"] = _quantile_band(enriched["entry_adx"], "ADX")
@@ -409,12 +452,47 @@ def range_exit_summary(trades: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+def trend_reversal_exit_summary(trades: pd.DataFrame) -> dict[str, Any]:
+    """トレンド継続反転Exit（TREND_REVERSAL_EXIT）で決済されたトレードの件数・損益・Peak MFEを要約する。
+    InpEnableTrendReversalExit=false（既定値）のバックテストではtrades_closed_by_trend_reversal_exitが
+    常に0になる。Baseline（無効）とON（有効）のバックテスト結果を本関数で比較することを想定している。
+
+    reached_tp_equivalent_rはbuild_trade_contextが汎用指標として算出済みの
+    「MFEがそのトレード自身のTP相当R以上に達したか」の近似指標。本Exitで決済されたトレードのうち、
+    この指標がTrueのものは「そのまま保有していればTPへ到達していた可能性がある」ことを示し、
+    早期Exitの副作用（利益機会の取りこぼし）を確認するための入口として使う。
+    """
+    triggered = trades[trades["trend_reversal_triggered"]]
+    summary = aggregate_trade_group(triggered["net_pnl"])
+    by_direction = {
+        str(direction): aggregate_trade_group(part["net_pnl"])
+        for direction, part in triggered.groupby("trend_reversal_trend_direction", sort=True, observed=True)
+    }
+    would_have_reached_tp = triggered[triggered["reached_tp_equivalent_r"]]
+    return {
+        "trades_closed_by_trend_reversal_exit": summary.pop("number_of_trades"),
+        **summary,
+        "average_peak_mfe_r_multiple": (
+            None if triggered.empty else float(triggered["trend_reversal_peak_mfe_r_multiple"].mean())
+        ),
+        "average_retracement_r_multiple": (
+            None if triggered.empty else float(triggered["trend_reversal_retracement_r_multiple"].mean())
+        ),
+        "trades_that_would_likely_have_reached_tp": int(len(would_have_reached_tp)),
+        "net_pnl_of_trades_that_would_likely_have_reached_tp": (
+            None if would_have_reached_tp.empty else float(would_have_reached_tp["net_pnl"].sum())
+        ),
+        "by_trend_direction": by_direction,
+    }
+
+
 def _markdown(
     breakdowns: dict[str, list[dict[str, Any]]],
     reversal: dict[str, Any],
     giveback: dict[str, Any],
     time_stop: dict[str, Any],
     range_exit: dict[str, Any],
+    trend_reversal_exit: dict[str, Any],
     entry_pipeline_funnel: dict[str, Any] | None = None,
 ) -> str:
     lines = [
@@ -468,6 +546,34 @@ def _markdown(
         lines += ["", "理由コード別:", "```json",
                   json.dumps(range_exit["by_reason_code"], ensure_ascii=False, indent=2), "```"]
     lines.append("")
+    lines += [
+        "## トレンド継続反転Exit（TREND_REVERSAL_EXIT）", "",
+        f"- 決済件数: {trend_reversal_exit['trades_closed_by_trend_reversal_exit']}",
+        f"- 純損益: {trend_reversal_exit['net_profit']:.2f}",
+    ]
+    trend_reversal_pf = trend_reversal_exit["profit_factor"]
+    lines.append(f"- プロフィットファクター: {'算出不能' if trend_reversal_pf is None else f'{trend_reversal_pf:.4f}'}")
+    lines.append(
+        f"- 勝率: {trend_reversal_exit['win_rate']:.2%}"
+        if trend_reversal_exit["trades_closed_by_trend_reversal_exit"] else "- 勝率: 算出不能"
+    )
+    lines.append(f"- 期待値: {trend_reversal_exit['expectancy']:.2f}")
+    average_peak_mfe_r = trend_reversal_exit["average_peak_mfe_r_multiple"]
+    lines.append(f"- 平均Peak MFE（R）: {'算出不能' if average_peak_mfe_r is None else f'{average_peak_mfe_r:.4f}'}")
+    average_retracement_r = trend_reversal_exit["average_retracement_r_multiple"]
+    lines.append(f"- 平均反転幅（R）: {'算出不能' if average_retracement_r is None else f'{average_retracement_r:.4f}'}")
+    lines.append(
+        "- うちTP相当R到達済みだった可能性のある件数（早期Exitの取りこぼし候補）: "
+        f"{trend_reversal_exit['trades_that_would_likely_have_reached_tp']}"
+    )
+    tp_candidate_pnl = trend_reversal_exit["net_pnl_of_trades_that_would_likely_have_reached_tp"]
+    lines.append(
+        "- 上記件数の純損益合計: " + ("算出不能" if tp_candidate_pnl is None else f"{tp_candidate_pnl:.2f}")
+    )
+    if trend_reversal_exit["by_trend_direction"]:
+        lines += ["", "トレンド方向別:", "```json",
+                  json.dumps(trend_reversal_exit["by_trend_direction"], ensure_ascii=False, indent=2), "```"]
+    lines.append("")
     if entry_pipeline_funnel is not None:
         lines += [
             "## 段階的Entry判定パイプライン（InpEntryUseStagedPipeline=true時のみ記録）", "",
@@ -498,6 +604,7 @@ def write_report(
     giveback = giveback_summary(trades)
     time_stop = time_stop_summary(trades)
     range_exit = range_exit_summary(trades)
+    trend_reversal_exit = trend_reversal_exit_summary(trades)
     entry_pipeline_funnel: dict[str, Any] | None = None
     if input_paths:
         records: list[dict[str, Any]] = []
@@ -528,11 +635,18 @@ def write_report(
             "time_stop_triggered": "time_stop_reason_codeがNaNでないトレードはTrue。InpEnableTimeStop=falseのバックテストでは常にFalse",
             "range_exit_reason_code": "レンジ相場逆張り戦略の強制決済で決済された場合の理由コード（RANGE_BREAK/BB_WIDTH_EXPANSION/MEAN_REVERSION_MAX_HOLDING_BARS）。該当しない決済ではNaN",
             "range_exit_triggered": "range_exit_reason_codeがNaNでないトレードはTrue。InpEnableMeanReversionStrategy=falseのバックテストでは常にFalse",
+            "trend_reversal_reason_code": "トレンド継続反転Exitで決済された場合の理由コード（TrendReversalConfirmed固定）。該当しない決済ではNaN",
+            "trend_reversal_triggered": "trend_reversal_reason_codeがNaNでないトレードはTrue。InpEnableTrendReversalExit=falseのバックテストでは常にFalse",
+            "trend_reversal_trend_direction": "反転Exit発動時点の市場レジームトレンド方向（TrendUp/TrendDown）。該当しない決済ではNaN",
+            "trend_reversal_peak_mfe_r_multiple": "反転Exit発動時点までの含み益ピーク（建値〜当初SL距離を1RとするR倍数）。該当しない決済ではNaN",
+            "trend_reversal_retracement_r_multiple": "反転Exit発動時点でのPeakからの逆行幅（R倍数）。該当しない決済ではNaN",
+            "reached_tp_equivalent_r": "mfe_rがそのトレード自身のTP相当R（candidate_risk_reward_ratio）以上に達したか。SL到達トレードでは「あと一歩でTPだった」の近似指標、反転Exitトレードでは「早期Exitしなければ後にTPへ到達していた可能性」の近似指標",
         },
         "reversal_from_profit": reversal,
         "giveback_from_peak_profit": giveback,
         "time_stop": time_stop,
         "range_exit": range_exit,
+        "trend_reversal_exit": trend_reversal_exit,
         "breakdowns": breakdowns,
     }
     if entry_pipeline_funnel is not None:
@@ -546,7 +660,8 @@ def write_report(
         json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8",
     )
     output_paths["markdown"].write_text(
-        _markdown(breakdowns, reversal, giveback, time_stop, range_exit, entry_pipeline_funnel), encoding="utf-8",
+        _markdown(breakdowns, reversal, giveback, time_stop, range_exit, trend_reversal_exit, entry_pipeline_funnel),
+        encoding="utf-8",
     )
     trades.to_csv(output_paths["trades"], index=False)
     return output_paths

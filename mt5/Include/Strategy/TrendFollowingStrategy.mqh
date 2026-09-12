@@ -354,6 +354,24 @@ public:
         { reason_code="CONFIRMATION_ADX_TOO_LOW"; return false; }
       return true;
      }
+
+   // 保有中ポジションのTrend Reversal Exit判定専用: Evaluate()のStage 1市場レジーム判定
+   // （既存のH1 ADX/EMA(Fast)ハンドルとregime_*設定を再利用）と同一の計算を、候補生成のための
+   // 他の判定（HTFバイアス・Setup・Trigger）を評価せずに即時取得する。確定足（shift>=1）のみを
+   // 参照し、look-ahead biasを発生させない。データ取得不能時はfalseを返し、呼び出し元は
+   // false-safe（Trend Reversal Exitを発動しない）に扱う。
+   bool CurrentMarketRegimeTrend(EMarketRegimeTrend &regime)
+     {
+      regime=MARKET_REGIME_TREND_UNKNOWN;
+      if(!m_initialized) return false;
+      double adx,ma_current,ma_reference;
+      if(!ReadIndicator(m_h1_adx_handle,1,adx) ||
+         !ReadIndicator(m_h1_fast_handle,1,ma_current) ||
+         !ReadIndicator(m_h1_fast_handle,1+m_config.regime_ma_slope_lookback,ma_reference))
+         return false;
+      regime=CMarketRegimeClassifier::ClassifyTrend(adx,ma_current,ma_reference,m_config.regime_trend_adx_min);
+      return true;
+     }
   };
 
 #endif

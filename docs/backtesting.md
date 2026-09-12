@@ -130,6 +130,24 @@ python -m python.analysis.trade_breakdown `
 
 出力は `trade-breakdown-report.json`（JSON契約は `contracts/trade-breakdown-report.schema.json` を正とする）、`trade-breakdown-report.md`、および条件別列（`entry_atr`・`entry_adx`・`entry_spread_points`・`risk_budget`・`mfe`・`mae`・`r_multiple`・`hold_time_hours`・`weekday`・`session`・`atr_band`・`adx_band`・`hold_time_band`・`mfe_band`・`mae_band`・`market_regime_trend`・`market_regime_volatility`・`close_reason`・`close_weekday`・`close_session`・`giveback_ratio`・`giveback_band`）を付加した `trades-with-context.csv` である。ATR帯・ADX帯・保有時間帯・MFE帯・MAE帯・Giveback帯は実データの分位点（三分位）から算出し、固定のしきい値をハードコードしない。Session区分（Tokyo/London/London_NewYork_Overlap/NewYork）はUTC時刻に基づく概算区分であり、DSTは考慮しない簡略化である。R換算損益（`r_multiple`）は該当候補が承認された `RISK_DECISION` の `risk_budget`（発注時点のリスク許容額）に対する比率で、EA側での追加ロジックなしにPython側で算出する。`market_regime_trend`・`market_regime_volatility`はEA側の判定結果をそのまま再構成した値であり、Python側は判定ロジックを持たない。`close_reason`はMT5の`DEAL_REASON`をそのまま文字列化した値であり、EA側で決済理由を推定・分類するロジックは持たない。CLIから実行した場合（`--input`で指定した監査JSONLに`ENTRY_PIPELINE`イベントが含まれる場合のみ）、レポートJSON・Markdownへ`entry_pipeline_funnel`（段階的Entry判定パイプラインのStage別棄却件数）が追加される。
 
+### トレンド継続反転Exit比較分析（2026-09-12実装）
+
+条件別分析（`reversal_from_profit`・`giveback_from_peak_profit`）で確認された「トレンド相場の負けトレードの多くが含み益ピーク→反転→初期SL到達というパターンを辿っている」という所見を受け、トレンド継続反転Exit（`InpEnableTrendReversalExit`、既定値`false`、詳細は`docs/configuration.md`「トレンド継続反転Exit」参照）を追加した。目的はIn-SampleのProfit Factor最大化ではなく、OOSで観測された「利益からSLへの反転損失」の抑制であるため、特定パラメータをIS上で最適化して固定するのではなく、**Baseline（`InpEnableTrendReversalExit=false`）とON（`true`）のバックテスト結果を同一期間・同一パラメータで比較する**運用を前提とする。
+
+発動したトレードはEA側`CPositionExitEvaluator::EvaluateTrendReversalExits`が送出する`TREND_REVERSAL_EXIT`イベント（`reason_code`固定値`TrendReversalConfirmed`、`trend_direction`、`peak_price`、`peak_mfe_r_multiple`、`retracement_r_multiple`、`confirmation_count`）で識別する。TIME_STOP_EXIT/RANGE_EXITと同じ理由（MT5の`DEAL_REASON`はEA発注による決済をすべて`EXPERT`に一括りにする）で、`close_reason`だけでは区別できない。
+
+```powershell
+$env:PYTHONPATH='.'
+# Baseline
+python -m python.analysis.trade_breakdown --input results/backtests/<baseline-run-id>-USDJPY-H1/audit/audit-<baseline-run-id>.jsonl --output build/trend-reversal-baseline
+# ON
+python -m python.analysis.trade_breakdown --input results/backtests/<on-run-id>-USDJPY-H1/audit/audit-<on-run-id>.jsonl --output build/trend-reversal-on
+```
+
+`trade-breakdown-report.json`の`trend_reversal_exit`セクション（`trades_closed_by_trend_reversal_exit`・`net_profit`・`profit_factor`・`win_rate`・`expectancy`・`average_peak_mfe_r_multiple`・`average_retracement_r_multiple`・`by_trend_direction`）に加え、レポート全体のPF・Net Profit・Expectancy・Max DD・Win Rate・平均利益/平均損失・Trade数（`aggregate_trade_group`が既存のPerformance Report集計と共通）をBaseline/ON間で比較する。Exit理由別件数は`breakdowns`の`close_reason`列（TIME_STOP_EXIT/RANGE_EXITと同様、実際にはEXPERTへ統合されるため`trend_reversal_exit_triggered`フラグと併用する）、Peak MFEは`mfe_band`・`trend_reversal_peak_mfe_r_multiple`列を参照する。
+
+**「最終的にTPへ到達していた勝ちトレードを早期Exitしていないか」の確認**: `trend_reversal_exit.trades_that_would_likely_have_reached_tp`（および`net_pnl_of_trades_that_would_likely_have_reached_tp`）は、反転Exitで決済されたトレードのうち、既存の汎用指標`reached_tp_equivalent_r`（MFE_RがそのトレードのTP相当R以上に達したか）がTrueだったものの件数・純損益合計を示す。この件数が多い、または純損益合計がプラスに大きい場合、反転Exitが「本来TPへ到達していたはずの利益」を早期に打ち切ってしまっている可能性を示す。`InpTrendReversalActivationR`・`InpTrendReversalRetraceR`・`InpTrendReversalConfirmationTicks`はこの指標とOOS全体のPF/Net Profitの両方を見ながら判断し、IS単体の指標最大化だけを理由に固定しない。
+
 ## Entry Timing比較分析（2026-08-22実装）
 
 `InpEnableEntryTimingAnalysis`（既定値`false`）を`true`にすると、EA側`CEntryTimingAnalyzer`（`mt5/Include/Logging/EntryTimingAnalyzer.mqh`）が、同一のプルバックSetupについて次の4方式を**実注文なしのShadow Trade**として並行シミュレートする。
