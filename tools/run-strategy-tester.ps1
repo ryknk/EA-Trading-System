@@ -25,10 +25,9 @@ param(
     # VM指定時はホストのGUIフォーカスを奪わず、WinRM/PSRemoting経由でVM上のMT5を実行する。
     [ValidateSet("Host", "VM")][string]$ExecutionMode = "Host",
     [string]$VmSettingsPath = "tools\config\mt5-vm.settings.json",
-    # ExecutionMode=Host専用。既定trueでタスクスケジューラ経由の非対話セッション実行
-    # （フォーカス奪取・画面表示無し、DEC-034/035）を使う。事前に管理者権限で
-    # tools\setup-mt5-scheduled-task.ps1 を実行しタスクを登録しておく必要がある。
-    # falseにすると従来の-WindowStyle Hidden方式へフォールバックする（タスク未登録の環境向け）。
+    # ExecutionMode=Host専用。既定trueで画面表示・フォーカス奪取を避ける非表示デスクトップ方式
+    # （CreateDesktopEx、DEC-031）を使う。管理者権限は不要。falseにすると従来の
+    # -WindowStyle Hidden方式へフォールバックする。
     [bool]$HostUseIsolatedSession = $true
 )
 
@@ -158,6 +157,10 @@ function Invoke-StrategyTesterCase {
     if ([string]::IsNullOrEmpty($period)) { $period = "H1" }
 
     $searchRoots = @($Root, $TerminalData, $InstallPath, (Join-Path $env:APPDATA "MetaQuotes")) | Select-Object -Unique
+    # $Rootはリポジトリ全体（results/backtests配下に蓄積される過去の全実行結果を含む）を再帰検索
+    # するため重く（実測で30万ファイル超・約2.5秒、実行を重ねるほど遅くなる）。後段のreport検索
+    # リトライでは、高頻度なポーリングに$Rootを除いた軽量なパス（実測で計0.2秒未満）を使う。
+    $fastSearchRoots = $searchRoots | Where-Object { $_ -ne $Root }
 
     # 監査JSONLはRun ID単位のファイル名（audit-<ReportName>.jsonl、上記Set-IniTesterInput参照）で
     # 保存されるため、実行前に前回分のaudit-*.jsonlを削除する処理は不要になった。かつてはEA側が
@@ -176,11 +179,38 @@ function Invoke-StrategyTesterCase {
     # 検索対象へ追加する。以降のreport/audit検索ロジックはHost/VMで変更しない。
     if ($ExecutionMode -eq "VM") { $searchRoots += $execResult.StagingRoots }
 
-    $reports = foreach ($searchRoot in $searchRoots) {
-        if (Test-Path -LiteralPath $searchRoot) {
-            Get-ChildItem -LiteralPath $searchRoot -Recurse -File -ErrorAction SilentlyContinue |
-                Where-Object { $_.BaseName -eq $ReportName }
+    # terminal64.exeプロセスの終了検知（ExitCode確定）と、実際のreportファイルがディスク上に
+    # 出現するタイミングとの間にわずかな遅延が生じる可能性があるため、保険として即座に1回だけ
+    # 試すのではなく、一定時間・短い間隔でリトライする。
+    $reportSearchTimeoutSeconds = 10
+    $reportSearchIntervalMilliseconds = 250
+    $reportSearchDeadline = (Get-Date).AddSeconds($reportSearchTimeoutSeconds)
+    $reportSearchAttempts = 0
+    $reports = @()
+    while ($true) {
+        $reportSearchAttempts++
+        $reports = foreach ($searchRoot in $fastSearchRoots) {
+            if (Test-Path -LiteralPath $searchRoot) {
+                Get-ChildItem -LiteralPath $searchRoot -Recurse -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.BaseName -eq $ReportName }
+            }
         }
+        if ($reports) { break }
+        if ((Get-Date) -gt $reportSearchDeadline) { break }
+        Start-Sleep -Milliseconds $reportSearchIntervalMilliseconds
+    }
+    if (-not $reports) {
+        # 軽量パスで見つからなかった場合の最終フォールバック（$Rootを含めた全パスを1回だけ検索）。
+        $reports = foreach ($searchRoot in $searchRoots) {
+            if (Test-Path -LiteralPath $searchRoot) {
+                Get-ChildItem -LiteralPath $searchRoot -Recurse -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.BaseName -eq $ReportName }
+            }
+        }
+        $reportSearchAttempts++
+    }
+    if ($reportSearchAttempts -gt 1) {
+        Write-Host "STRATEGY_TESTER_REPORT_SEARCH_RETRIED attempts=$reportSearchAttempts found=$([bool]$reports)"
     }
     if (-not $reports) { throw "Strategy Testerは終了しましたがreportが生成されませんでした。Tester logを確認してください。" }
     $reportFiles = @()

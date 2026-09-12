@@ -6,16 +6,13 @@
 # run-mql5-tests.ps1 -ExecutionMode VM / run-strategy-tester.ps1 -ExecutionMode VM を
 # 実際のVM設定で実行して確認する。2026-09-06に実機確認済み、DECISIONS.md DEC-029参照）。
 #
-# Host実行はDEC-034/035によりタスクスケジューラ（S4Uログオン）経由の非対話セッション実行を
-# 既定とした（CreateDesktop方式・DEC-031〜033はterminal64.exeとの構造的な相性問題が実機で
-# 確認され放棄した）。タスクの登録(Register-ScheduledTask)・Action変更(Set-ScheduledTask)には
-# 管理者権限が必要な一方、既存タスクの起動(Start-ScheduledTask)は通常権限でも可能なため、
-# 固定タスク（tools/setup-mt5-scheduled-task.ps1で事前登録）を使い回す設計にしている（DEC-035）。
-# このタスクが未登録の環境（管理者権限でセットアップ未実施）では既定経路（UseIsolatedSession=true）
-# のテストを実行できないため、本スクリプトは冒頭でタスクの登録有無を確認し、未登録ならスキップし、
-# その旨を明示する（テストを通すために弱体化しているわけではなく、実行環境の制約として扱う）。
+# Host実行は既定でCreateDesktopEx（十分なヒープサイズを明示指定した非表示デスクトップ）経由の
+# 対話セッション内実行を使う（DEC-031参照。標準CreateDesktop方式はヒープサイズ不足で放棄し、
+# 一時検討したタスクスケジューラ方式もSession 0のGUI制約により廃止した経緯がある）。
+# 対話セッション内での実行のため管理者権限や事前セットアップは不要で、既定経路
+# （UseIsolatedSession=true）を環境に依らず常に検証できる。
 # -HostUseIsolatedSession $falseで従来の-WindowStyle Hidden方式へ切替可能にしており、
-# 本スクリプトではその経路（正常系・タイムアウト）は環境に依らず常に検証している。
+# 本スクリプトではその経路（正常系・タイムアウト）も検証している。
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -45,37 +42,25 @@ function Assert-ThrowsMatching {
 
 Write-Host "MT5_EXECUTION_BACKEND_TEST_START"
 
-# --- 固定タスク(Mt5HostIsolatedRunner)の登録有無を事前確認する。未登録の環境（管理者権限で
-# tools/setup-mt5-scheduled-task.ps1を未実施）では既定経路(UseIsolatedSession=true)の
-# テストが実行できないため、その場合は明示的にスキップする。 ---
-$scheduledTaskAvailable = $null -ne (Get-ScheduledTask -TaskName "Mt5HostIsolatedRunner" -ErrorAction SilentlyContinue)
-if (-not $scheduledTaskAvailable) {
-    Write-Host "SKIP_NOTE タスク 'Mt5HostIsolatedRunner' が未登録のため、既定経路(UseIsolatedSession=true)のテストをスキップします（事前に管理者権限で tools\setup-mt5-scheduled-task.ps1 を実行してください）。"
-}
+# --- Host正常系: exitコード0を返して正常終了すること ---
+$result = Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $cmdExe -ExecutableArguments @("/c", "exit", "0") -TimeoutSeconds 10
+Assert-True ($result.Success -eq $true) "Host正常系: Successがtrueであること"
+Assert-True ($result.ExitCode -eq 0) "Host正常系: ExitCodeが0であること"
+Assert-True ($result.ExecutionMode -eq "Host") "Host正常系: ExecutionModeがHostであること"
+Write-Host "PASS Host正常系"
 
-if ($scheduledTaskAvailable) {
-    # --- Host正常系: exitコード0を返して正常終了すること ---
-    $result = Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $cmdExe -ExecutableArguments @("/c", "exit", "0") -TimeoutSeconds 10
-    Assert-True ($result.Success -eq $true) "Host正常系: Successがtrueであること"
-    Assert-True ($result.ExitCode -eq 0) "Host正常系: ExitCodeが0であること"
-    Assert-True ($result.ExecutionMode -eq "Host") "Host正常系: ExecutionModeがHostであること"
-    Write-Host "PASS Host正常系"
+# --- Host正常系: 0以外のExitCodeもそのまま伝播すること ---
+$result2 = Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $cmdExe -ExecutableArguments @("/c", "exit", "7") -TimeoutSeconds 10
+Assert-True ($result2.ExitCode -eq 7) "Host ExitCode伝播: ExitCodeが7であること"
+Write-Host "PASS Host ExitCode伝播"
 
-    # --- Host正常系: 0以外のExitCodeもそのまま伝播すること ---
-    $result2 = Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $cmdExe -ExecutableArguments @("/c", "exit", "7") -TimeoutSeconds 10
-    Assert-True ($result2.ExitCode -eq 7) "Host ExitCode伝播: ExitCodeが7であること"
-    Write-Host "PASS Host ExitCode伝播"
-
-    # --- Hostタイムアウト: 長時間コマンドを短いタイムアウトで強制終了させ、例外になること ---
-    Assert-ThrowsMatching -Action {
-        Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $pingExe -ExecutableArguments @("-n", "30", "127.0.0.1") -TimeoutSeconds 2
-    } -Pattern "タイムアウト" -Message "Hostタイムアウト: タイムアウト例外が発生すること"
-    Start-Sleep -Milliseconds 500
-    Assert-True (-not (Get-Process -Name "PING" -ErrorAction SilentlyContinue)) "Hostタイムアウト: タイムアウト後にpingプロセスが残っていないこと"
-    Write-Host "PASS Hostタイムアウト"
-} else {
-    Write-Host "SKIP Host正常系・ExitCode伝播・タイムアウト（タスクスケジューラ登録権限なし）"
-}
+# --- Hostタイムアウト: 長時間コマンドを短いタイムアウトで強制終了させ、例外になること ---
+Assert-ThrowsMatching -Action {
+    Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $pingExe -ExecutableArguments @("-n", "30", "127.0.0.1") -TimeoutSeconds 2
+} -Pattern "タイムアウト" -Message "Hostタイムアウト: タイムアウト例外が発生すること"
+Start-Sleep -Milliseconds 500
+Assert-True (-not (Get-Process -Name "PING" -ErrorAction SilentlyContinue)) "Hostタイムアウト: タイムアウト後にpingプロセスが残っていないこと"
+Write-Host "PASS Hostタイムアウト"
 
 # --- HostUseIsolatedSession=$false: 従来の-WindowStyle Hidden方式（フォールバック）でも正常系が動くこと ---
 # （タスクスケジューラの権限有無に関わらず常に検証できる経路）。

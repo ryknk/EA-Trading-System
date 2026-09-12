@@ -724,190 +724,47 @@ DEC-029でVM/vmrun実行のフル動作確認を行った際、`InpAuditFileEnab
 
 ---
 
-# DEC-031: Host実行のterminal64.exe起動は非表示デスクトップ経由（CreateDesktop+CreateProcess）とし、`-WindowStyle Hidden`には依存しない
 
-**状態:** 採用
+# DEC-031: Host実行はterminal64.exeを非表示デスクトップ（CreateDesktopEx）経由で起動し、画面表示・フォーカス奪取を防止する
 
-## 背景
-
-`Invoke-Mt5ExecutionHost`（`tools/lib/Mt5ExecutionBackend.psm1`）は従来`Start-Process -WindowStyle Hidden`でterminal64.exeを起動していたが、Hostで実行すると画面にウィンドウが表示されることが判明した。同一の`-WindowStyle Hidden`指定を使うVM側（vmrun経由のゲスト内`Start-Process`）では画面に何も表示されないことも実機確認済みだった。
-
-原因を調査したところ、`-WindowStyle Hidden`は`CreateProcess`の`STARTUPINFO.wShowWindow`（`SW_HIDE`）という表示状態の「ヒント」に過ぎず、実際に尊重するかはプロセス側の実装次第であることが分かった。terminal64.exeはGUIサブシステムのアプリで、自身のメインウィンドウ表示を独自ロジックで制御するため、このヒントを無視して通常表示してしまう。Host実行は対話ログオン中のデスクトップ上で直接起動するため、この「無視された結果」がそのままユーザーに見える。一方VM側は`vmrun runProgramInGuest`を`-interactive`なしで呼んでいるため、そもそも対話デスクトップにアタッチされない非対話セッションでプロセスが生成されており、`-WindowStyle Hidden`の効果とは無関係にウィンドウが不可視になっていた（`-activeWindow`は`-interactive`を伴わない限りゲスト側の対話デスクトップへのアタッチを保証しない）。
-
-対策として「起動後にウィンドウハンドルを取得しShowWindow(SW_HIDE)で隠す」方式も検討したが、ウィンドウ生成からHide呼び出しまでの間は必ず一瞬表示され、Windowsの既定挙動で新規ウィンドウがフォアグラウンド化されるためフォーカスも奪われる。これは目視でのちらつき・作業中の他ウィンドウからのフォーカス移動として実害があるため採用しなかった。
-
-## 判断
-
-Host実行を、現在の対話デスクトップとは別の非表示デスクトップ上でterminal64.exeを起動する方式へ変更する。
-
-1. `tools/lib/Mt5ExecutionBackend.psm1`へ`Add-Type`でP/Invokeラッパー（`Mt5ExecutionBackend.HiddenDesktopLauncher`、`user32.dll`の`CreateDesktop`/`CloseDesktop`、`kernel32.dll`の`CreateProcess`/`WaitForSingleObject`/`GetExitCodeProcess`/`TerminateProcess`）を追加する。
-2. `Invoke-Mt5ExecutionHost`は、実行のたびに一意な名前（GUIDベース）の非表示デスクトップを`CreateDesktop`で作成し、その`lpDesktop`を指定した`STARTUPINFO`で`CreateProcess`により起動する。コマンドライン文字列は既存の`ConvertTo-Mt5Win32CommandLine`（Vmrun経路で既に使っているWin32互換エスケープ関数）をそのまま再利用して構築する。
-3. 待機・タイムアウト・終了コード取得は、.NETの`Process.GetProcessById`（PID再利用によるレースコンディションの余地がある）を経由せず、`CreateProcess`が返すネイティブの`hProcess`ハンドルに対して直接`WaitForSingleObject`・`GetExitCodeProcess`・`TerminateProcess`を呼ぶ形でC#側に閉じ込める。
-4. `dwCreationFlags`に`CREATE_NO_WINDOW`を指定する（コンソールサブシステムの子プロセスが親のコンソールを共有し標準出力が漏れる問題への対処。GUIサブシステムのterminal64.exeには無関係）。
-5. `Invoke-Mt5ExecutionHost`の関数シグネチャ・戻り値（`ExecutionMode`/`ExitCode`/`Success`/`StagingRoots`）・タイムアウト時の例外メッセージは変更しない。呼び出し側（`run-strategy-tester.ps1`・`run-mql5-tests.ps1`）は無変更で動作する。
-6. VM側（`Invoke-Mt5ExecutionVmrun`・`Invoke-Mt5ExecutionVmWinRm`）の`Start-Process -WindowStyle Hidden`はそのまま維持する（非対話セッションで実行されるため実害がなく、変更の必要がない）。
-
-## 理由
-
-* 非表示デスクトップは対話デスクトップとは独立したウィンドウステーション内オブジェクトであり、その上で生成されたウィンドウは対話デスクトップへ一切描画されない。そのためウィンドウ生成の瞬間も含めて表示されず、フォーカスも奪わない（後からHideする方式の「一瞬表示される」問題を構造的に回避できる）
-* VM側の`vmrun runProgramInGuest`（`-interactive`なし）が非対話セッションでプロセスを生成する仕組みと同じ原理であり、既存VM実装の観察結果と整合する
-* ネイティブハンドルに対して直接`WaitForSingleObject`/`GetExitCodeProcess`を使うことで、.NET`Process.GetProcessById`のPID再利用によるレースコンディション（起動直後にプロセスが即終了しPIDが別プロセスへ再利用される可能性）を避けられる
-* 既存の`ConvertTo-Mt5Win32CommandLine`を再利用することで、コマンドラインエスケープロジックの重複実装を避けた
-* 関数シグネチャ・戻り値・例外メッセージを変更しないことで、呼び出し側・既存テストへの影響を最小化した
-
-## 影響
-
-* 変更: `tools/lib/Mt5ExecutionBackend.psm1`（`Add-Mt5HiddenDesktopType`・`Invoke-Mt5ExecutionHost`）、`tools/test-mt5-execution-backend.ps1`（冒頭コメント更新）
-* `tools/test-mt5-execution-backend.ps1`の既存テスト（Host正常系・ExitCode伝播・タイムアウト・ConfigFilePath自動引数生成、他VM設定検証系）は全てPASSすることを確認した（2026-09-08、Host環境で実行）
-* **terminal64.exeが実際に対話デスクトップへ描画されずフォーカス奪取も発生しないことは未確認。** 本テストはコンソールアプリ（`cmd.exe`・`PING.EXE`）でのプロセス起動・待機・終了コード取得の正常系のみを検証しており、GUIアプリでの画面非表示・フォーカス非奪取の実証は含まない。`.\tools\run-strategy-tester.ps1`（Hostモード）を実際に実行し、目視でterminal64.exeのウィンドウが表示されないこと・作業中の他ウィンドウのフォーカスが奪われないことを確認する必要がある
-* `.\tools\compile-mql5.ps1`・`.\tools\run-mql5-tests.ps1`・Development Release Gateは未実行（PowerShellモジュールのみの変更でMQL5ソースに変更はないが、Host実行経路を通るため`run-mql5-tests.ps1`の実機確認は別途必要）
-
----
-
-# DEC-032: DEC-031の非表示デスクトップ経由起動を`-HostUseHiddenDesktop`で無効化できるようにする（既定は有効のまま）
-
-**状態:** 採用
+**状態:** 採用（旧DEC-031〜041を統合・置き換え）
 
 ## 背景
 
-DEC-031でHost実行を非表示デスクトップ経由（`CreateDesktop`+`CreateProcess`）へ変更したが、`CreateDesktop`はウィンドウステーション内にオブジェクトを作成するAPIであり、環境によっては次のような理由で使えない可能性がある。
+`-WindowStyle Hidden`はterminal64.exe（GUIサブシステムアプリ）には効かず、Host実行時に画面表示・フォーカス奪取が発生する（`STARTUPINFO.wShowWindow`は表示状態の「ヒント」に過ぎず、アプリ側が独自の表示ロジックで無視できるため）。対策として次の3方式を段階的に試行した。
 
-* グループポリシー等でウィンドウステーション操作が制限された特殊なユーザーアカウント
-* 「別デスクトップでプロセスを起動する」挙動をマルウェアの隠蔽実行手法と誤認するEDR/アンチウイルス製品による検知・ブロック
+1. **CreateDesktop（標準API）による非表示デスクトップ経由起動。** 実行のたびにデスクトップを作り捨てる実装では、80ケースバッチの4ケース目からterminal64.exeがGUI初期化の初期段階でハングした。デスクトップの使い回し（プロセス生存期間中1つを再利用）で緩和を試みたが、Windows再起動直後（デスクトップヒープが確実にリセットされた状態）の1回目の実行から同じ症状が再現し、蓄積型のリソース枯渇ではなく構造的な相性問題があると判断してこの方式は放棄した。
+2. **タスクスケジューラ（S4Uログオン）経由の非対話セッション実行。** CreateDesktop方式の代替として、terminal64.exeを非対話セッションで起動する方式へ切り替えた。タスクの新規登録には管理者権限が必要だが既存タスクの起動は通常権限で可能という非対称性を利用し、固定タスクを事前登録して日常実行から管理者権限を排除した。実機の80ケースバッチで運用したところ、次の問題が段階的に見つかった。
+   - タイムアウト時、別ログオンセッションで起動された子プロセスを直接終了できず、後続ケースが「起動中のMetaTrader 5を終了してください」で連鎖的に失敗する（ランナー自身に協調的に子プロセスを終了させるキャンセルファイル方式で対処）
+   - `ShutdownTerminal=1`のまま実行するとreport（.htm/.png）・監査JSONLの生成処理が完了する前にterminal64.exeの自動終了処理が先に完了してしまうレースコンディションがあり、reportが生成されない失敗が散発する（ShutdownTerminalを無効化し、ランナーがreport出現を検知してから能動的に終了させる方式で対処）
+   - 上記対処後も、後処理段階（"cannot open tester chart"エラーを伴う）でハングし900秒タイムアウトする別の失敗が80件中13件（16.25%）残った
 
-DEC-031の変更は関数シグネチャ・戻り値・例外メッセージを変えていないため呼び出し側への影響は無いが、上記のような環境では新方式が失敗しHost実行そのものが止まってしまう。従来の`-WindowStyle Hidden`方式（GUIアプリには効かず画面表示されるが、動作自体は問題ない）へ切り替えられる退避手段が必要と判断した。
-
-## 判断
-
-1. `Invoke-Mt5ExecutionHost`（`tools/lib/Mt5ExecutionBackend.psm1`）に`[bool]$UseHiddenDesktop = $true`パラメータを追加する。`$true`（既定）ならDEC-031の非表示デスクトップ経由、`$false`なら従来の`Start-Process -WindowStyle Hidden`（`Process.WaitForExit`/`Stop-Process`によるタイムアウト処理を含む）にフォールバックする。
-2. 共通エントリポイント`Invoke-Mt5Execution`に`[bool]$HostUseHiddenDesktop = $true`パラメータを追加する。`ExecutionMode=Host`の場合のみ`Invoke-Mt5ExecutionHost`へ引き渡し、`ExecutionMode=VM`の場合は無視する（VM側は元々非対話セッションで実行され実害がないため、DEC-031同様に対象外のまま）。
-3. `tools/run-strategy-tester.ps1`（`Invoke-StrategyTesterCase`関数と単体実行・CaseFile実行の両呼び出し経路）・`tools/run-mql5-tests.ps1`に、同名の`-HostUseHiddenDesktop`（既定`$true`）パラメータを追加し、CLIから切替可能にする。
-4. 既定値は`$true`（DEC-031の非表示デスクトップ経由）のまま変更しない。
-
-## 理由
-
-* 既定を変えずオプトアウト方式にすることで、DEC-031で解決したフォーカス奪取・画面表示問題を通常運用では引き続き回避しつつ、新方式が使えない環境でのみ明示的に無効化できる
-* パラメータ名を`HostUseHiddenDesktop`とし、Host実行専用であることをVM設定（`VmSettingsPath`等）と紛れないよう明示した
-* `Invoke-Mt5ExecutionHost`単体でも`UseHiddenDesktop`パラメータを持たせることで、`Invoke-Mt5Execution`を経由しない直接呼び出し（将来的なテスト・ツール追加時）でも切替できるようにした
-
-## 影響
-
-* 変更: `tools/lib/Mt5ExecutionBackend.psm1`（`Invoke-Mt5ExecutionHost`・`Invoke-Mt5Execution`）、`tools/run-strategy-tester.ps1`（トップレベルパラメータ・`Invoke-StrategyTesterCase`関数・2箇所の呼び出し）、`tools/run-mql5-tests.ps1`（トップレベルパラメータ・呼び出し）、`tools/test-mt5-execution-backend.ps1`（`HostUseHiddenDesktop=$false`の正常系・タイムアウトテスト追加）、`docs/mt5-development.md`（切替方法の説明・実行コマンド例追加）
-* `tools/test-mt5-execution-backend.ps1`の全テスト（既存分＋今回追加した`HostUseHiddenDesktop=$false`の正常系・タイムアウト2件）がPASSすることを確認した（2026-09-08、Host環境で実行）。PowerShellパーサーによる構文チェックも実施し、3ファイルとも構文エラー無し
-* `-HostUseHiddenDesktop $false`経路での実機Strategy Tester実行（terminal64.exeが画面表示されること・DEC-031の既定経路との差異）は未確認
-
----
-
-# DEC-033: 非表示デスクトップは実行のたびに作り捨てず、PowerShellプロセスの生存期間中1つを使い回す
-
-**状態:** 採用
-
-## 背景
-
-DEC-031導入後、80ケース（`USDJPY`/`EURJPY`/`EURUSD`/`GBPJPY` × 複数パラメータ × 複数年）のバッチスイープを実機実行したところ、**3ケース成功後、4ケース目でterminal64.exeが正常終了せず残留し、以降76ケース全てが「起動中のMetaTrader 5を終了してください」の事前チェック（[run-strategy-tester.ps1:131](../tools/run-strategy-tester.ps1)）で連鎖的に失敗した。**
-
-ユーザーが提供したログ2種を確認した。
-
-* `run-strategy-tester.ps1`の実行ログ：ケース1〜3は`STRATEGY_TESTER_COMPLETED exit=0`で正常完了。ケース4は`Strategy Testerは終了しましたがreportが生成されませんでした`で失敗（＝`Invoke-Mt5ExecutionHost`はタイムアウト例外を投げずに正常リターンしていた）。
-* MT5 Tester Journal：ケース3終了（`21:57:11.891 connection closed`）を最後に、ケース4のJournal記録が一切存在しない（＝terminal64.exeはJournal書き込みが始まるごく初期段階、GUI初期化の途中でハングしたと推定される）。ケース3終了時点のログには`2920 Mb memory used ... 2560 Mb of cached tick data`という記述があり、Strategy Testerが大量のティックデータをメモリキャッシュすることも確認された。
-
-この組み合わせ（3回までは正常、4回目で初期化段階から失敗、蓄積型のパターン）から、**Windowsの「デスクトップヒープ」枯渇**が原因と推定した。`CreateDesktop`は呼び出しのたびにウィンドウステーション内へ新しいデスクトップオブジェクト（ウィンドウ・GDIオブジェクト管理用の専用カーネルメモリを持つ）を作成する。DEC-031の実装は実行ごとに一意な名前で使い捨てのデスクトップを作成・破棄していたため、`CloseDesktop`を呼んでいても、terminal64.exeのような大量のGDIリソース（多数のウィンドウ・チャート描画・大量のティックデータキャッシュ）を扱う大規模GUIアプリが確保したリソースの解放が完全には追いつかず、数回の実行でウィンドウステーション全体のデスクトップヒープが枯渇し、新しいデスクトップ上でのGUI初期化自体が失敗するようになった、という仮説である。Windows Event Viewerでのクラッシュ記録確認までは行っておらず断定はできないが、状況証拠と整合する。
+   P/Invoke（`GetProcessWindowStation`・`GetUserObjectInformation`）でterminal64.exeのウィンドウステーション情報を直接取得したところ、S4Uログオンは常にSession 0（Windowsサービス専用の隔離セッション、Microsoftが公式にGUIアプリの実行には適さないと明言する環境）で動作しており、上記いずれの失敗もこの構造的制約に起因すると判明した。
+3. **CreateDesktopEx（ヒープサイズ明示指定）による再評価。** 対話セッション（Session 1、WinSta0）内で動作するCreateDesktop方式はSession 0の制約を受けないはずだが、実機のレジストリ確認（`HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems\Windows`の`SharedSection`パラメータ、実機値`1024,20480,768`）で、標準の`CreateDesktop` APIが対話的なウィンドウステーション内であっても既定では非対話用の小さいデスクトップヒープサイズ（768KB、対話デスクトップ用20480KB=20MBの約1/27）しか割り当てないというWindowsの既知の仕様が判明した。これはterminal64.exeのような大規模GUIアプリには明らかに容量不足であり、1.の「再起動直後の初回実行から一貫して失敗する」という観察と正確に整合する。拡張版の`CreateDesktopEx`（`ulHeapSize`パラメータでヒープサイズを明示指定できる）へ置き換え、対話デスクトップと同等以上の32768KB(32MB)を指定したところ、単体実行・連続実行（9回）・80ケースバッチスイープ（`succeeded=80 failed=0`）のいずれも安定して完走することを実機確認した。
 
 ## 判断
 
-非表示デスクトップを実行のたびに作り捨てず、モジュールをインポートしたPowerShellプロセスの生存期間中は1つだけを使い回す方式へ変更する。
+Host実行（`Invoke-Mt5ExecutionHost`、既定`UseIsolatedSession=true`）は、対話セッション（Session 1）内にCreateDesktopEx（`ulHeapSize=32768`KB）で非表示デスクトップを作成し、その上でCreateProcessする方式に統一する。
 
-1. `tools/lib/Mt5ExecutionBackend.psm1`の`HiddenDesktopLauncher`（C#）を、デスクトップの作成・破棄（`CreateHiddenDesktop`/`CloseHiddenDesktop`）とプロセス起動（`RunProcess`）に分離する。`RunProcess`は既存デスクトップ名を受け取って`CreateProcess`するだけになり、`CreateDesktop`/`CloseDesktop`は呼ばなくなった。
-2. PowerShell側にモジュールスコープ変数（`$script:Mt5HiddenDesktopHandle`・`$script:Mt5HiddenDesktopName`）と、それを遅延生成・キャッシュする`Get-Mt5HiddenDesktopName`関数を追加する。`Invoke-Mt5ExecutionHost`は毎回このキャッシュされたデスクトップ名を使う。
-3. デスクトップの明示的なクリーンアップ（`CloseHiddenDesktop`の呼び出し）は行わない。PowerShellプロセス終了時にOSが自動的にウィンドウステーション・デスクトップ関連のハンドル・カーネルオブジェクトを回収するため、実害はないと判断した。
-4. `Get-Mt5HiddenDesktopName`を`Export-ModuleMember`へ追加し、テストから直接呼べるようにする。
-
-## 理由
-
-* デスクトップオブジェクトの生成・破棄の繰り返しがデスクトップヒープ枯渇の原因であるという仮説が正しければ、使い回しにより数回で1回しかデスクトップを生成しなくなるため、根本的に解消できる
-* 複数ケースを順次実行する現在の呼び出しパターン（同時に2つのterminal64.exeが動くことはない）では、デスクトップを共有しても安全性上の問題は無い。各プロセスが確保したウィンドウ・GDIオブジェクトはそのプロセスの終了時にOSが自動的に解放するため、次のプロセスに残留リソースが影響することは無い
-* 明示的なクリーンアップ関数を追加しない設計にすることで、実装をシンプルに保った（プロセス終了時の自動回収に委ねる）
-
-## 影響
-
-* 変更: `tools/lib/Mt5ExecutionBackend.psm1`（`HiddenDesktopLauncher.CreateHiddenDesktop`/`CloseHiddenDesktop`追加、`RunProcess`からデスクトップ管理を分離、`Get-Mt5HiddenDesktopName`追加、`Invoke-Mt5ExecutionHost`更新、`Export-ModuleMember`更新）、`tools/test-mt5-execution-backend.ps1`（20回連続実行して同一デスクトップ名が使われ続けることを検証するテスト追加）
-* `tools/test-mt5-execution-backend.ps1`の全テスト（既存分＋新規追加分）がPASSすることを確認した（2026-09-08、Host環境で実行）。PowerShellパーサーによる構文チェックも実施し構文エラー無し
-* **80ケースの実機バッチスイープでの再検証は未実施。** 今回のテストは「デスクトップが使い回されること」「`cmd.exe`のような軽量プロセスを20回連続実行しても正常終了すること」の確認に留まり、terminal64.exe自体を使った連続実行での改善効果（デスクトップヒープ枯渇仮説が正しいかどうか）は実証できていない。ユーザーに実機で同一のCaseFileを再実行してもらい、80ケース全てが成功することの確認が必要
-* 仮に本対応でも4回目以降の失敗が再現する場合、デスクトップヒープ枯渇以外の原因（Strategy Tester自体のメモリ管理、非表示デスクトップとGDI/Direct2D初期化の相性等）を疑う必要がある。その場合はDEC-032の`-HostUseHiddenDesktop $false`で従来方式へ切り替えるか、DEC-031時点で検討した方法B（タスクスケジューラでの非対話セッション実行）への切替を再検討する
-
----
-
-# DEC-034: Host実行はCreateDesktop方式を放棄し、タスクスケジューラ（S4Uログオン）経由の非対話セッション実行へ置き換える
-
-**状態:** 採用（DEC-031〜033を置き換え）
-
-## 背景
-
-DEC-033（非表示デスクトップの使い回し）を適用した上で、ユーザーがWindows再起動直後（デスクトップヒープが確実にリセットされた状態）に80ケーススイープの1ケース目からterminal64.exeを実行したところ、**再起動直後の初回実行から同じ症状（Tester Journalに1行も記録されないままハング）が再現した。**
-
-これはDEC-033時点の仮説（実行を繰り返すことによるデスクトップヒープの累積的な枯渇）と矛盾する。累積型のリソース枯渇が原因であれば、リソースがリセットされた直後の1回目は必ず成功するはずだが、実際には1回目から失敗した。この結果は、原因が蓄積型の問題ではなく、**`CreateDesktop`で作成した非表示デスクトップ上でterminal64.exeを起動すること自体に、より根本的な相性問題がある**ことを示している（DirectX/Direct2D初期化の失敗、ウィンドウステーションの権限継承の問題等が疑わしいが、Windows Event Viewerでのクラッシュ記録確認までは行っておらず具体的な原因は未特定）。
-
-DEC-031〜033で試みた「対話デスクトップとは別の非表示デスクトップを作成し、そこでGUIアプリを起動する」というアプローチ自体が、terminal64.exeのような大規模GUIアプリに対しては構造的に信頼性を欠くと判断し、放棄した。
-
-## 判断
-
-Host実行を、Windowsタスクスケジューラ（S4Uログオン、パスワード不要）経由でterminal64.exeを非対話セッション上で起動する方式へ置き換える。これはVM実行（`vmrun runProgramInGuest`を`-interactive`なしで呼ぶ）が非対話セッションでプロセスを生成するためウィンドウが一切見えなくなるのと同じ原理をHost側でも再現するものであり、「後から隠す・別デスクトップに置く」のではなく「最初から対話セッションの外で実行する」点がCreateDesktop方式と根本的に異なる。
-
-1. `tools/lib/Mt5ExecutionBackend.psm1`から`HiddenDesktopLauncher`（C#、CreateDesktop/CreateProcess）と関連コード（`Add-Mt5HiddenDesktopType`・`Get-Mt5HiddenDesktopName`・モジュールスコープ変数）を削除した。
-2. 新規`Invoke-Mt5ExecutionHostViaScheduledTask`関数を追加した。実行のたびに一意な名前（GUID）のタスクを`Register-ScheduledTask`（`New-ScheduledTaskPrincipal -LogonType S4U -RunLevel Limited`）で登録し、`Start-ScheduledTask`で起動、`Get-ScheduledTask`の`State`をポーリングして完了・タイムアウトを検知し、`Get-ScheduledTaskInfo`の`LastTaskResult`から終了コードを取得、`finally`で`Unregister-ScheduledTask`により後始末する。
-3. `Invoke-Mt5ExecutionHost`のパラメータ名を`UseHiddenDesktop`から`UseIsolatedSession`へ変更した（意味が変わったため）。`Invoke-Mt5Execution`側も`HostUseHiddenDesktop`から`HostUseIsolatedSession`へ変更した。既定値は`$true`のまま維持し、`$false`で従来の`-WindowStyle Hidden`方式へフォールバックできる点も維持した（DEC-032の設計を踏襲）。
-4. `tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`のCLIパラメータも同様に`HostUseIsolatedSession`へリネームした。
-5. S4Uログオンタイプを選択した理由：パスワード不要で非対話的にタスクを実行できるため、資格情報をコード・設定へ保存する必要が無い（CLAUDE.mdのSecret管理方針に合致する）。ネットワークリソースへはアクセスできない制約があるが、Strategy Tester実行はローカルファイルシステムのみで完結するため影響しないと判断した（実機未検証）。
+1. `tools/lib/Mt5ExecutionBackend.psm1`にP/Invokeラッパー（`Mt5ExecutionBackend.HiddenDesktopLauncher`、`CreateDesktopEx`/`CloseDesktop`/`CreateProcess`/`WaitForSingleObject`/`GetExitCodeProcess`/`TerminateProcess`）を実装した。コマンドライン文字列の構築には既存の`ConvertTo-Mt5Win32CommandLine`（Vmrun経路で使用していたWin32互換エスケープ関数）を再利用する。
+2. 非表示デスクトップはモジュールインポート時から1つを使い回し（実行のたびに作り捨てない）、`Get-Mt5HiddenDesktopName`でキャッシュする。同一セッション内実行のため、タイムアウト時は別セッション協調機構を必要とせず、直接`TerminateProcess`で終了できる。
+3. `UseIsolatedSession=false`を指定した場合のみ、非表示デスクトップを使わず従来の`-WindowStyle Hidden`方式にフォールバックできる（画面表示は発生するが動作実績のある退避手段として維持する）。
+4. タスクスケジューラ経由の非対話セッション実行（試行2.の実装一式：`Invoke-Mt5ExecutionHostViaScheduledTask`、`tools/lib/Mt5ScheduledTaskRunner.ps1`、`tools/setup-mt5-scheduled-task.ps1`、関連する方式選択パラメータ`HostIsolationMode`等）は、Session 0というGUIアプリに構造的に不適な環境で動作しており、発見した2種類の不具合（report未生成のレースコンディション、後処理段階のハング）の根本原因だったため、コードごと削除した。選択肢が実質CreateDesktopEx方式のみになった時点で、方式選択用のパラメータを残す理由もないため併せて削除した。
+5. `ShutdownTerminal`の動的無効化（試行2.でのみ必要だったレースコンディション対策）は不要になったため削除し、テンプレートの設定値（`ShutdownTerminal=1`）のまま実行する。
 
 ## 理由
 
-* 「後から隠す」あらゆる方式（ShowWindow(SW_HIDE)、CreateDesktop）は、対話セッション内でプロセスを生成する以上、GUIサブシステム初期化時の何らかの相性問題を完全には排除できない。非対話セッションでの実行はVM実行と同じ実績のある原理であり、構造的に確実性が高い
-* S4Uはパスワード不要なため、Secret管理の負担が無い（DEC-031〜033のCreateDesktop方式も元々パスワード不要だった点は維持される）
-* 既定値・フォールバック機構の設計（DEC-032）は妥当だったため、パラメータの意味論はそのまま踏襲し、名前のみ実態に合わせて変更した
+* 対話セッション内での実行はSession 0の構造的制約を受けないため、タスクスケジューラ方式で発見した2種類の不具合（report未生成・後処理ハング）をヒープサイズの問題さえ解消すれば回避できる
+* 同一セッション内実行により、別セッションのプロセスを直接終了できないための複雑な協調機構（キャンセルファイル方式）が不要になり、実装がシンプルになる
+* 管理者権限や事前セットアップ（タスク登録）が不要になり、運用上の手間が減る
+* ネイティブハンドルに対して直接`WaitForSingleObject`/`GetExitCodeProcess`を使うことで、.NET`Process.GetProcessById`のPID再利用によるレースコンディションを避けられる
+* 選択肢が実質1つになった時点で方式選択用のパラメータ・不要になった対策コードを残す理由がなく、削除する方がコードの見通しが良い
 
 ## 影響
 
-* 変更: `tools/lib/Mt5ExecutionBackend.psm1`（`HiddenDesktopLauncher`関連コード全削除、`Invoke-Mt5ExecutionHostViaScheduledTask`追加、`Invoke-Mt5ExecutionHost`・`Invoke-Mt5Execution`のパラメータリネーム）、`tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`（`HostUseHiddenDesktop`→`HostUseIsolatedSession`リネーム）、`tools/test-mt5-execution-backend.ps1`（非表示デスクトップ使い回しテスト削除、タスクスケジューラ登録可否の事前チェック追加、パラメータ名更新）、`docs/mt5-development.md`（説明更新）
-* **重大な制約が判明した。** 本セッションの検証環境（Claude CodeのBash/PowerShellツール実行コンテキスト）では、`whoami /priv`で確認したところ非常に限定された特権のみが有効な制限付きトークンで動作しており、`Register-ScheduledTask`が「アクセスが拒否されました」で一貫して失敗した。このため、既定経路（`UseIsolatedSession=true`、タスクスケジューラ方式）の動作確認は本セッションでは一切できていない。`tools/test-mt5-execution-backend.ps1`は冒頭でタスク登録可否を事前確認し、不可の場合は該当テストをスキップする設計にした（実行結果に`SKIP_NOTE`として明示される）
-* 確認できたのは、フォールバック経路（`-HostUseIsolatedSession $false`、従来の`-WindowStyle Hidden`方式）の正常系・タイムアウト・ConfigFilePath自動引数生成・VM設定検証系のみ（2026-09-08、Host環境で実行、全PASS）。PowerShellパーサーによる構文チェックも4ファイルで実施し構文エラー無し
-* **タスクスケジューラ方式そのものが実際に動作するか（terminal64.exeが起動でき、画面表示・フォーカス奪取が無く、正常にreportを生成できるか）は完全に未検証。** ユーザーの実機（通常の対話ログオンセッション、UACの分割トークンではあるが管理者アカウントでの通常利用）で`Register-ScheduledTask`が成功するかどうかを含め、`run-strategy-tester.ps1`（Hostモード）を実際に実行して確認する必要がある
-* もしユーザーの実機でも同様に`Register-ScheduledTask`がアクセス拒否になる場合、S4Uログオンには`SeBatchLogonRight`相当の権利が必要になるケースがあるため、ローカルセキュリティポリシーでの権利付与（要管理者権限、ユーザーへの事前確認が必要）を検討するか、`-HostUseIsolatedSession $false`（画面表示は発生するが動作実績のある方式）を実運用の既定として使うことを検討する
-
----
-
-# DEC-035: タスクスケジューラのタスク登録・Action変更は管理者権限で1回だけ行い、日常実行は固定タスクの起動のみで完結させる
-
-**状態:** 採用（DEC-034の実装詳細を修正）
-
-## 背景
-
-DEC-034で導入したタスクスケジューラ方式（`Invoke-Mt5ExecutionHostViaScheduledTask`、実行のたびに一意な名前のタスクを`Register-ScheduledTask`で作成）を実機検証したところ、次が判明した。
-
-* 通常の（管理者として昇格していない）PowerShellセッションから`Register-ScheduledTask`（S4Uログオンでのタスク登録）を呼ぶと「アクセスが拒否されました」になる。これはこの検証環境固有の制約ではなく、ユーザーの実機でも再現した。UACの権限分割トークン（Administratorsグループのメンバーであっても、昇格していないセッションは制限されたトークンで動作する）が原因と考えられる。
-* 管理者として昇格したPowerShellセッションからは`Register-ScheduledTask`が成功し、`run-strategy-tester.ps1`（Hostモード）の単発実行・5回連続実行いずれもterminal64.exeの起動からreport生成まで安定して成功した（`elapsedSeconds`が21.8〜22.1秒で安定）。
-* 追加検証として、事前に登録済みのタスクに対して`Set-ScheduledTask`（Actionの更新）を非昇格セッションから呼んだところ、これも「アクセスが拒否されました」になった。一方、同じ非昇格セッションから`Start-ScheduledTask`（既存タスクの起動）を呼んだところ**成功した**。
-
-この結果から、「タスクの新規作成・設定変更」には管理者権限が必要だが、「既存タスクを起動するだけ」なら通常権限で可能、という非対称な権限要件があることが分かった。DEC-034の実装は実行のたびに`Register-ScheduledTask`を呼ぶ設計だったため、日常のHost実行のたびに管理者権限が必要になってしまう欠点があった。
-
-## 判断
-
-タスクの作成・設定は初回セットアップ時に管理者権限で1回だけ行い、日常の実行は非昇格セッションからの`Start-ScheduledTask`のみで完結する設計に変更する。
-
-1. 新規`tools/setup-mt5-scheduled-task.ps1`を追加した。管理者権限で実行することを強制し（`WindowsPrincipal.IsInRole(Administrator)`チェック）、固定名`Mt5HostIsolatedRunner`のタスクを登録する。Actionは固定（`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<repo>\tools\lib\Mt5ScheduledTaskRunner.ps1"`）にし、以降変更しない。既存タスクがあれば削除してから再登録する（再実行しても冪等）。`ExecutionTimeLimit`は呼び出しごとに異なる実際のタイムアウト秒数の検知を呼び出し側のポーリングに委ねるための最終防衛ラインとして、十分大きい固定値（12時間）にする。
-2. 新規`tools/lib/Mt5ScheduledTaskRunner.ps1`を追加した。タスクから呼ばれる固定のランナースクリプトで、実行対象の情報（実行ファイルパス・引数）を`%TEMP%\Mt5ScheduledTaskRequest.json`から読み込み、`Start-Process -Wait`でterminal64.exeを起動し、終了コードを`%TEMP%\Mt5ScheduledTaskResult.json`へ書き出す。Actionが固定なため、動的な実行対象の受け渡しにはこのファイル経由の方式が必要（既存のVM/vmrun実行がExitCodeファイルを書き出して回収する設計と同じ思想）。
-3. `Invoke-Mt5ExecutionHostViaScheduledTask`（`tools/lib/Mt5ExecutionBackend.psm1`）を書き換え、`Register-ScheduledTask`を呼ばなくなった。固定タスク`Mt5HostIsolatedRunner`が登録済みであることを確認し（未登録なら明確な例外）、リクエストファイルへ実行対象を書き込んでから`Start-ScheduledTask`を呼ぶ。待機・タイムアウト検知・結果ファイル回収のロジックはDEC-034のポーリング設計を踏襲する。
-4. `tools/test-mt5-execution-backend.ps1`の事前チェックを、「一時タスクを試しに`Register-ScheduledTask`できるか」から「固定タスク`Mt5HostIsolatedRunner`が既に登録されているか」の確認に変更した。
-
-## 理由
-
-* 実機検証で「タスク作成・設定変更」と「タスク起動」の権限要件が異なることが判明したため、この非対称性を活かせば管理者権限を初回セットアップの1回に限定できる
-* Actionを固定にしファイル経由で実行対象を受け渡す設計は、既存のVmrun実行（ExitCodeファイル書き出し・回収）と同じ思想であり、コードベース全体の一貫性を保てる
-* リクエスト・結果ファイルは`%TEMP%`（現在のユーザー専用の一時フォルダ）に置くため、他ユーザーからはアクセスできず、Secretも含まれない（実行ファイルパスと引数のみ）
-
-## 影響
-
-* 追加: `tools/setup-mt5-scheduled-task.ps1`（管理者権限で1回だけ実行する初回セットアップスクリプト）、`tools/lib/Mt5ScheduledTaskRunner.ps1`（タスクから呼ばれる固定ランナー）
-* 変更: `tools/lib/Mt5ExecutionBackend.psm1`（`Invoke-Mt5ExecutionHostViaScheduledTask`を固定タスク+リクエスト/結果ファイル方式へ書き換え）、`tools/test-mt5-execution-backend.ps1`（事前チェックを固定タスクの登録確認へ変更）、`docs/mt5-development.md`（初回セットアップ手順を追記）
-* **実機検証で確認済み**: 管理者権限での`Register-ScheduledTask`成功、非昇格セッションからの`Start-ScheduledTask`成功、`Set-ScheduledTask`は非昇格セッションでアクセス拒否（2026-09-08、ユーザー実機）
-* **本セッションでは新設計（固定タスク+リクエストファイル方式）自体の実機動作は未検証。** この開発環境ではタスクスケジューラへの登録権限が無いため、`tools/setup-mt5-scheduled-task.ps1`の実行、リクエスト/結果ファイル経由でのterminal64.exe起動、非昇格セッションでの日常実行が想定通り動作するかは、ユーザーの実機で確認する必要がある
-* 構文チェックは3ファイル（新規2件・変更1件）で実施し、エラー無し。`test-mt5-execution-backend.ps1`は固定タスク未登録のため既定経路がスキップされる形で全PASSすることを確認した（2026-09-08、Host環境で実行）
+* 追加: `tools/lib/Mt5ExecutionBackend.psm1`（`HiddenDesktopLauncher`のC#実装、`Get-Mt5HiddenDesktopName`、`Invoke-Mt5ExecutionHostViaHiddenDesktop`）
+* 削除: `tools/lib/Mt5ScheduledTaskRunner.ps1`、`tools/setup-mt5-scheduled-task.ps1`、タスクスケジューラ経由実行の関連コード一式（`Invoke-Mt5ExecutionHostViaScheduledTask`と付随する`$script:`変数・ヘルパー関数）
+* 変更: `Invoke-Mt5ExecutionHost`・`Invoke-Mt5Execution`（方式選択パラメータを削除し常にCreateDesktopEx方式を使用）、`tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`（`-HostIsolationMode`パラメータ削除、ShutdownTerminal動的無効化ロジック削除）、`tools/test-mt5-execution-backend.ps1`（タスク登録確認によるスキップ分岐を削除し常時実行するテストへ変更）、`docs/mt5-development.md`（初回セットアップ手順の削除）
+* 実機検証: 単体実行・連続実行（9回）・80ケースバッチスイープ（`STRATEGY_TESTER_BATCH_COMPLETED total=80 succeeded=80 failed=0`、エラー・例外ログ0件）のいずれも、画面表示・フォーカス奪取・タイムアウト・report未生成のいずれも発生せず完走することを確認した（2026-09-08〜12）
+* `HostUseIsolatedSession=$false`（従来の`-WindowStyle Hidden`方式へのフォールバック）は変更せず維持している
+* 既存のタスクスケジューラ上に登録済みの固定タスク`Mt5HostIsolatedRunner`はコードから参照されなくなったが、削除は本対応の範囲外とした（不要になったタスクの削除はユーザー判断で行う）

@@ -8,10 +8,9 @@ param(
     # VM指定時はホストのGUIフォーカスを奪わず、WinRM/PSRemoting経由でVM上のMT5を実行する。
     [ValidateSet("Host", "VM")][string]$ExecutionMode = "Host",
     [string]$VmSettingsPath = "tools\config\mt5-vm.settings.json",
-    # ExecutionMode=Host専用。既定trueでタスクスケジューラ経由の非対話セッション実行
-    # （フォーカス奪取・画面表示無し、DEC-034/035）を使う。事前に管理者権限で
-    # tools\setup-mt5-scheduled-task.ps1 を実行しタスクを登録しておく必要がある。
-    # falseにすると従来の-WindowStyle Hidden方式へフォールバックする（タスク未登録の環境向け）。
+    # ExecutionMode=Host専用。既定trueで画面表示・フォーカス奪取を避ける非表示デスクトップ方式
+    # （CreateDesktopEx、DEC-031）を使う。管理者権限は不要。falseにすると従来の
+    # -WindowStyle Hidden方式へフォールバックする。
     [bool]$HostUseIsolatedSession = $true
 )
 
