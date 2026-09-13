@@ -328,7 +328,16 @@ $manifest = [ordered]@{
 $manifestPath = Join-Path $batchDir "manifest.json"
 $summaryRows = @()
 
+# 進捗把握用（ケース番号・経過時間・残り見込み時間のログ出力にのみ使う。実行結果には影響しない）。
+$totalCases = $cases.Count
+$caseIndex = 0
+$caseElapsedSecondsList = @()
+Write-Host "STRATEGY_TESTER_BATCH_START total=$totalCases case_file=$caseFilePath"
+
 foreach ($case in $cases) {
+    $caseIndex++
+    $caseStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
     $caseName = [string]$case.case_name
     $symbol = [string]$case.symbol
     $fromDate = [string]$case.from_date
@@ -340,7 +349,7 @@ foreach ($case in $cases) {
     $caseResultDir = Join-Path $batchDir $caseDirName
     $reportName = "ets-$runId-$slug"
 
-    Write-Host "STRATEGY_TESTER_CASE_START case=$caseName symbol=$symbol from=$fromDate to=$toDate"
+    Write-Host "STRATEGY_TESTER_CASE_START case=$caseName index=$caseIndex/$totalCases symbol=$symbol from=$fromDate to=$toDate"
 
     $caseRecord = [ordered]@{
         case_name           = $caseName
@@ -377,7 +386,7 @@ foreach ($case in $cases) {
     } catch {
         $caseRecord.status = "Failed"
         $caseRecord.error = $_.Exception.Message
-        Write-Host "STRATEGY_TESTER_CASE_FAILED case=$caseName error=$($_.Exception.Message)"
+        Write-Host "STRATEGY_TESTER_CASE_FAILED case=$caseName index=$caseIndex/$totalCases error=$($_.Exception.Message)"
     }
 
     # 分析（python.analysis.reports）の失敗は、Strategy Tester自体の成功/失敗判定に影響させない
@@ -461,6 +470,16 @@ foreach ($case in $cases) {
 
     $manifest.cases += [PSCustomObject]$caseRecord
     ($manifest | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+
+    # 進捗把握用（案A）: ケースごとの所要時間から残り件数分の見込み時間を概算してログ出力する。
+    # あくまで平均値に基づく概算であり、manifest.json等の実行結果には記録しない。
+    $caseStopwatch.Stop()
+    $caseElapsedSeconds = [int]$caseStopwatch.Elapsed.TotalSeconds
+    $caseElapsedSecondsList += $caseElapsedSeconds
+    $remainingCases = $totalCases - $caseIndex
+    $averageElapsedSeconds = ($caseElapsedSecondsList | Measure-Object -Average).Average
+    $etaSeconds = [int][math]::Round($averageElapsedSeconds * $remainingCases)
+    Write-Host "STRATEGY_TESTER_CASE_END case=$caseName index=$caseIndex/$totalCases status=$($caseRecord.status) elapsed_seconds=$caseElapsedSeconds remaining=$remainingCases eta_seconds=$etaSeconds"
 }
 
 $summaryCsvPath = Join-Path $batchDir "summary.csv"
