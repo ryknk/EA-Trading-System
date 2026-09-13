@@ -368,6 +368,125 @@ public:
      }
   };
 
+// 初期逆行Exit判定の純粋関数群（単体テスト対象、2026-09-12追加）。OOS分析で、SLへ至る負けトレードの
+// 92.5%がInpTrendReversalActivationR（含み益ピークによる反転監視の開始ライン）へ一度も到達していない
+// ことが判明したため、CTrendReversalExitRules（含み益ピークの存在が前提）では対処できない損失
+// パターン向けに、含み益ピークを一切参照しないExitとして新設する。判定基準は「建値からの逆行が
+// 初期リスク（建値〜当初SL距離）のtrigger_r_multiple倍に到達したか」のみ。継続確認
+// （confirmation_ticks）の判定はCTrendReversalExitRules::HasConfirmedReversalと完全に同一の
+// ため、そのまま再利用する（重複実装を避ける）。
+class CEarlyAdverseExitRules
+  {
+public:
+   // 建値からの逆行が「建値〜当初SL距離（初期リスク）」のtrigger_r_multiple倍以上かを判定する。
+   static bool IsTriggered(const ENUM_POSITION_TYPE type,const double open_price,
+                           const double initial_stop_loss,const double current_price,
+                           const double trigger_r_multiple)
+     {
+      if(trigger_r_multiple<=0.0 || initial_stop_loss<=0.0 || open_price<=0.0)
+         return false;
+      double risk_distance,adverse_distance;
+      if(type==POSITION_TYPE_BUY)
+        {
+         risk_distance=open_price-initial_stop_loss;
+         adverse_distance=open_price-current_price;
+        }
+      else if(type==POSITION_TYPE_SELL)
+        {
+         risk_distance=initial_stop_loss-open_price;
+         adverse_distance=current_price-open_price;
+        }
+      else
+         return false;
+      if(risk_distance<=0.0)
+         return false;
+      return adverse_distance>=risk_distance*trigger_r_multiple;
+     }
+
+   // 監査ログ用: 初期リスクに対する現在の逆行量（R倍数）。risk_distance<=0の場合は0を返す。
+   static double AdverseRMultiple(const ENUM_POSITION_TYPE type,const double open_price,
+                                  const double initial_stop_loss,const double current_price)
+     {
+      double risk_distance,adverse_distance;
+      if(type==POSITION_TYPE_BUY)
+        {
+         risk_distance=open_price-initial_stop_loss;
+         adverse_distance=open_price-current_price;
+        }
+      else if(type==POSITION_TYPE_SELL)
+        {
+         risk_distance=initial_stop_loss-open_price;
+         adverse_distance=current_price-open_price;
+        }
+      else
+         return 0.0;
+      return risk_distance>0.0 ? adverse_distance/risk_distance : 0.0;
+     }
+  };
+
+// 初期逆行Exit判定専用の当初SL・継続確認カウンタの追跡（2026-09-12追加）。含み益ピークを扱わない点が
+// CTrendReversalTrackerと異なる（判定がPeakを参照しないため）。当初SLは初回検知時に固定し、以降の
+// SL変更（建値ストップ等）で判定基準がぶれないようにする（CTimeStopTrackerと同じ考え方）。
+class CEarlyAdverseExitTracker
+  {
+private:
+   struct SState
+     {
+      ulong  ticket;
+      double initial_stop_loss;
+      int    confirmation_count;
+     };
+   SState m_states[];
+
+   int Find(const ulong ticket)
+     {
+      for(int index=0; index<ArraySize(m_states); index++)
+         if(m_states[index].ticket==ticket) return index;
+      return -1;
+     }
+
+public:
+   // 当初SLを取得する（初回検知時は現在のSLで初期化、確認カウンタは0）。
+   void Update(const ulong ticket,const double current_stop_loss,double &initial_stop_loss)
+     {
+      int slot=Find(ticket);
+      if(slot<0)
+        {
+         slot=ArraySize(m_states);
+         ArrayResize(m_states,slot+1);
+         m_states[slot].ticket=ticket;
+         m_states[slot].initial_stop_loss=current_stop_loss;
+         m_states[slot].confirmation_count=0;
+        }
+      initial_stop_loss=m_states[slot].initial_stop_loss;
+     }
+
+   // 逆行検知が今Tickも継続していれば確認カウンタを+1し、その値を返す（未追跡ticketは0を返す）。
+   int IncrementConfirmation(const ulong ticket)
+     {
+      const int slot=Find(ticket);
+      if(slot<0) return 0;
+      m_states[slot].confirmation_count++;
+      return m_states[slot].confirmation_count;
+     }
+
+   // 逆行が継続していない（トリガー未到達に戻った）場合に確認カウンタをリセットする。
+   void ResetConfirmation(const ulong ticket)
+     {
+      const int slot=Find(ticket);
+      if(slot>=0) m_states[slot].confirmation_count=0;
+     }
+
+   void Remove(const ulong ticket)
+     {
+      const int slot=Find(ticket);
+      if(slot<0) return;
+      const int last=ArraySize(m_states)-1;
+      m_states[slot]=m_states[last];
+      ArrayResize(m_states,last);
+     }
+  };
+
 class CPositionManager
   {
 private:
@@ -380,6 +499,8 @@ private:
    ulong     m_time_stop_attempt_ticket;
    string    m_trend_reversal_key_prefix;
    ulong     m_trend_reversal_attempt_ticket;
+   string    m_early_adverse_key_prefix;
+   ulong     m_early_adverse_attempt_ticket;
    string    m_atr_trailing_initial_sl_key_prefix;
    int       m_atr_trailing_handle;
    bool      m_initialized;
@@ -523,6 +644,8 @@ public:
       m_time_stop_attempt_ticket=0;
       m_trend_reversal_key_prefix="";
       m_trend_reversal_attempt_ticket=0;
+      m_early_adverse_key_prefix="";
+      m_early_adverse_attempt_ticket=0;
       m_atr_trailing_initial_sl_key_prefix="";
       m_atr_trailing_handle=INVALID_HANDLE;
       m_initialized=false;
@@ -546,6 +669,9 @@ public:
       m_trend_reversal_key_prefix="ETS.POS.TRENDREV."+identity+"."+StringFormat("%I64u",m_config.magic_number)+".";
       if(StringLen(m_trend_reversal_key_prefix)+20>63)
         { error="POSITION_STATE_KEY_TOO_LONG"; return false; }
+      m_early_adverse_key_prefix="ETS.POS.EARLYADV."+identity+"."+StringFormat("%I64u",m_config.magic_number)+".";
+      if(StringLen(m_early_adverse_key_prefix)+20>63)
+        { error="POSITION_STATE_KEY_TOO_LONG"; return false; }
       m_atr_trailing_initial_sl_key_prefix="ETS.POS.ATRTRAIL."+identity+"."+StringFormat("%I64u",m_config.magic_number)+".";
       if(StringLen(m_atr_trailing_initial_sl_key_prefix)+20>63)
         { error="POSITION_STATE_KEY_TOO_LONG"; return false; }
@@ -553,6 +679,7 @@ public:
       m_signal_exit_attempt_ticket=0;
       m_time_stop_attempt_ticket=0;
       m_trend_reversal_attempt_ticket=0;
+      m_early_adverse_attempt_ticket=0;
       if(m_config.enable_atr_trailing_stop)
         {
          if(!SymbolSelect(m_config.symbol,true))
@@ -803,6 +930,58 @@ public:
       if(!OrderSend(request,result) || !COrderValidationRules::AcceptedRetcode(result.retcode))
         { error=StringFormat("TREND_REVERSAL_CLOSE_FAILED retcode=%u comment=%s",result.retcode,result.comment); return false; }
       PrintFormat("TREND_REVERSAL_EXIT_SUBMITTED position=%I64u order=%I64u deal=%I64u retcode=%u reason=%s",
+                  ticket,result.order,result.deal,result.retcode,reason_code);
+      return true;
+     }
+
+   bool CloseOnEarlyAdverseExit(const ulong ticket,const string reason_code,string &error)
+     {
+      error="";
+      const string attempt_key=m_early_adverse_key_prefix+StringFormat("%I64u",ticket);
+      if(ticket==m_early_adverse_attempt_ticket || GlobalVariableCheck(attempt_key))
+        { error="EARLY_ADVERSE_ALREADY_ATTEMPTED"; return false; }
+      if(!PositionSelectByTicket(ticket))
+        { error="POSITION_SELECT_FAILED"; return false; }
+      const string symbol=PositionGetString(POSITION_SYMBOL);
+      const double volume=PositionGetDouble(POSITION_VOLUME);
+      const ENUM_POSITION_TYPE position_type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      MqlTick tick;
+      if(volume<=0.0 || !SymbolInfoTick(symbol,tick))
+        { error="POSITION_CLOSE_DATA_UNAVAILABLE"; return false; }
+      if(!CPositionProtectionRules::HasValidMarketData(tick.bid,tick.ask))
+        { error="EARLY_ADVERSE_INVALID_MARKET_DATA"; return false; }
+
+      MqlTradeRequest request;
+      MqlTradeCheckResult check;
+      MqlTradeResult result;
+      ZeroMemory(request);
+      ZeroMemory(check);
+      ZeroMemory(result);
+      request.action=TRADE_ACTION_DEAL;
+      request.magic=m_config.magic_number;
+      request.position=ticket;
+      request.symbol=symbol;
+      request.volume=volume;
+      request.type=(position_type==POSITION_TYPE_BUY ? ORDER_TYPE_SELL : ORDER_TYPE_BUY);
+      request.price=(position_type==POSITION_TYPE_BUY ? tick.bid : tick.ask);
+      request.deviation=m_config.max_deviation_points;
+      request.type_filling=FillingMode(symbol);
+      request.comment=StringSubstr("EARLYADV_"+reason_code,0,31);
+
+      ResetLastError();
+      const bool check_ok=OrderCheck(request,check);
+      if(!COrderCheckRules::IsAccepted(check_ok,check.retcode))
+        { error=StringFormat("EARLY_ADVERSE_ORDER_CHECK_FAILED retcode=%u comment=%s",check.retcode,check.comment); return false; }
+      // Persist before sending. An ambiguous failure is never retried automatically
+      // (matches EmergencyClose/CloseOnSignalInvalidation/CloseOnTimeStop/CloseOnTrendReversal's idempotency convention).
+      ResetLastError();
+      if(GlobalVariableSet(attempt_key,1.0)==0 && GetLastError()!=0)
+        { error="EARLY_ADVERSE_IDEMPOTENCY_PERSIST_FAILED"; return false; }
+      GlobalVariablesFlush();
+      m_early_adverse_attempt_ticket=ticket;
+      if(!OrderSend(request,result) || !COrderValidationRules::AcceptedRetcode(result.retcode))
+        { error=StringFormat("EARLY_ADVERSE_CLOSE_FAILED retcode=%u comment=%s",result.retcode,result.comment); return false; }
+      PrintFormat("EARLY_ADVERSE_EXIT_SUBMITTED position=%I64u order=%I64u deal=%I64u retcode=%u reason=%s",
                   ticket,result.order,result.deal,result.retcode,reason_code);
       return true;
      }

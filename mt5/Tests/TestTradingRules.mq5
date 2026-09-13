@@ -192,6 +192,30 @@ void OnStart(void)
    AssertTrue(CTrendReversalExitRules::RetracementRMultiple(POSITION_TYPE_BUY,150.00,150.00,151.00,150.50)==0.0,
               "zero risk distance yields zero retracement r multiple");
 
+   AssertTrue(CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_BUY,150.00,149.00,149.50,0.5),
+              "buy adverse move reaches exactly 0.5R from open");
+   AssertTrue(!CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_BUY,150.00,149.00,149.51,0.5),
+              "buy adverse move below 0.5R from open does not trigger");
+   AssertTrue(CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_SELL,150.00,151.00,150.50,0.5),
+              "sell adverse move reaches exactly 0.5R from open");
+   AssertTrue(!CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_SELL,150.00,151.00,150.49,0.5),
+              "sell adverse move below 0.5R from open does not trigger");
+   AssertTrue(!CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_BUY,150.00,149.00,149.50,0.0),
+              "zero trigger r multiple never triggers");
+   AssertTrue(!CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_BUY,150.00,0.0,149.50,0.5),
+              "missing initial stop loss never triggers early adverse exit");
+   AssertTrue(!CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_BUY,150.00,150.00,149.50,0.5),
+              "zero risk distance never triggers early adverse exit");
+   AssertTrue(!CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_BUY,150.00,149.00,150.50,0.5),
+              "favorable price movement never triggers early adverse exit");
+
+   AssertNearDouble(CEarlyAdverseExitRules::AdverseRMultiple(POSITION_TYPE_BUY,150.00,149.00,149.50),0.5,
+                    "buy adverse r multiple is open-to-current over risk distance");
+   AssertNearDouble(CEarlyAdverseExitRules::AdverseRMultiple(POSITION_TYPE_SELL,150.00,151.00,150.50),0.5,
+                    "sell adverse r multiple is current-to-open over risk distance");
+   AssertTrue(CEarlyAdverseExitRules::AdverseRMultiple(POSITION_TYPE_BUY,150.00,150.00,149.50)==0.0,
+              "zero risk distance yields zero adverse r multiple");
+
    if(g_failures==0) Print("TEST_SUITE_PASS TestTradingRules");
    else PrintFormat("TEST_SUITE_FAIL TestTradingRules failures=%d",g_failures);
   }

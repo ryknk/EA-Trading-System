@@ -148,6 +148,26 @@ python -m python.analysis.trade_breakdown --input results/backtests/<on-run-id>-
 
 **「最終的にTPへ到達していた勝ちトレードを早期Exitしていないか」の確認**: `trend_reversal_exit.trades_that_would_likely_have_reached_tp`（および`net_pnl_of_trades_that_would_likely_have_reached_tp`）は、反転Exitで決済されたトレードのうち、既存の汎用指標`reached_tp_equivalent_r`（MFE_RがそのトレードのTP相当R以上に達したか）がTrueだったものの件数・純損益合計を示す。この件数が多い、または純損益合計がプラスに大きい場合、反転Exitが「本来TPへ到達していたはずの利益」を早期に打ち切ってしまっている可能性を示す。`InpTrendReversalActivationR`・`InpTrendReversalRetraceR`・`InpTrendReversalConfirmationTicks`はこの指標とOOS全体のPF/Net Profitの両方を見ながら判断し、IS単体の指標最大化だけを理由に固定しない。
 
+### 初期逆行Exit比較分析（2026-09-12実装・検証）
+
+トレンド継続反転ExitのConfirmationTicksスイープ（Fold1-5×4銘柄、`results/backtests/20260912-150203-cases`、ticks=5設定）で決済されたSLトレード254件を分析したところ、**92.5%（235件）が`InpTrendReversalActivationR`（含み益ピークによる反転監視の開始ライン、既定1.0R）へ一度も到達していない**ことが判明した。トレンド継続反転Exitは含み益ピークの存在を前提とするため、この92.5%の損失パターンには構造的に対処できない。初期逆行Exit（`InpEnableEarlyAdverseExit`、既定値`false`、詳細は`docs/configuration.md`「初期逆行Exit」参照）は、含み益ピークを一切参照せず、建値からの逆行のみを基準にすることで、この損失パターンへの対処を狙う新規Exitである。
+
+**検証結果（2026-09-12〜13実施、Fold1-5×4銘柄、`InpEarlyAdverseExitTriggerR`=0.3/0.5/0.6/0.65/0.7/0.75/0.8/0.85/0.9、ConfirmationTicks=5固定、180ケース）**: Baseline（OFF、`results/backtests/20260912-164730-cases`、514トレード・純利益+118,533円、PF1.108、勝率36.6%）に対し、純利益はTriggerRに対して単調ではなく**TriggerR=0.70で単峰性のピーク（純利益+181,266円、Baseline比+62,733円、PF1.186）**を示した。0.3〜0.65はいずれもBaseline未達（0.5は黒字→赤字に転落）、0.75以降はBaselineへ緩やかに収束する（1.0Rに近づくほど通常のSLとの差がなくなるため構造的に自然）。Fold×銘柄20区分中、0.70で12区分・0.75で14区分・0.80で13区分が改善しており、特定の1銘柄・1年に依存した見かけ上の改善ではない。最良設定（0.70）でも発動率は49.1%（全トレードの約半数）に達しており、この機構は「損切りラインを全体的に手前へシフトして平均損失を圧縮する」タイプの効果であって、悪いトレードだけを狙い撃ちする精密フィルタではない。詳細な数値と追加の調整案（TrendReversalExitとの併用検証等）は`TASKS.md`セクション2.1.3を参照。
+
+**現時点の判断**: `InpEnableEarlyAdverseExit`は既定`false`のまま維持する。既定の`InpEarlyAdverseExitTriggerR=0.5`はOOSデータ上明確に有害と判明したため、**このままの既定値で有効化しないこと**。TriggerR=0.70〜0.85の範囲でBaselineを上回ったが、これはFold1-5への複数回のパラメータ適合（9点スイープ）の結果である。**本節の数値はFold1-5への複数回のパラメータ適合であり、Final Holdout（2025-01〜2026-08）での確認前に採用判断をしないこと。** また、TrendReversalExitとの併用検証など残る調整の余地があるため、これ以上Fold1-5上での探索を重ねる前に、全パラメータを固定してFinal Holdoutで一度きりの最終確認を行う計画を優先すべきである。
+
+発動したトレードはEA側`CPositionExitEvaluator::EvaluateEarlyAdverseExits`が送出する`EARLY_ADVERSE_EXIT`イベント（`reason_code`固定値`EarlyAdverseConfirmed`、`adverse_r_multiple`、`confirmation_count`）で識別する。
+
+```powershell
+$env:PYTHONPATH='.'
+# Baseline
+python -m python.analysis.trade_breakdown --input results/backtests/<baseline-run-id>-USDJPY-H1/audit/audit-<baseline-run-id>.jsonl --output build/early-adverse-baseline
+# ON
+python -m python.analysis.trade_breakdown --input results/backtests/<on-run-id>-USDJPY-H1/audit/audit-<on-run-id>.jsonl --output build/early-adverse-on
+```
+
+`trade-breakdown-report.json`の`early_adverse_exit`セクション（`trades_closed_by_early_adverse_exit`・`net_profit`・`profit_factor`・`win_rate`・`expectancy`・`average_adverse_r_multiple`・`by_direction`）に加え、レポート全体のPF・Net Profit・Expectancy・Max DD・Win Rate・平均利益/平均損失・Trade数をBaseline/ON間で比較する。「最終的にTPへ到達していた勝ちトレードを早期Exitしていないか」の確認は、トレンド継続反転Exitと同じ指標（`early_adverse_exit.trades_that_would_likely_have_reached_tp`・`net_pnl_of_trades_that_would_likely_have_reached_tp`）で行う。
+
 ## Entry Timing比較分析（2026-08-22実装）
 
 `InpEnableEntryTimingAnalysis`（既定値`false`）を`true`にすると、EA側`CEntryTimingAnalyzer`（`mt5/Include/Logging/EntryTimingAnalyzer.mqh`）が、同一のプルバックSetupについて次の4方式を**実注文なしのShadow Trade**として並行シミュレートする。

@@ -85,6 +85,30 @@ Long/Short対称に実装されている（`CTrendReversalExitRules`、`mt5/Incl
 
 決済時、監査ログへ`TREND_REVERSAL_EXIT`イベント（`reason_code`固定値`TrendReversalConfirmed`、`trend_direction`、`peak_price`、`peak_mfe_r_multiple`、`retracement_r_multiple`、`confirmation_count`）が記録される（ローカル監査のみ、TIME_STOP_EXIT/RANGE_EXITと同じく既存TRADE_CLOSEDの契約は変更しない）。`python.analysis.trade_breakdown.trend_reversal_exit_summary()`でBaseline（`InpEnableTrendReversalExit=false`）とON（true）のバックテスト結果を比較できる。詳細は`docs/backtesting.md`「トレンド継続反転Exit比較分析」を参照。
 
+### 初期逆行Exit（`InpEnableEarlyAdverseExit`、2026-09-12追加）
+
+トレンド継続反転Exit（ConfirmationTicksスイープ、`docs/backtesting.md`「トレンド継続反転Exit比較分析」）導入後のOOS分析で、SLへ至った負けトレードの92.5%（254件中235件）が`InpTrendReversalActivationR`（含み益ピークによる反転監視の開始ライン）へ一度も到達していないと判明した。トレンド継続反転Exitは含み益ピークの存在を前提とするため、この92.5%の損失パターンには構造的に対処できない。本Exitは、含み益ピークを一切参照せず、建値からの逆行のみを基準にすることで、この損失パターンに対処する。
+
+**対象**: `InpMagicNumber`（トレンドフォロー戦略）が保有するポジションのみ。レンジ戦略（`InpMeanReversionMagicNumber`）は対象外。トレンド継続反転Exitと異なり、現在の市場レジーム（TrendUp/TrendDown/Range）は判定条件にしない（判断が含み益ピークではなく建値からの絶対距離のみに基づくため）。
+
+**判定フロー（逆行検知→継続確認→Exit）**:
+
+```text
+1. 逆行検知: 建値からの逆行が「建値〜当初SL距離（初期リスク）」のInpEarlyAdverseExitTriggerR倍以上になったら検知する。
+   含み益ピークへの到達は問わない（一度も含み益に転じていないトレードにも適用される）。
+2. 継続確認: 逆行検知がInpEarlyAdverseExitConfirmationTicks回連続で継続したら決済する（一時的なTickノイズによる
+   誤Exitを防ぐ）。逆行が解消（トリガー未満へ回復）すれば確認カウンタは0へリセットされ、再度検知すればカウントをやり直す。
+3. Exit: 市場成行で決済する（初期SL/TP自体は変更しない）。
+```
+
+Long/Short対称に実装されている（`CEarlyAdverseExitRules`、`mt5/Include/Trading/PositionManager.mqh`）。当初SL（`initial_stop_loss`）はATRトレーリング等によるSL変更の影響を受けないよう、初回検知時に固定する（`CEarlyAdverseExitTracker`、CTrendReversalTrackerと異なり含み益ピークを扱わない別系統として独立管理する）。継続確認（`HasConfirmedReversal`）の判定ロジックは`CTrendReversalExitRules`と完全に同一のため、そのまま再利用している。
+
+決済時、監査ログへ`EARLY_ADVERSE_EXIT`イベント（`reason_code`固定値`EarlyAdverseConfirmed`、`adverse_r_multiple`、`confirmation_count`）が記録される（ローカル監査のみ、既存TRADE_CLOSEDの契約は変更しない）。`python.analysis.trade_breakdown.early_adverse_exit_summary()`でBaseline（`InpEnableEarlyAdverseExit=false`）とON（true）のバックテスト結果を比較できる。トレンド継続反転Exitと同時に有効化した場合、含み益ピークからの反転がトリガー到達より先に確定するトレードでは、トレンド継続反転Exit側が先に決済する（評価順序は`CEAController::OnTick`参照）。
+
+`InpEarlyAdverseExitTriggerR`（既定0.5）を1.0以上にする運用は推奨しない。`InpStopAtrMultiple`によるSL到達（1.0R相当）より先に、または同時に発動する意味がなくなるため。
+
+**既定値0.5についての注意**: Fold1-5でのスイープ検証（`docs/backtesting.md`「初期逆行Exit比較分析」）の結果、既定値の`InpEarlyAdverseExitTriggerR=0.5`はOOSデータ上明確に有害（発動率60%超、正常なトレードまで大量に早期決済し純利益がBaselineを大きく下回る）と判明した。有効化する場合はこの既定値をそのまま使わず、TASKS.mdの検証結果を確認すること。既定値自体は`InpEnableEarlyAdverseExit=false`（無効）のため、有効化しない限りこの数値による影響はない。
+
 ## リスク・注文設定
 
 | 設定 | 初期値 | 意味 |
@@ -129,6 +153,9 @@ Long/Short対称に実装されている（`CTrendReversalExitRules`、`mt5/Incl
 | `InpTrendReversalActivationR` | 1.0 | 反転監視を開始する最低到達ライン。含み益ピークが「建値〜当初SL距離（初期リスク）」のこの倍数（R）以上に達するまでは監視自体を行わない。`InpEnableTrendReversalExit=true`時は0より大きい値が必須 |
 | `InpTrendReversalRetraceR` | 0.5 | 反転検知の閾値。含み益ピークからの逆行が初期リスクのこの倍数（R）以上になったら「反転」として検知する。`InpEnableTrendReversalExit=true`時は0より大きい値が必須 |
 | `InpTrendReversalConfirmationTicks` | 5 | 反転検知が何Tick連続で継続したら決済するか（一時的なTickノイズによる誤Exitを防ぐ継続確認）。Peak方向へ戻れば0へリセットされる。`InpEnableTrendReversalExit=true`時は1以上が必須 |
+| `InpEnableEarlyAdverseExit` | false | 初期逆行Exit（Early Adverse Exit）の有効化（2026-09-12追加）。OOS分析で、SLへ至る負けトレードの92.5%がInpTrendReversalActivationRへ一度も到達していないと判明したため、含み益ピークの存在を前提にしないExitとして新設した。`InpEnableTradeMutations=false`では発動しない。既定値はOFF（安全側）。詳細は本節末尾「初期逆行Exit」を参照 |
+| `InpEarlyAdverseExitTriggerR` | 0.5 | 逆行検知の閾値。建値からの逆行が「建値〜当初SL距離（初期リスク）」のこの倍数（R）以上になったら検知する。`InpEnableEarlyAdverseExit=true`時は0より大きい値が必須（1.0以上は非推奨、本節末尾参照） |
+| `InpEarlyAdverseExitConfirmationTicks` | 5 | 逆行検知が何Tick連続で継続したら決済するか（一時的なTickノイズによる誤Exitを防ぐ継続確認）。逆行が解消すれば0へリセットされる。`InpEnableEarlyAdverseExit=true`時は1以上が必須 |
 
 `InpEnableTradeMutations` は最後に有効化する。Risk Manager、Decision API、LLMがALLOWでも、この値がfalseなら新規発注しない。本番ゲート未達の状態でtrueにしてはならない。
 

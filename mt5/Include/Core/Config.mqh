@@ -122,6 +122,9 @@ struct SEaConfig
    double            trend_reversal_activation_r_multiple;
    double            trend_reversal_retrace_r_multiple;
    int               trend_reversal_confirmation_ticks;
+   bool              enable_early_adverse_exit;
+   double            early_adverse_exit_trigger_r_multiple;
+   int               early_adverse_exit_confirmation_ticks;
    bool              enable_entry_timing_analysis;
    int               entry_timing_max_wait_bars;
    int               entry_timing_max_holding_bars;
@@ -242,6 +245,12 @@ void SetDefaultConfig(SEaConfig &config)
    config.trend_reversal_activation_r_multiple = 1.0;
    config.trend_reversal_retrace_r_multiple = 0.5;
    config.trend_reversal_confirmation_ticks = 5;
+   // 既定値はOFF（安全側）。OOS分析で、SLへ至る負けトレードの92.5%がInpTrendReversalActivationR
+   // （含み益ピークによる反転監視の開始ライン）へ一度も到達していないと判明したため、含み益ピークの
+   // 存在を前提にしないExitとして新設する。
+   config.enable_early_adverse_exit = false;
+   config.early_adverse_exit_trigger_r_multiple = 0.5;
+   config.early_adverse_exit_confirmation_ticks = 5;
    config.enable_entry_timing_analysis = false;
    config.entry_timing_max_wait_bars   = 6;
    config.entry_timing_max_holding_bars = 20;
@@ -371,6 +380,9 @@ bool ValidateConfig(const SEaConfig &config,string &error)
       (config.trend_reversal_activation_r_multiple<=0.0 || config.trend_reversal_retrace_r_multiple<=0.0 ||
        config.trend_reversal_confirmation_ticks<1))
      { error="INVALID_TREND_REVERSAL_EXIT_CONFIG"; return false; }
+   if(config.enable_early_adverse_exit &&
+      (config.early_adverse_exit_trigger_r_multiple<=0.0 || config.early_adverse_exit_confirmation_ticks<1))
+     { error="INVALID_EARLY_ADVERSE_EXIT_CONFIG"; return false; }
    if(config.enable_entry_timing_analysis &&
       (config.entry_timing_max_wait_bars<1 || config.entry_timing_max_holding_bars<1))
      { error="INVALID_ENTRY_TIMING_ANALYSIS_CONFIG"; return false; }

@@ -22,6 +22,7 @@ private:
    CAuditEventPublisher    *m_publisher;
    CTimeStopTracker         m_time_stop_tracker;
    CTrendReversalTracker    m_trend_reversal_tracker;
+   CEarlyAdverseExitTracker m_early_adverse_tracker;
 
    string JString(const string value) { return CAuditPayloadBuilder::JString(value); }
    string JNumber(const double value) { return CAuditPayloadBuilder::JNumber(value); }
@@ -140,6 +141,65 @@ public:
          payload+="\"mfe_r_multiple\":"+JNumber(mfe_r_multiple)+"}";
          // ローカル監査のみ。Time Stop識別は分析専用の新規イベントであり、既存TRADE_CLOSEDの契約は変更しない。
          Audit("TIME_STOP_EXIT",candidate_id,"",symbol,payload,false);
+        }
+     }
+
+   // 保有中のトレンド戦略ポジションについて、建値からの逆行が初期リスクのTriggerR倍以上、
+   // ConfirmationTicks回連続で確認された場合、含み益ピーク（Activation）到達を待たず初期SLへ到達する
+   // 前に市場成行で決済する（2026-09-12追加）。OOS分析で、SLへ至る負けトレードの92.5%が
+   // InpTrendReversalActivationRへ一度も到達していないと判明したため、CTrendReversalExitRules
+   // （含み益ピークの存在が前提）では対処できない損失パターン向けに新設する。判断（当初SL固定・
+   // 逆行量算出・Tick継続確認）はここで行い、メカニズム（決済実行）はPositionManagerへ委ねる
+   // （他のEvaluate*Exitsと同じ責務境界）。レンジ戦略のポジション（mean_reversion_magic_number）は
+   // 対象外（2引数版のIsManagedPosition）。EvaluateTrendReversalExitsと異なり、現在の市場レジームは
+   // 参照しない（判断が含み益ピークではなく建値からの絶対距離のみに基づくため）。
+   void EvaluateEarlyAdverseExits(void)
+     {
+      if(!m_config.enable_early_adverse_exit || !m_config.enable_trade_mutations)
+         return;
+      const int total=PositionsTotal();
+      for(int index=0; index<total; index++)
+        {
+         const ulong ticket=PositionGetTicket(index);
+         if(ticket==0) continue;
+         if(!CPositionProtectionRules::IsManagedPosition(PositionGetInteger(POSITION_MAGIC),m_config.magic_number))
+            continue;
+         const double stop_loss=PositionGetDouble(POSITION_SL);
+         if(stop_loss<=0.0) continue; // 保護SL未確定のpositionはPositionManager::Monitorの緊急決済側の責務
+         const string symbol=PositionGetString(POSITION_SYMBOL);
+         const ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         const double open_price=PositionGetDouble(POSITION_PRICE_OPEN);
+         MqlTick tick;
+         if(!SymbolInfoTick(symbol,tick)) continue;
+         const double current_price=(type==POSITION_TYPE_BUY ? tick.bid : tick.ask);
+
+         double initial_stop_loss;
+         m_early_adverse_tracker.Update(ticket,stop_loss,initial_stop_loss);
+
+         if(!CEarlyAdverseExitRules::IsTriggered(type,open_price,initial_stop_loss,current_price,
+                                                 m_config.early_adverse_exit_trigger_r_multiple))
+           { m_early_adverse_tracker.ResetConfirmation(ticket); continue; }
+
+         const int confirmation_count=m_early_adverse_tracker.IncrementConfirmation(ticket);
+         if(!CTrendReversalExitRules::HasConfirmedReversal(confirmation_count,m_config.early_adverse_exit_confirmation_ticks))
+            continue;
+
+         const string reason_code="EarlyAdverseConfirmed";
+         string close_error;
+         if(!m_position_manager.CloseOnEarlyAdverseExit(ticket,reason_code,close_error))
+           { PrintFormat("EARLY_ADVERSE_EXIT_FAILED position=%I64u code=%s",ticket,close_error); continue; }
+         m_early_adverse_tracker.Remove(ticket);
+
+         const double adverse_r_multiple=CEarlyAdverseExitRules::AdverseRMultiple(type,open_price,initial_stop_loss,current_price);
+         const ulong position_identifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+         const string candidate_id=CClosedPositionProcessor::CandidateForPosition(m_config.ea_id,position_identifier,symbol);
+         string payload="{";
+         payload+="\"position_ticket\":"+JString(StringFormat("%I64u",ticket))+",";
+         payload+="\"reason_code\":"+JString(reason_code)+",";
+         payload+="\"adverse_r_multiple\":"+JNumber(adverse_r_multiple)+",";
+         payload+="\"confirmation_count\":"+IntegerToString(confirmation_count)+"}";
+         // ローカル監査のみ。TREND_REVERSAL_EXITと同じく、既存TRADE_CLOSEDの契約は変更しない。
+         Audit("EARLY_ADVERSE_EXIT",candidate_id,"",symbol,payload,false);
         }
      }
 

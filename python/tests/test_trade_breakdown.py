@@ -10,6 +10,7 @@ from python.analysis.trade_breakdown import (
     BREAKDOWN_COLUMNS,
     breakdown_by,
     build_trade_context,
+    early_adverse_exit_summary,
     entry_pipeline_funnel_summary,
     giveback_summary,
     range_exit_summary,
@@ -386,6 +387,94 @@ class TradeBreakdownTests(unittest.TestCase):
         self.assertEqual(1, summary["trades_that_would_likely_have_reached_tp"])
         self.assertAlmostEqual(800.0, summary["net_pnl_of_trades_that_would_likely_have_reached_tp"])
 
+    def test_early_adverse_exit_summary_counts_trades_and_pnl_by_direction(self) -> None:
+        # トレンド継続反転Exitのテスト（含み益ピークが前提）と異なり、含み益ピークに一度も
+        # 到達していないトレード（mfe<=0）でも決済できることを確認する。
+        records = [
+            audit_event("CANDIDATE", "ea1", "2025-04-01T00:00:00Z", {
+                "direction": "SELL", "pattern": "TREND_PULLBACK", "entry_price": 145.0,
+                "stop_loss": 146.0, "take_profit": 143.0, "risk_reward_ratio": 2.0,
+                "atr": 0.1, "adx": 22.0, "spread_points": 10.0,
+                "market_regime_trend": "TrendDown", "market_regime_volatility": "NormalVolatility",
+                "hour": 0, "day_of_week": 1, "reason_code": "TREND_PULLBACK", "reason": "ok",
+            }),
+            audit_event("RISK_DECISION", "ea1", "2025-04-01T00:00:00Z", {
+                "status": "APPROVED", "reason_code": "OK", "reason": "ok", "volume": 0.1,
+                "risk_budget": 1000.0, "estimated_stop_loss": -1000.0, "required_margin": 100.0,
+                "daily_loss_rate": 0.0, "drawdown_rate": 0.0,
+            }),
+            audit_event("TRADE_CLOSED", "ea1", "2025-04-01T02:00:00Z", {
+                "position_ticket": "1", "direction": "SELL",
+                "open_time": "2025-04-01T00:00:00Z", "close_time": "2025-04-01T02:00:00Z",
+                "volume": 0.1, "open_price": 145.0, "close_price": 145.5,
+                "close_reason": "EXPERT", "pnl": -500.0, "commission": -10.0, "swap": 0.0,
+                "exit_spread_points": 1.0, "point_value": 100.0,
+            }),
+            audit_event("TRADE_ANALYTICS", "ea1", "2025-04-01T02:00:00Z", {
+                "position_ticket": "1", "mfe": 0.0, "mae": -550.0,
+            }),
+            audit_event("EARLY_ADVERSE_EXIT", "ea1", "2025-04-01T02:00:00Z", {
+                "position_ticket": "1", "reason_code": "EarlyAdverseConfirmed",
+                "adverse_r_multiple": 0.5, "confirmation_count": 5,
+            }),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audit-early-adverse.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in records), encoding="utf-8")
+            trades = build_trade_context([path])
+        summary = early_adverse_exit_summary(trades)
+        self.assertEqual(1, summary["trades_closed_by_early_adverse_exit"])
+        self.assertAlmostEqual(-500.0, summary["net_profit"])
+        self.assertAlmostEqual(0.0, summary["win_rate"])
+        self.assertAlmostEqual(0.5, summary["average_adverse_r_multiple"])
+        self.assertIn("SELL", summary["by_direction"])
+        self.assertEqual(1, summary["by_direction"]["SELL"]["number_of_trades"])
+        # mfe(0.0)は一度も含み益に転じていないため、TP相当到達済みの取りこぼし候補ではない。
+        self.assertEqual(0, summary["trades_that_would_likely_have_reached_tp"])
+
+    def test_early_adverse_exit_summary_flags_trades_that_would_likely_have_reached_tp(self) -> None:
+        # 早期Exitで決済されたが、MFEがTP相当R以上に達していた（決済せず保有していればTPへ到達していた
+        # 可能性がある）ケースを検証する。risk_reward_ratio=2.0、risk_budget=1000.0のため、
+        # mfe=2500(mfe_r=2.5)はTP相当R以上に到達している。
+        records = [
+            audit_event("CANDIDATE", "ea2", "2025-04-02T00:00:00Z", {
+                "direction": "BUY", "pattern": "TREND_BREAKOUT", "entry_price": 145.0,
+                "stop_loss": 144.0, "take_profit": 147.0, "risk_reward_ratio": 2.0,
+                "atr": 0.1, "adx": 25.0, "spread_points": 10.0,
+                "market_regime_trend": "TrendUp", "market_regime_volatility": "NormalVolatility",
+                "hour": 0, "day_of_week": 5, "reason_code": "TREND_BREAKOUT", "reason": "ok",
+            }),
+            audit_event("RISK_DECISION", "ea2", "2025-04-02T00:00:00Z", {
+                "status": "APPROVED", "reason_code": "OK", "reason": "ok", "volume": 0.1,
+                "risk_budget": 1000.0, "estimated_stop_loss": -1000.0, "required_margin": 100.0,
+                "daily_loss_rate": 0.0, "drawdown_rate": 0.0,
+            }),
+            audit_event("TRADE_CLOSED", "ea2", "2025-04-02T05:00:00Z", {
+                "position_ticket": "2", "direction": "BUY",
+                "open_time": "2025-04-02T00:00:00Z", "close_time": "2025-04-02T05:00:00Z",
+                "volume": 0.1, "open_price": 145.0, "close_price": 144.5,
+                "close_reason": "EXPERT", "pnl": -500.0, "commission": -10.0, "swap": 0.0,
+                "exit_spread_points": 1.0, "point_value": 100.0,
+            }),
+            audit_event("TRADE_ANALYTICS", "ea2", "2025-04-02T05:00:00Z", {
+                "position_ticket": "2", "mfe": 2500.0, "mae": -500.0,
+            }),
+            audit_event("EARLY_ADVERSE_EXIT", "ea2", "2025-04-02T05:00:00Z", {
+                "position_ticket": "2", "reason_code": "EarlyAdverseConfirmed",
+                "adverse_r_multiple": 0.5, "confirmation_count": 5,
+            }),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audit-early-adverse-tp.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in records), encoding="utf-8")
+            trades = build_trade_context([path])
+        by_id = trades.set_index("trade_candidate_id")
+        self.assertTrue(bool(by_id.loc["ea2", "reached_tp_equivalent_r"]))
+        summary = early_adverse_exit_summary(trades)
+        self.assertEqual(1, summary["trades_closed_by_early_adverse_exit"])
+        self.assertEqual(1, summary["trades_that_would_likely_have_reached_tp"])
+        self.assertAlmostEqual(-500.0, summary["net_pnl_of_trades_that_would_likely_have_reached_tp"])
+
     def test_entry_pipeline_funnel_summary_counts_stages_when_events_present(self) -> None:
         records = [
             audit_event("ENTRY_PIPELINE", "p1", "2025-01-06T00:00:00Z", {
@@ -480,6 +569,7 @@ class TradeBreakdownTests(unittest.TestCase):
             self.assertEqual(1, report["time_stop"]["trades_closed_by_time_stop"])
             self.assertEqual(1, report["range_exit"]["trades_closed_by_range_exit"])
             self.assertEqual(1, report["trend_reversal_exit"]["trades_closed_by_trend_reversal_exit"])
+            self.assertEqual(0, report["early_adverse_exit"]["trades_closed_by_early_adverse_exit"])
             self.assertTrue(paths["markdown"].exists())
             self.assertTrue(paths["trades"].exists())
 

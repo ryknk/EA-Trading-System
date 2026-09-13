@@ -289,6 +289,10 @@ public:
       // 既存ポジション管理の一部。Entry後の経過バー数が上限を超えたポジションを、シグナルの
       // 有効期限切れとみなし早期決済する（必要に応じ最低MFE到達判定を伴う）。
       m_position_exit_evaluator.EvaluateTimeStopExits();
+      // 既存ポジション管理の一部。トレンド戦略のポジションについて、含み益ピーク到達を待たず、
+      // 建値からの逆行がTriggerR以上、ConfirmationTicks回連続で確認されたら初期SLへ到達する前に
+      // 早期決済する（InpEnableEarlyAdverseExit=false（既定）では即return）。
+      m_position_exit_evaluator.EvaluateEarlyAdverseExits();
       // 既存ポジション管理の一部。トレンド相場中のみ、含み益ピークからの反転がConfirmationTicks回
       // 連続で確認されたら、初期SLへ到達する前に早期決済する（InpEnableTrendReversalExit=false
       // （既定）では即return）。

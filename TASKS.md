@@ -1301,7 +1301,94 @@
 
   **根本原因の特定とHiddenDesktop方式への移行（2026-09-11〜12実施）。** 上記の「reportが生成されない」（タイプA）に加え、タスクスケジューラ方式では「後処理段階でのタイムアウト」（タイプB）も発見された。実機調査（P/Invokeでterminal64.exeのウィンドウステーション情報を直接取得）により、タスクスケジューラのS4Uログオンが常にSession 0（Windowsサービス専用の隔離セッション、Microsoftが公式にGUIアプリの実行に適さないと明言する環境）を使っており、タイプA・タイプBともこの構造的制約に起因すると判明した。対策として、対話セッション内にCreateDesktopEx（十分なヒープサイズを明示指定）で非表示デスクトップを作成する方式へ変更し、当時の`-HostIsolationMode HiddenDesktop -CaseFile mt5\test-config\cases\rangeonly-breakevenr-sweep-all.json`で80ケースバッチを実行したところ`succeeded=80 failed=0`で完走し、タイプA・タイプBとも再発しないことを確認した。これを受けてタスクスケジューラ方式のコードを削除し、HiddenDesktop（CreateDesktopEx）方式へ統一した（詳細な経緯は`DECISIONS.md` DEC-031を参照）。以降、`-HostIsolationMode`パラメータ自体が存在しない（常にHiddenDesktop相当の動作になる）。
 
-* [ ] **トレンド継続反転Exit（`InpEnableTrendReversalExit`）を実装（2026-09-12実施、ユーザー依頼）。** 上記2026-09-06のPeak分析所見（「Peakでの早期利確・建値ストップの早期化がSL損失回避に有効な候補、本タスクでは検証していない」）を受け、トレンド戦略（`InpMagicNumber`）の保有ポジションについて、現在の市場レジームがTrendUp/TrendDownの間のみ有効な早期Exitを新規実装した。含み益ピーク（Tick単位で追跡）が`InpTrendReversalActivationR`（既定1.0R）に到達した後、Peakから`InpTrendReversalRetraceR`（既定0.5R）以上逆行したら「反転」を検知し、`InpTrendReversalConfirmationTicks`（既定5Tick）連続で継続確認できたら初期SLへ到達する前に市場成行で決済する（反転検知→継続確認→Exit）。既定値はOFF・安全側（既存のCTimeStopTracker・CMeanReversionStrategyのCRangeExitGraceTrackerと同じ設計思想で、独立した新規`CTrendReversalTracker`・`CTrendReversalExitRules`として実装し、既存のTime Stop・Signal Invalidation Exit・ATRトレーリング等とは独立して動作する）。変更ファイル: `mt5/Include/Core/Config.mqh`（設定4件追加・検証）、`mt5/Experts/CoreEA.mq5`（Input追加）、`mt5/Include/Strategy/TrendFollowingStrategy.mqh`（`CurrentMarketRegimeTrend()`追加）、`mt5/Include/Trading/PositionManager.mqh`（`CTrendReversalExitRules`・`CTrendReversalTracker`・`CloseOnTrendReversal()`追加）、`mt5/Include/Trading/PositionExitEvaluator.mqh`（`EvaluateTrendReversalExits()`追加）、`mt5/Include/Core/EAController.mqh`（OnTickへ呼び出し追加）、`mt5/Include/Logging/TradeLogger.mqh`・`python/analysis/reports.py`（新規イベント`TREND_REVERSAL_EXIT`を許可リストへ追加）、`python/analysis/trade_breakdown.py`（`trend_reversal_exit_summary()`・`reached_tp_equivalent_r`との組み合わせで「TP到達済みだった可能性のある早期Exit」を検出）、`contracts/trade-breakdown-report.schema.json`、単体テスト（`TestTradingRules.mq5`・`TestProductionSafetyRules.mq5`・`TestAuditRules.mq5`・`test_trade_breakdown.py`）。MQL5コンパイル（13ターゲット、0 errors/0 warnings）・全12 Script Test PASS、Pythonテスト70件PASS確認済み。**Strategy TesterでのBaseline（`InpEnableTrendReversalExit=false`）vs ON比較は本タスクでは未実施（NOT VERIFIED）。** 次の一手として、Fold1-5・4銘柄でBaseline/ON双方を実行し、`docs/backtesting.md`「トレンド継続反転Exit比較分析」の手順でPF/Net Profit/Expectancy/Max DD/Win Rate/Peak MFE/「TP到達済みだった可能性のある早期Exit」件数を比較すること。既存のExit戦略検証（建値ストップ・ATRトレーリング）と同じく、Fold1-5への複数回のパラメータ適合を避け、採用判断はFinal Holdoutでの確認後とする。
+* [x] **トレンド継続反転Exit（`InpEnableTrendReversalExit`）を実装（2026-09-12実施、ユーザー依頼）。** 上記2026-09-06のPeak分析所見（「Peakでの早期利確・建値ストップの早期化がSL損失回避に有効な候補、本タスクでは検証していない」）を受け、トレンド戦略（`InpMagicNumber`）の保有ポジションについて、現在の市場レジームがTrendUp/TrendDownの間のみ有効な早期Exitを新規実装した。含み益ピーク（Tick単位で追跡）が`InpTrendReversalActivationR`（既定1.0R）に到達した後、Peakから`InpTrendReversalRetraceR`（既定0.5R）以上逆行したら「反転」を検知し、`InpTrendReversalConfirmationTicks`（既定5Tick）連続で継続確認できたら初期SLへ到達する前に市場成行で決済する（反転検知→継続確認→Exit）。既定値はOFF・安全側（既存のCTimeStopTracker・CMeanReversionStrategyのCRangeExitGraceTrackerと同じ設計思想で、独立した新規`CTrendReversalTracker`・`CTrendReversalExitRules`として実装し、既存のTime Stop・Signal Invalidation Exit・ATRトレーリング等とは独立して動作する）。変更ファイル: `mt5/Include/Core/Config.mqh`（設定4件追加・検証）、`mt5/Experts/CoreEA.mq5`（Input追加）、`mt5/Include/Strategy/TrendFollowingStrategy.mqh`（`CurrentMarketRegimeTrend()`追加）、`mt5/Include/Trading/PositionManager.mqh`（`CTrendReversalExitRules`・`CTrendReversalTracker`・`CloseOnTrendReversal()`追加）、`mt5/Include/Trading/PositionExitEvaluator.mqh`（`EvaluateTrendReversalExits()`追加）、`mt5/Include/Core/EAController.mqh`（OnTickへ呼び出し追加）、`mt5/Include/Logging/TradeLogger.mqh`・`python/analysis/reports.py`（新規イベント`TREND_REVERSAL_EXIT`を許可リストへ追加）、`python/analysis/trade_breakdown.py`（`trend_reversal_exit_summary()`・`reached_tp_equivalent_r`との組み合わせで「TP到達済みだった可能性のある早期Exit」を検出）、`contracts/trade-breakdown-report.schema.json`、単体テスト（`TestTradingRules.mq5`・`TestProductionSafetyRules.mq5`・`TestAuditRules.mq5`・`test_trade_breakdown.py`）。MQL5コンパイル（13ターゲット、0 errors/0 warnings）・全12 Script Test PASS、Pythonテスト70件PASS確認済み。**Strategy TesterでのBaseline（`InpEnableTrendReversalExit=false`）vs ON比較は本タスクでは未実施（NOT VERIFIED）。** 次の一手として、Fold1-5・4銘柄でBaseline/ON双方を実行し、`docs/backtesting.md`「トレンド継続反転Exit比較分析」の手順でPF/Net Profit/Expectancy/Max DD/Win Rate/Peak MFE/「TP到達済みだった可能性のある早期Exit」件数を比較すること。既存のExit戦略検証（建値ストップ・ATRトレーリング）と同じく、Fold1-5への複数回のパラメータ適合を避け、採用判断はFinal Holdoutでの確認後とする。
+
+* [x] **`InpTrendReversalConfirmationTicks`（継続確認期間）のスイープ検証（2026-09-12実施、ユーザー依頼）。** Activation R=1.0・Retrace R=0.5は既定値のまま固定し、ConfirmationTicksを1/3/5（既定）/10/20でスイープした（Fold1-5・4銘柄×5設定＝100ケース、Trend戦略の既定`STRATEGY_MODE_TREND_ONLY`）。比較のため、現行コードベースでBaseline（`InpEnableTrendReversalExit=false`）も同時点で再取得した（過去の記録は複数コミット前のものだったため）。
+
+  | 設定 | 取引数 | 純利益 | PF | 勝率 | 期待値 |
+  |---|---|---|---|---|---|
+  | **Baseline（OFF）** | 514 | +118,533円 | 1.11 | 37.0% | +230.6 |
+  | ticks=1 | 541 | +153,174円 | 1.13 | 49.0% | +283.1 |
+  | ticks=3 | 541 | +151,004円 | 1.13 | 49.0% | +279.1 |
+  | ticks=5（既定） | 541 | +148,476円 | 1.13 | 49.0% | +274.5 |
+  | ticks=10 | 541 | +145,719円 | 1.12 | 49.0% | +269.4 |
+  | ticks=20 | 540 | +150,718円 | 1.13 | 49.0% | +279.1 |
+
+  **ConfirmationTicksの値自体による差は小さい**（純利益で145,719〜153,174円の範囲、約5%の変動幅）。ticks=1が最良・ticks=10が最弱だが単調な傾向はなく、この範囲ではノイズ除去の効果は限定的である。一方、**機構をONにすること自体の効果は非常に大きい**。全設定で純利益がBaselineを+23%〜+29%上回った。
+
+  close_reason内訳（ticks=5、既定値で代表）をBaselineと比較すると、機構の作用機序が明確になる。
+
+  | 決済理由 | Baseline件数/合計 | ON(ticks=5)件数/合計 |
+  |---|---|---|
+  | TP | 122件 / +1,146,588円 | 70件 / +662,629円 |
+  | SL | 325件 / -1,047,398円 | 254件 / -1,130,148円（平均損失は-3,223円→-4,449円に悪化） |
+  | EXPERT | 67件 / +19,343円 | 217件 / +615,995円 |
+
+  ONではEXPERT決済が67→217件へ急増しており、これがTREND_REVERSAL_EXIT（全設定で約156件、勝率100%、純利益+605,171〜633,332円）を含む。TP到達件数は122→70件へ減少しているが、`trend_reversal_exit_summary()`の`trades_that_would_likely_have_reached_tp`（決済時点でMFE_Rが自身のTP相当R以上に達していたか）は**全設定で0件**であり、少なくともこの近似指標ではTREND_REVERSAL_EXITに巻き込まれたトレードの中にTP到達目前だったものは検出されなかった。ただし、ON時は取引数がBaselineの514件から541件へ増加している（早期決済によりポジション保有期間が短縮し、期間内に追加のエントリー機会が生まれるためと考えられる）ため、TP件数の減少を「機構が奪ったTP」と単純比較することはできない点に注意。
+
+  SL到達時の平均損失がONでやや悪化している（-3,223円→-4,449円）点は、反対に「本来TREND_REVERSAL_EXITで救われるはずだった一部のトレードが、ConfirmationTicks・Retrace Rの条件を満たさずSLまで到達した」可能性を示唆しており、Retrace R側のパラメータ調整で改善の余地があるかもしれない（本タスクでは未検証）。
+
+  **結論**: `InpEnableTrendReversalExit=true`はConfirmationTicksの具体的な値によらず、テストした全範囲でBaselineを上回った。ConfirmationTicks自体の最適値は本データからは明確に決定できない（差が小さくFold1-5内のノイズの可能性がある）ため、既定値5を変更する積極的な理由はない。**本節はFold1-5への複数回のパラメータ適合であり、Final Holdoutでの確認前に採用判断をしないこと。**
+
+* [x] **初期逆行Exit（`InpEnableEarlyAdverseExit`）の新設（2026-09-12実装、ユーザー依頼「SL到達やその原因となるエントリー自体を防ぐ方法の検討」を受けて）。**
+
+  上記ConfirmationTicksスイープのON（ticks=5）データ（`results/backtests/20260912-150203-cases`、TRT5設定、541トレード）に対し、SL決済254件を追加分析した。`trend_reversal_triggered`が0（TREND_REVERSAL_EXITでは決済されていない）254件のMFE_R分布は平均0.436・中央値0.361であり、**92.5%（235/254件）が`InpTrendReversalActivationR`（既定1.0R、反転監視の開始ライン）へ一度も到達していない**ことが判明した。トレンド継続反転Exitは含み益ピークの存在を前提とするため（`CTrendReversalExitRules::IsActivated`が先にtrueにならないと監視自体が始まらない）、この92.5%の損失パターンには構造的に対処できない。
+
+  この235件（Activation未到達SL）と勝ちトレードとの間で、エントリー時点の特徴量（`entry_adx`: 45.31 vs 44.94、`entry_atr`: 0.150 vs 0.159、`market_regime_volatility`分布、`session`分布、`direction`分布、CANDIDATEイベントの`pattern`＝BREAKOUT/PULLBACK比率）を比較したが、いずれも実質的な差は見られなかった。既存の記録済みエントリー特徴量からは、この損失パターンを事前に区別するシグナルは見つからなかった（この点は追加のエントリーフィルタでは対処しにくいことを示唆する）。
+
+  この所見を受け、含み益ピークを一切参照せず、建値からの逆行のみを基準にする新規Exit「初期逆行Exit」を実装した。判定は「建値からの逆行が`InpEarlyAdverseExitTriggerR`倍（既定0.5R）以上、`InpEarlyAdverseExitConfirmationTicks`回（既定5）連続で継続したら成行決済」のみで、含み益ピーク（Activation）の到達を問わない。継続確認（Tickノイズ除去）の判定ロジックは`CTrendReversalExitRules::HasConfirmedReversal`をそのまま再利用し、重複実装を避けた。実装箇所: `CEarlyAdverseExitRules`/`CEarlyAdverseExitTracker`/`CPositionManager::CloseOnEarlyAdverseExit`（`mt5/Include/Trading/PositionManager.mqh`）、`CPositionExitEvaluator::EvaluateEarlyAdverseExits`（`mt5/Include/Trading/PositionExitEvaluator.mqh`）、監査イベント`EARLY_ADVERSE_EXIT`（`CTradeLogRules::SafeEventType`、`python.analysis.reports.SUPPORTED_AUDIT_EVENTS`）、Python分析`early_adverse_exit_summary()`（`python/analysis/trade_breakdown.py`）。既定値は`InpEnableEarlyAdverseExit=false`（安全側、既存挙動を変えない）。
+
+  **検証状況**: コンパイル・MQL5単体テスト（`TestTradingRules.mq5`へ`CEarlyAdverseExitRules::IsTriggered`/`AdverseRMultiple`のアサーションを追加）・Python単体テスト（`test_trade_breakdown.py`へ`early_adverse_exit_summary`のテストを追加）はPASS。1ケースのデバッグ検証でEARLY_ADVERSE_EXITが意図通り発火することを確認済み。
+
+  **TriggerRスイープ結果（2026-09-12実施、Fold1-5×4銘柄、TriggerR=0.3/0.5/0.7、ConfirmationTicks=5固定、60ケース全成功）**: Baseline（OFF、同時点再取得、`results/backtests/20260912-164730-cases`）514トレード・純利益+118,533円に対し、
+
+  | TriggerR | トレード数 | 純利益 | Baseline比 | 発動件数（発動率） | SL到達件数（Baseline比） |
+  |---:|---:|---:|---:|---:|---:|
+  | Baseline (OFF) | 514 | +118,533円 | - | - | 325件 |
+  | 0.3 | 624 | +22,742円 | **-95,791円** | 447件（71.6%） | 87件 |
+  | 0.5（既定値） | 566 | -12,890円 | **-131,423円** | 344件（60.8%） | 105件 |
+  | 0.7 | 527 | +181,266円 | **+62,733円** | 259件（49.2%） | 112件 |
+
+  TriggerR=0.3/0.5では発動率が60〜72%と極めて高く、SLへ至らなかったはずの正常なトレード（一時的な逆行後に回復するトレード）まで大量に早期決済してしまい、純利益がBaselineを大きく下回った（0.5では黒字→赤字に転落）。TriggerR=0.7（1.0R SLに近い設定）でのみBaselineを上回った（Fold×銘柄の20区分中12区分で改善、`trades_that_would_likely_have_reached_tp`は全設定で0件だが、この指標は早期Exit時点までのMFEしか見ないため、含み益ピークへ一度も到達しない本Exitの性質上、構造的に0になりやすく取りこぼし検出には不向きと考えられる。詳細な取りこぼし確認には別の指標が必要）。
+
+  **結論**: 現在の既定値`InpEarlyAdverseExitTriggerR=0.5`はOOSデータ上明確に有害であり、**このまま有効化すべきではない**。SL到達間際（0.7R付近）でのみ介入する設定でBaselineを上回る結果が得られたが、3点のみのFold1-5スイープであり、0.6〜0.9の範囲でより細かく最適点を探ることは可能だが、それ自体がFold1-5への追加の過剰適合リスクを高める。**本節の数値はFold1-5への複数回のパラメータ適合であり、Final Holdoutでの確認前に採用判断をしないこと。** `InpEnableEarlyAdverseExit`は既定`false`のまま維持し、有効化する場合はTriggerRを0.5ではなく0.7以上から検討すること。詳細は`docs/backtesting.md`「初期逆行Exit比較分析」、`docs/configuration.md`「初期逆行Exit」を参照。
+
+* [x] **TriggerRの詳細スイープ（0.6/0.65/0.75/0.8/0.85/0.9）と損失原因の再分析（2026-09-13実施、ユーザー依頼）。**
+
+  上記3点スイープに続き、0.6〜0.9間を0.05刻みで追加検証した（Fold1-5×4銘柄×6設定＝120ケース全成功）。既存の0.3/0.5/0.7と合わせた全体像:
+
+  | TriggerR | トレード数 | 純利益 | Baseline比 | PF | 勝率 | 発動率 |
+  |---:|---:|---:|---:|---:|---:|---:|
+  | Baseline (OFF) | 514 | +118,533円 | - | 1.108 | 36.6% | - |
+  | 0.30 | 624 | +22,742円 | -95,791円 | 1.031 | 16.8% | 71.6% |
+  | 0.50（既定値） | 566 | -12,890円 | -131,423円 | 0.986 | 23.5% | 60.8% |
+  | 0.60 | 546 | +54,979円 | -63,554円 | 1.057 | 28.2% | 55.3% |
+  | 0.65 | 538 | +76,630円 | -41,903円 | 1.077 | 29.9% | 52.6% |
+  | **0.70** | 527 | **+181,266円** | **+62,733円** | **1.186** | 32.6% | 49.1% |
+  | 0.75 | 525 | +152,469円 | +33,936円 | 1.150 | 33.5% | 47.6% |
+  | 0.80 | 524 | +144,912円 | +26,379円 | 1.139 | 34.0% | 45.6% |
+  | 0.85 | 523 | +131,533円 | +13,000円 | 1.123 | 34.8% | 44.0% |
+  | 0.90 | 520 | +111,864円 | -6,669円 | 1.103 | 35.2% | 41.9% |
+
+  純利益はTriggerRの上昇に対して単調ではなく、0.3→0.65までBaseline未達（0.5は黒字→赤字）、**0.70で単峰性のピーク（+53%）**、0.75以降はBaselineへ向けて緩やかに収束する（1.0Rに近づくほど通常のSLとの差がなくなるため、効果が薄れるのは構造的に自然）。Fold×銘柄の20区分中、0.70で12区分・0.75で14区分・0.80で13区分が改善しており、特定の1銘柄・1年に依存した見かけ上の改善ではないことを確認した。勝率は発動率の低下とともに単調回復している（0.3:16.8%→0.9:35.2%、Baseline:36.6%）。発動率は最良設定（0.70）でも49.1%と全トレードの約半数に達しており、この機構は「一部の悪いトレードだけを狙い撃ちする」というより「損切りラインを全体的に手前へシフトする」ことで平均損失を圧縮するタイプの効果だと理解すべきである。
+
+  **損失原因の再分析（重要な訂正）**: 前回（2026-09-12）報告した「SL到達トレードの92.5%がActivation R未到達」は、**TrendReversalExitが先に一部トレードを横取りした後の残存SLトレード254件**に対する分析であり、選択バイアスを含んでいた（TrendReversalExitは「1.0R到達→反転」パターンを先にEXPERT決済として持ち去るため、残存SLは自然と「大きく伸びなかったもの」に偏る）。TrendReversalExitを一切使わない素のBaseline（325件のSLトレード）で改めてMFE_Rを分析すると、実態は3層構造だった。
+
+  | 層 | 件数 | 割合 | 中央値保有時間 |
+  |---|---:|---:|---:|
+  | ①即死型（MFE_R<=0.02、含み益ほぼゼロ） | 22件 | 6.8% | 1.17時間 |
+  | ②中間型（0.02R<MFE_R<=1.0R） | 203件 | 62.5% | 6.06時間 |
+  | ③本格型（MFE_R>1.0R） | 100件 | 30.8% | 13.33時間 |
+
+  SL損失の93.2%（②+③）は「一度は含み益を経験してから反転」しており、エントリー時点の特徴量（ADX・ATR・セッション・方向・パターン、前節参照）に有意差が見られなかったのは、失敗が事前予見可能な質の差ではなく事後の値動き反転だからだと整合する。③（30.8%、MFE_R>1.0R）はTrendReversalExit（既定Activation=1.0R）の守備範囲、②（62.5%）はEarlyAdverseExit（含み益ピーク不問）の守備範囲であり、**両者は競合ではなく補完関係にある**。現状はどちらも単独でしか検証していない。
+
+  **追加の調整案（優先順）**:
+
+  1. **TrendReversalExit（Activation=1.0/Retrace=0.5/Ticks=5）とEarlyAdverseExit（TriggerR=0.7/Ticks=5）の併用検証**（未実施、最優先）。上記の層構造から、両者は損失の異なる部分（③と②）を担当するため、併用によりBaseline比の改善幅が単独より拡大する可能性がある。次に検証すべき最有力候補。
+  2. **EarlyAdverseExitのConfirmationTicks調整**（未実施、優先度中）。TriggerRのみをスイープしTicks=5固定のままだった。TrendReversalExit側のTicksスイープでは効果が小さかった（±5%程度）ため、大きな改善は期待しにくいが、TriggerRとの交互作用は未確認。
+  3. **銘柄別・方向別のTriggerR個別最適化**（非推奨）。EURUSD_HISTの2023年は全TriggerR設定で一貫して悪化しており銘柄依存の余地はあるが、Fold1区分あたり1年分のデータしかなく、個別最適化はFold1-5への過剰適合リスクが非常に高い。
+
+  **重要な注意**: 本タスクとConfirmationTicksスイープ（前節）で、Fold1-5に対して既に2種類のExit機構×複数パラメータを繰り返し最適化している。上記1.を追加検証すること自体は妥当だが、**これ以上Fold1-5上でのパラメータ探索を重ねる前に、一度EA・全パラメータを固定してFinal Holdout（2025-01〜2026-08、開発中は一切使用しない一度きりの検証期間）で最終確認する計画を立てるべき**。`InpEnableEarlyAdverseExit`・`InpEnableTrendReversalExit`とも既定`false`を維持する。
 
 ## 2.2 `TestDecisionApiRules` の終了コード
 
