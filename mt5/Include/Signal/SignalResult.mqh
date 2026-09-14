@@ -21,7 +21,8 @@ enum EEntryPattern
   {
    ENTRY_PATTERN_NONE=0,
    ENTRY_PATTERN_BREAKOUT=1,
-   ENTRY_PATTERN_PULLBACK=2
+   ENTRY_PATTERN_PULLBACK=2,
+   ENTRY_PATTERN_MEAN_REVERSION=3
   };
 
 struct SSignalResult
@@ -90,6 +91,7 @@ string EntryPatternToString(const EEntryPattern pattern)
   {
    if(pattern==ENTRY_PATTERN_BREAKOUT) return "BREAKOUT";
    if(pattern==ENTRY_PATTERN_PULLBACK) return "PULLBACK";
+   if(pattern==ENTRY_PATTERN_MEAN_REVERSION) return "MEAN_REVERSION";
    return "NONE";
   }
 

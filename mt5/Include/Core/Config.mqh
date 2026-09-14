@@ -1,6 +1,36 @@
 #ifndef EA_TRADING_SYSTEM_CORE_CONFIG_MQH
 #define EA_TRADING_SYSTEM_CORE_CONFIG_MQH
 
+// 戦略実行モード（2026-09-05追加）。Trend戦略とRange（Mean Reversion）戦略の新規エントリー可否を、
+// 複数の有効/無効フラグの組み合わせではなくこの一つの値で一元管理する。既存ポジションの管理・決済
+// （PositionManager::Monitor、PositionExitEvaluatorの各Exit判定）はモードに関わらず常に継続する。
+enum EStrategyMode
+  {
+   STRATEGY_MODE_TREND_ONLY=0,
+   STRATEGY_MODE_MEAN_REVERSION_ONLY=1,
+   STRATEGY_MODE_COMBINED=2
+  };
+
+// Strategy Modeから各戦略の参加可否を導出する純粋な判定ロジック。EAControllerからの
+// 呼び出し1箇所に単純化するためのRule集約（新しい抽象化・Interfaceは追加しない）。
+class CStrategyModeRules
+  {
+public:
+   // Range戦略（初期化・エントリー評価・強制決済を含む）を有効にするモードか。
+   static bool IsMeanReversionModeActive(const int strategy_mode)
+     {
+      return strategy_mode==STRATEGY_MODE_MEAN_REVERSION_ONLY || strategy_mode==STRATEGY_MODE_COMBINED;
+     }
+
+   // Trendフォロー戦略が生成した候補を新規発注対象から除外すべきモードか。
+   // MeanReversionOnlyでは、Trendの候補生成自体（Entry判定ロジック）は変更せず、
+   // その候補を発注へ使わないことでモードを実現する。
+   static bool ShouldDiscardTrendCandidate(const int strategy_mode)
+     {
+      return strategy_mode==STRATEGY_MODE_MEAN_REVERSION_ONLY;
+     }
+  };
+
 struct SEaConfig
   {
    string            ea_id;
@@ -15,6 +45,7 @@ struct SEaConfig
    int               breakout_lookback;
    double            breakout_buffer_points;
    double            pullback_atr_tolerance;
+   double            pullback_trigger_atr_buffer;
    double            rsi_buy_min;
    double            rsi_buy_max;
    double            rsi_sell_min;
@@ -23,6 +54,7 @@ struct SEaConfig
    int               adx_period;
    double            minimum_adx;
    double            minimum_confirmation_adx;
+   double            maximum_adx;
    double            stop_atr_multiple;
    double            risk_reward_ratio;
    bool              enable_breakout;
@@ -34,10 +66,37 @@ struct SEaConfig
    double            regime_high_volatility_ratio;
    double            regime_low_volatility_ratio;
    int               regime_ma_slope_lookback;
+   int               regime_trend_persistence_bars;
+   bool              enable_adaptive_sizing;
+   int               adaptive_sizing_lookback_trades;
+   double            adaptive_sizing_sensitivity;
+   double            adaptive_sizing_floor_multiplier;
+   int               strategy_mode;
+   bool              enable_mean_reversion_strategy;
+   int               mean_reversion_bb_period;
+   double            mean_reversion_bb_deviation;
+   int               mean_reversion_choppiness_period;
+   double            mean_reversion_choppiness_min;
+   double            mean_reversion_adx_max;
+   double            mean_reversion_stop_atr_multiple;
+   int               mean_reversion_max_reentry_bars;
+   int               mean_reversion_take_profit_mode;
+   int               mean_reversion_bb_width_lookback;
+   double            mean_reversion_bb_width_expansion_ratio;
+   int               mean_reversion_range_break_lookback;
+   double            mean_reversion_break_atr_multiplier;
+   int               mean_reversion_break_confirm_seconds;
+   bool              mean_reversion_restrict_to_tokyo_session;
+   int               mean_reversion_max_holding_bars;
+   ulong             mean_reversion_magic_number;
    double            risk_per_trade_rate;
    double            daily_loss_limit_rate;
    double            max_drawdown_rate;
    int               max_open_positions;
+   int               max_same_direction_positions;
+   double            max_open_risk_rate;
+   double            min_same_direction_entry_distance_points;
+   double            min_margin_level_percent;
    double            max_spread_points;
    double            minimum_free_margin_rate;
    ulong             magic_number;
@@ -48,6 +107,9 @@ struct SEaConfig
    bool              close_unprotected_positions;
    bool              enable_breakeven_stop;
    double            breakeven_trigger_r_multiple;
+   bool              enable_atr_trailing_stop;
+   double            atr_trailing_trigger_r_multiple;
+   double            atr_trailing_atr_multiple;
    bool              enable_signal_invalidation_exit;
    bool              signal_exit_check_trend;
    bool              signal_exit_check_h1_adx;
@@ -56,9 +118,18 @@ struct SEaConfig
    int               max_holding_bars;
    bool              time_stop_require_min_mfe;
    double            time_stop_min_mfe_r_multiple;
+   bool              enable_trend_reversal_exit;
+   double            trend_reversal_activation_r_multiple;
+   double            trend_reversal_retrace_r_multiple;
+   int               trend_reversal_confirmation_ticks;
+   bool              enable_early_adverse_exit;
+   double            early_adverse_exit_trigger_r_multiple;
+   int               early_adverse_exit_confirmation_ticks;
    bool              enable_entry_timing_analysis;
    int               entry_timing_max_wait_bars;
    int               entry_timing_max_holding_bars;
+   bool              enable_breakout_timing_analysis;
+   int               breakout_timing_max_holding_bars;
    bool              decision_api_enabled;
    string            decision_api_url;
    string            decision_api_key_id;
@@ -70,6 +141,7 @@ struct SEaConfig
    double            ml_min_expected_return;
    bool              audit_file_enabled;
    string            audit_log_directory;
+   string            audit_run_id;
    bool              telemetry_enabled;
    string            telemetry_api_url;
    int               telemetry_timeout_ms;
@@ -92,6 +164,11 @@ void SetDefaultConfig(SEaConfig &config)
    config.breakout_lookback         = 20;
    config.breakout_buffer_points    = 0.0;
    config.pullback_atr_tolerance    = 0.15;
+   // 2026-08-23の単一銘柄Train区間スイープ（0.00/0.05/0.10/0.15/0.20）で採用され、以降のFold単位
+   // Walk-Forward検証でも「現行の設定」として使われ続けていたが、コード既定値へは反映されていな
+   // かった（2026-09-13の監査で発覚）。4銘柄Fold1-5検証（純利益+3.1%、20区分中7区分のみ発火）で
+   // 新たなリスクがないことを確認し既定値へ反映した（TASKS.md参照）。
+   config.pullback_trigger_atr_buffer = 0.10;
    config.rsi_buy_min               = 50.0;
    config.rsi_buy_max               = 75.0;
    config.rsi_sell_min              = 25.0;
@@ -100,21 +177,63 @@ void SetDefaultConfig(SEaConfig &config)
    config.adx_period                = 14;
    config.minimum_adx               = 20.0;
    config.minimum_confirmation_adx  = 20.0;
+   config.maximum_adx               = 0.0;
    config.stop_atr_multiple         = 2.0;
    config.risk_reward_ratio         = 2.0;
    config.enable_breakout           = true;
    config.enable_pullback           = true;
-   config.entry_use_staged_pipeline = false;
+   // 2026-09-13、`InpRegimeTrendAdxMin=40`（下記）を実際にEntry判定へ反映させるため既定trueへ更新した
+   // （それまでは全テストテンプレートのみがtrueを明示指定し、コード既定値は無効なfalseのままだった）。
+   // true化の効果はStage 1の市場レジームゲート（Range/Unknown確定足の追加棄却）のみで、他ステージの
+   // 判定式は既存方式（false時）と完全に同一（docs/configuration.md「段階的Entry判定パイプライン」参照）。
+   config.entry_use_staged_pipeline = true;
    config.entry_require_market_regime_trend = true;
-   config.regime_trend_adx_min      = 20.0;
+   // 2026-08-22のスイープ（25/30/35/40/45/50、IS期間）でPF>1・Sharpe>0を達成した唯一の閾値として
+   // 40.0がIS最良パラメータへ採用され、2026-08-23のFold1 Train再検証でも最良のPFを再確認した
+   // （TASKS.md参照）。
+   config.regime_trend_adx_min      = 40.0;
    config.regime_atr_baseline_period = 50;
    config.regime_high_volatility_ratio = 1.3;
    config.regime_low_volatility_ratio  = 0.7;
    config.regime_ma_slope_lookback  = 5;
+   config.regime_trend_persistence_bars = 1;
+   config.enable_adaptive_sizing    = false;
+   config.adaptive_sizing_lookback_trades = 10;
+   config.adaptive_sizing_sensitivity = 1.0;
+   config.adaptive_sizing_floor_multiplier = 0.5;
+   config.strategy_mode             = STRATEGY_MODE_TREND_ONLY;
+   config.enable_mean_reversion_strategy = false;
+   config.mean_reversion_bb_period  = 20;
+   config.mean_reversion_bb_deviation = 2.0;
+   config.mean_reversion_choppiness_period = 14;
+   config.mean_reversion_choppiness_min = 60.0;
+   config.mean_reversion_adx_max    = 25.0;
+   config.mean_reversion_stop_atr_multiple = 1.0;
+   config.mean_reversion_max_reentry_bars = 3;
+   config.mean_reversion_take_profit_mode = 0; // MEAN_REVERSION_TP_BB_MIDDLE
+   config.mean_reversion_bb_width_lookback = 20;
+   config.mean_reversion_bb_width_expansion_ratio = 1.5;
+   config.mean_reversion_range_break_lookback = 20;
+   config.mean_reversion_break_atr_multiplier = 0.25;
+   // 2026-08-30のスイープ（0/5/10/15/20/25/30秒）で、既定30秒は短いほど単調に純損益が改善する
+   // ことが判明した（Fold1+Fold5合算: 30秒-35,671円→5秒-33,791円→0秒-31,963円）。0秒は
+   // 「実時間で確認する」という設計意図を実質放棄するため、改善の一部（約53%）を確保しつつ確認の
+   // 意図を残す5秒を採用した（他Foldでの再現性は未確認、TASKS.md参照。MR戦略自体は
+   // strategy_mode=STRATEGY_MODE_TREND_ONLYのため現状は無効）。
+   config.mean_reversion_break_confirm_seconds = 5;
+   config.mean_reversion_restrict_to_tokyo_session = false;
+   config.mean_reversion_max_holding_bars = 10;
+   config.mean_reversion_magic_number = 26072002;
    config.risk_per_trade_rate       = 0.005;
    config.daily_loss_limit_rate     = 0.02;
    config.max_drawdown_rate         = 0.10;
    config.max_open_positions        = 1;
+   // 既定値は現状の挙動（同一銘柄・同一方向は実質1件まで）を変えない安全側の初期値。
+   // 複数ポジション運用はユーザーが明示的に引き上げた場合のみ有効になる。
+   config.max_same_direction_positions = 1;
+   config.max_open_risk_rate        = 0.02;
+   config.min_same_direction_entry_distance_points = 0.0;
+   config.min_margin_level_percent  = 150.0;
    config.max_spread_points         = 30.0;
    config.minimum_free_margin_rate  = 0.20;
    config.magic_number              = 26072001;
@@ -125,6 +244,9 @@ void SetDefaultConfig(SEaConfig &config)
    config.close_unprotected_positions = true;
    config.enable_breakeven_stop     = true;
    config.breakeven_trigger_r_multiple = 1.0;
+   config.enable_atr_trailing_stop  = false;
+   config.atr_trailing_trigger_r_multiple = 1.0;
+   config.atr_trailing_atr_multiple = 2.0;
    config.enable_signal_invalidation_exit = true;
    config.signal_exit_check_trend   = true;
    config.signal_exit_check_h1_adx  = true;
@@ -133,9 +255,24 @@ void SetDefaultConfig(SEaConfig &config)
    config.max_holding_bars          = 20;
    config.time_stop_require_min_mfe = false;
    config.time_stop_min_mfe_r_multiple = 0.5;
+   // 既定値はOFF（安全側）。OOS分析で確認された「含み益→反転→初期SL到達」の損失パターンを
+   // 抑制する目的の新規Exitのため、既存挙動を変えない既定値から開始し、有効化はユーザー判断とする。
+   config.enable_trend_reversal_exit = false;
+   config.trend_reversal_activation_r_multiple = 1.0;
+   config.trend_reversal_retrace_r_multiple = 0.5;
+   config.trend_reversal_confirmation_ticks = 5;
+   // 2026-09-13、Fold1-5スイープ検証（TriggerR 0.3〜0.9の9点、TASKS.md参照）で
+   // TriggerR=0.75がBaseline比+33,936円（+29%）、Fold×銘柄20区分中14区分で改善
+   // （純利益最大だったTriggerR=0.70の12区分より頑健）したことを受け、ユーザー判断により
+   // 既定trueへ採用した（Final Holdoutでの最終確認は未実施、TASKS.md参照）。
+   config.enable_early_adverse_exit = true;
+   config.early_adverse_exit_trigger_r_multiple = 0.75;
+   config.early_adverse_exit_confirmation_ticks = 5;
    config.enable_entry_timing_analysis = false;
    config.entry_timing_max_wait_bars   = 6;
    config.entry_timing_max_holding_bars = 20;
+   config.enable_breakout_timing_analysis = false;
+   config.breakout_timing_max_holding_bars = 20;
    config.decision_api_enabled       = false;
    config.decision_api_url           = "";
    config.decision_api_key_id        = "";
@@ -147,6 +284,7 @@ void SetDefaultConfig(SEaConfig &config)
    config.ml_min_expected_return     = 0.0;
    config.audit_file_enabled         = true;
    config.audit_log_directory        = "EaTradingSystem\\Audit";
+   config.audit_run_id               = "";
    config.telemetry_enabled          = false;
    config.telemetry_api_url          = "";
    config.telemetry_timeout_ms       = 1500;
@@ -178,7 +316,7 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_EMA_PERIODS"; return false; }
    if(config.rsi_period<2 || config.atr_period<2 || config.breakout_lookback<2)
      { error="INVALID_INDICATOR_PERIOD"; return false; }
-   if(config.breakout_buffer_points<0.0 || config.pullback_atr_tolerance<0.0)
+   if(config.breakout_buffer_points<0.0 || config.pullback_atr_tolerance<0.0 || config.pullback_trigger_atr_buffer<0.0)
      { error="INVALID_ENTRY_TOLERANCE"; return false; }
    if(config.rsi_buy_min<0.0 || config.rsi_buy_max>100.0 || config.rsi_buy_min>config.rsi_buy_max)
      { error="INVALID_BUY_RSI_RANGE"; return false; }
@@ -189,15 +327,43 @@ bool ValidateConfig(const SEaConfig &config,string &error)
    if(config.adx_period<2 || config.minimum_adx<0.0 || config.minimum_adx>100.0 ||
       config.minimum_confirmation_adx<0.0 || config.minimum_confirmation_adx>100.0)
      { error="INVALID_TREND_STRENGTH_FILTER"; return false; }
+   if(config.maximum_adx<0.0 || config.maximum_adx>100.0 ||
+      (config.maximum_adx>0.0 && config.maximum_adx<=config.minimum_adx))
+     { error="INVALID_MAXIMUM_ADX"; return false; }
    if(!config.enable_breakout && !config.enable_pullback)
      { error="NO_ENTRY_PATTERN_ENABLED"; return false; }
    if(config.regime_trend_adx_min<0.0 || config.regime_trend_adx_min>100.0)
      { error="INVALID_REGIME_TREND_ADX_MIN"; return false; }
    if(config.regime_atr_baseline_period<2 || config.regime_ma_slope_lookback<1)
      { error="INVALID_REGIME_LOOKBACK_PERIOD"; return false; }
+   if(config.regime_trend_persistence_bars<1)
+     { error="INVALID_REGIME_TREND_PERSISTENCE_BARS"; return false; }
    if(config.regime_high_volatility_ratio<=1.0 ||
       config.regime_low_volatility_ratio<=0.0 || config.regime_low_volatility_ratio>=1.0)
      { error="INVALID_REGIME_VOLATILITY_RATIO"; return false; }
+   if(config.enable_adaptive_sizing &&
+      (config.adaptive_sizing_lookback_trades<1 ||
+       config.adaptive_sizing_sensitivity<0.0 ||
+       config.adaptive_sizing_floor_multiplier<=0.0 || config.adaptive_sizing_floor_multiplier>1.0))
+     { error="INVALID_ADAPTIVE_SIZING_PARAMETERS"; return false; }
+   if(config.strategy_mode!=STRATEGY_MODE_TREND_ONLY && config.strategy_mode!=STRATEGY_MODE_MEAN_REVERSION_ONLY &&
+      config.strategy_mode!=STRATEGY_MODE_COMBINED)
+     { error="INVALID_STRATEGY_MODE"; return false; }
+   if(CStrategyModeRules::IsMeanReversionModeActive(config.strategy_mode) && !config.enable_mean_reversion_strategy)
+     { error="STRATEGY_MODE_REQUIRES_MEAN_REVERSION_ENABLED"; return false; }
+   if(config.enable_mean_reversion_strategy &&
+      (config.mean_reversion_bb_period<2 || config.mean_reversion_bb_deviation<=0.0 ||
+       config.mean_reversion_choppiness_period<2 ||
+       config.mean_reversion_choppiness_min<0.0 || config.mean_reversion_choppiness_min>100.0 ||
+       config.mean_reversion_adx_max<=0.0 || config.mean_reversion_adx_max>100.0 ||
+       config.mean_reversion_stop_atr_multiple<=0.0 || config.mean_reversion_max_reentry_bars<1 ||
+       config.mean_reversion_take_profit_mode<0 || config.mean_reversion_take_profit_mode>1 ||
+       config.mean_reversion_bb_width_lookback<2 || config.mean_reversion_bb_width_expansion_ratio<=1.0 ||
+       config.mean_reversion_range_break_lookback<1 ||
+       config.mean_reversion_break_atr_multiplier<0.0 || config.mean_reversion_break_confirm_seconds<0 ||
+       config.mean_reversion_max_holding_bars<1 ||
+       config.mean_reversion_magic_number==0 || config.mean_reversion_magic_number==config.magic_number))
+     { error="INVALID_MEAN_REVERSION_PARAMETERS"; return false; }
    if(config.risk_per_trade_rate<=0.0 || config.risk_per_trade_rate>0.05)
      { error="INVALID_TRADE_RISK_RATE"; return false; }
    if(config.daily_loss_limit_rate<=0.0 || config.daily_loss_limit_rate>0.20)
@@ -206,8 +372,20 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_DRAWDOWN_RATE"; return false; }
    if(config.max_open_positions<1 || config.max_spread_points<=0.0)
      { error="INVALID_EXPOSURE_OR_SPREAD_LIMIT"; return false; }
+   if(config.max_same_direction_positions<1 || config.max_same_direction_positions>config.max_open_positions)
+     { error="INVALID_SAME_DIRECTION_POSITION_LIMIT"; return false; }
+   if(config.max_open_risk_rate<=0.0 || config.max_open_risk_rate>0.50 ||
+      config.max_open_risk_rate<config.risk_per_trade_rate)
+     { error="INVALID_MAX_OPEN_RISK_RATE"; return false; }
+   if(config.min_same_direction_entry_distance_points<0.0)
+     { error="INVALID_MIN_ENTRY_DISTANCE"; return false; }
+   if(config.min_margin_level_percent<0.0)
+     { error="INVALID_MIN_MARGIN_LEVEL"; return false; }
    if(config.enable_breakeven_stop && config.breakeven_trigger_r_multiple<=0.0)
      { error="INVALID_BREAKEVEN_TRIGGER"; return false; }
+   if(config.enable_atr_trailing_stop &&
+      (config.atr_trailing_trigger_r_multiple<=0.0 || config.atr_trailing_atr_multiple<=0.0))
+     { error="INVALID_ATR_TRAILING_CONFIG"; return false; }
    if(config.enable_signal_invalidation_exit &&
       !config.signal_exit_check_trend && !config.signal_exit_check_h1_adx && !config.signal_exit_check_h4_adx)
      { error="NO_SIGNAL_EXIT_CONDITION_ENABLED"; return false; }
@@ -215,9 +393,18 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_TIME_STOP_MAX_HOLDING_BARS"; return false; }
    if(config.enable_time_stop && config.time_stop_require_min_mfe && config.time_stop_min_mfe_r_multiple<=0.0)
      { error="INVALID_TIME_STOP_MIN_MFE"; return false; }
+   if(config.enable_trend_reversal_exit &&
+      (config.trend_reversal_activation_r_multiple<=0.0 || config.trend_reversal_retrace_r_multiple<=0.0 ||
+       config.trend_reversal_confirmation_ticks<1))
+     { error="INVALID_TREND_REVERSAL_EXIT_CONFIG"; return false; }
+   if(config.enable_early_adverse_exit &&
+      (config.early_adverse_exit_trigger_r_multiple<=0.0 || config.early_adverse_exit_confirmation_ticks<1))
+     { error="INVALID_EARLY_ADVERSE_EXIT_CONFIG"; return false; }
    if(config.enable_entry_timing_analysis &&
       (config.entry_timing_max_wait_bars<1 || config.entry_timing_max_holding_bars<1))
      { error="INVALID_ENTRY_TIMING_ANALYSIS_CONFIG"; return false; }
+   if(config.enable_breakout_timing_analysis && config.breakout_timing_max_holding_bars<1)
+     { error="INVALID_BREAKOUT_TIMING_ANALYSIS_CONFIG"; return false; }
    if(config.minimum_free_margin_rate<0.0 || config.minimum_free_margin_rate>=1.0 || config.max_deviation_points<0)
      { error="INVALID_MARGIN_OR_DEVIATION_LIMIT"; return false; }
    if(config.magic_number==0)
@@ -239,6 +426,22 @@ bool ValidateConfig(const SEaConfig &config,string &error)
       StringFind(config.audit_log_directory,"..")>=0 || StringFind(config.audit_log_directory,":")>=0 ||
       StringGetCharacter(config.audit_log_directory,0)=='\\' || StringGetCharacter(config.audit_log_directory,0)=='/')
      { error="INVALID_AUDIT_DIRECTORY"; return false; }
+   // 監査ファイル名（audit-<run_id>.jsonl）へ直接使われるため、Windowsファイル名として安全な文字集合に限定する
+   // （IsSafeConfigIdentifierと異なり":"は許可しない＝ドライブ区切りとの混同を避ける）。空文字は日付単位の
+   // 既定ファイル名へフォールバックする指定として許可する。
+   if(StringLen(config.audit_run_id)>0)
+     {
+      if(StringLen(config.audit_run_id)>128)
+        { error="INVALID_AUDIT_RUN_ID"; return false; }
+      for(int audit_run_id_index=0; audit_run_id_index<StringLen(config.audit_run_id); audit_run_id_index++)
+        {
+         const ushort audit_run_id_char=StringGetCharacter(config.audit_run_id,audit_run_id_index);
+         if(!((audit_run_id_char>='A' && audit_run_id_char<='Z') || (audit_run_id_char>='a' && audit_run_id_char<='z') ||
+              (audit_run_id_char>='0' && audit_run_id_char<='9') ||
+              audit_run_id_char=='.' || audit_run_id_char=='_' || audit_run_id_char=='-'))
+           { error="INVALID_AUDIT_RUN_ID"; return false; }
+        }
+     }
    if(config.decision_api_enabled)
      {
       if(StringFind(config.decision_api_url,"https://")!=0 ||

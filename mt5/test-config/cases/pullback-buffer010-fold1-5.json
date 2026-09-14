@@ -1,0 +1,145 @@
+{
+  "description": "InpPullbackTriggerAtrBuffer=0.10（2026-08-23の単一銘柄Train区間スイープで採用されたが、4銘柄Fold1-5では未検証だった値）を現行既定（EarlyAdverseExit ON/0.75、StagedPipeline ON/ADX40）に追加して検証。Fold1-5x4銘柄。",
+  "cases": [
+    {
+      "case_name": "USDJPY-PBBUF010-2020",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-PBBUF010-2021",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-PBBUF010-2022",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-PBBUF010-2023",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-PBBUF010-2024",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-PBBUF010-2020",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-PBBUF010-2021",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-PBBUF010-2022",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-PBBUF010-2023",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-PBBUF010-2024",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-PBBUF010-2020",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-PBBUF010-2021",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-PBBUF010-2022",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-PBBUF010-2023",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-PBBUF010-2024",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-PBBUF010-2020",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-PBBUF010-2021",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-PBBUF010-2022",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-PBBUF010-2023",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-PBBUF010-2024",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-PullbackBuffer0.10-H1.ini"
+    }
+  ]
+}

@@ -1,0 +1,145 @@
+{
+  "description": "InpAtrTrailingTriggerR=1.0・InpAtrTrailingAtrMultiple=3.0（建値ストップ無効化、ATRトレーリング単体評価）でFold1-5(2020-2024年)を4銘柄で実行する。",
+  "cases": [
+    {
+      "case_name": "USDJPY-AtrTrailT1.0A3.0-2020",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-AtrTrailT1.0A3.0-2021",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-AtrTrailT1.0A3.0-2022",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-AtrTrailT1.0A3.0-2023",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-AtrTrailT1.0A3.0-2024",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-AtrTrailT1.0A3.0-2020",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-AtrTrailT1.0A3.0-2021",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-AtrTrailT1.0A3.0-2022",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-AtrTrailT1.0A3.0-2023",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-AtrTrailT1.0A3.0-2024",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-AtrTrailT1.0A3.0-2020",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-AtrTrailT1.0A3.0-2021",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-AtrTrailT1.0A3.0-2022",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-AtrTrailT1.0A3.0-2023",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-AtrTrailT1.0A3.0-2024",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-AtrTrailT1.0A3.0-2020",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-AtrTrailT1.0A3.0-2021",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-AtrTrailT1.0A3.0-2022",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-AtrTrailT1.0A3.0-2023",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-AtrTrailT1.0A3.0-2024",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-AtrTrail-T1.0-A3.0-H1.ini"
+    }
+  ]
+}

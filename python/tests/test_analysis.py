@@ -159,6 +159,47 @@ class AuditInputTests(unittest.TestCase):
         self.assertEqual(90.0, inputs.trades.iloc[0]["net_pnl"])
         self.assertEqual(980.0, inputs.equity_snapshots.iloc[0]["equity"])
 
+    def test_breakout_timing_events_do_not_block_reports_analysis(self) -> None:
+        # BREAKOUT_TIMING_SETUP/TRADE（InpEnableBreakoutTimingAnalysis=true時のみ生成される
+        # 分析専用イベント）が同一の監査JSONLに混在していても、通常のTRADE_CLOSED集計を妨げない
+        # ことを確認する回帰テスト（SUPPORTED_AUDIT_EVENTSへの追加漏れで一度失敗した経緯がある）。
+        candidate = "trend-ea-v1-USDJPY-breakout-timing"
+        records = [
+            audit_event("BREAKOUT_TIMING_SETUP", "BT-trend-ea-v1-USDJPY-1", "2025-01-01T00:00:00Z", {
+                "setup_bar_time": "2025-01-01T00:00:00Z", "direction": "BUY",
+                "breakout_level_high": 145.5, "breakout_level_low": 144.0,
+                "pre_entry_mfe_price": 146.0, "pre_entry_mfe_r": 0.5,
+                "pre_entry_mfe_time": "2025-01-01T02:00:00Z",
+                "pre_entry_mae_price": 145.2, "pre_entry_mae_r": -0.1,
+                "pre_entry_mae_time": "2025-01-01T01:00:00Z",
+                "confirm_1_bar_held": True, "confirm_2_bars_held": True, "confirm_3_bars_held": False,
+            }),
+            audit_event("BREAKOUT_TIMING_TRADE", "BT-trend-ea-v1-USDJPY-1", "2025-01-01T00:00:00Z", {
+                "variant": "IMMEDIATE", "entry_bar_time": "2025-01-01T00:00:00Z", "direction": "BUY",
+                "entry_price": 145.6, "stop_loss": 144.6, "take_profit": 147.6,
+                "wait_bars": 0, "bars_held": 3, "mfe_r": 1.0, "mae_r": -0.2,
+                "exit_reason": "TP", "exit_price": 147.6, "pnl_r": 2.0, "checkpoint_r": {"bars_1": 0.3},
+            }),
+            audit_event("CANDIDATE", candidate, "2025-01-01T00:00:00Z", {
+                "direction": "BUY", "pattern": "BREAKOUT", "entry_price": 145.0,
+                "stop_loss": 144.0, "take_profit": 147.0, "risk_reward_ratio": 2.0,
+                "reason_code": "TREND_BREAKOUT", "reason": "Aligned.",
+            }),
+            audit_event("TRADE_CLOSED", candidate, "2025-01-02T00:00:00Z", {
+                "position_ticket": "999", "direction": "BUY",
+                "open_time": "2025-01-01T00:00:00Z", "close_time": "2025-01-02T00:00:00Z",
+                "volume": 0.1, "open_price": 145.0, "close_price": 146.0,
+                "close_reason": "TP", "pnl": 90.0, "commission": -10.0, "swap": 0.0,
+                "exit_spread_points": 1.5, "point_value": 100.0,
+            }),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audit.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in records), encoding="utf-8")
+            inputs = load_analysis_inputs([path])
+        self.assertEqual(1, len(inputs.trades))
+        self.assertEqual(90.0, inputs.trades.iloc[0]["net_pnl"])
+
     def test_candidate_and_close_are_correlated_across_daily_files(self) -> None:
         candidate = "trend-ea-v1-USDJPY-cross-day"
         candidate_record = audit_event("CANDIDATE", candidate, "2025-01-01T00:00:00Z", {

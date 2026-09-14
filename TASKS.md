@@ -161,7 +161,919 @@
   一方、**35→40→45→50の推移が非単調**（35:PF0.86→40:PF1.09で改善→45:PF0.73へ急悪化→50:PF1.12で再び改善）であり、本IS期間固有のノイズへの過学習リスクを強く示唆する。取引数も209→77（40）→18（50）と閾値上昇に伴い急減しており、50はサンプル数不足（18件）で統計的な意味を持たない。40（n=77）は本スイープの中では相対的にサンプル数が確保されているが、それでも小さい部類である。
 
   **総合評価: `InpRegimeTrendAdxMin=40`は本セッション最有力の候補だが、非単調な挙動とサンプル数の少なさから、IS単体の結果だけでの採用は推奨しない（DEC-024/025のIS/OOS分離方針）**。次の一手候補: (a) `InpRegimeTrendAdxMin=40`をWalk Forward評価の最優先候補として記録する（推奨）、(b) 40付近をさらに細かく（37/38/39/41/42等）スイープし単調性を確認する、(c) 現状維持（no-op状態）に戻す。ini設定は`InpRegimeTrendAdxMin=40`のまま維持（ユーザーからの追加指示待ち）。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
-* [ ] Walk Forward各Fold（Fold1: 学習2017-09〜2019-12/検証2020 〜 Fold5: 学習2020-01〜2023-12/検証2024、DEC-025でFold1学習開始を補正）を実行する。rule-based Strategyには学習ステップがないため、当面は各Foldの検証年についてのみ固定パラメータでStrategy Testerを実行する（学習を伴うWalk Forward評価は3.3節のML評価タスクで別途実施する）。**最優先検証候補（2026-08-22指定）: `InpRegimeTrendAdxMin=40`**（`InpEntryUseStagedPipeline=true`と併用、他パラメータは現行最良状態＝Trend+H1 ADXのみ全条件完全決済・建値ストップ・StopAtrMultiple/RR=2.0・Time Stop有効のまま）。IS期間（2017-09〜2020-12）でPF1.09・Sharpe+0.80・純損益+15,511円と、本セッションの探索全体で唯一PF>1を達成した設定（詳細は本節40の該当エントリ参照）。ただし隣接水準（35:PF0.86、45:PF0.73）に対し非単調で、取引数もIS内で77件と少なく過学習の懸念があるため、各FoldでPF>1・Sharpe>0が概ね再現されるかを重点的に確認し、Fold間で結果が大きくばらつく場合はIS固有のノイズへの過学習と判断しStagedPipeline無効（no-op状態）へ差し戻す。
+* [x] Walk Forward各Fold（年次: 2021/2022/2023/2024、DEC-024のOOS/Walk Forward評価期間を年次分割）を実行する（2026-08-23実施、ユーザー依頼）。rule-based Strategyには学習ステップがないため、凍結済みIS最良パラメータセット（`InpRegimeTrendAdxMin=40`、`InpEntryUseStagedPipeline=true`、他は2026-08-22 IS凍結時点の設定のまま）を各年に固定で適用しStrategy Testerを実行した（学習を伴うWalk Forward評価は3.3節のML評価タスクで別途実施する）。各Foldは独立したTester実行（`InpTesterResetPersistentState=true`により口座残高100万円・永続状態とも年初にリセット）。監査JSONLから`python/analysis/reports.py`で機械的にPF/Sharpe/純損益等を算出（既存run-metadataのMT5レポート値と算出方法をそろえるため、継続run（2021-2024通し）も同じ手法で再計算した）。
+
+  **年次Fold結果**:
+
+  | Fold | 取引数 | 純損益 | PF | Sharpe | 勝率 | 最大DD |
+  |---|---|---|---|---|---|---|
+  | 2021 | 28 | +13,995円 | 1.22 | +0.42 | 39.3% | 32,871円(3.24%) |
+  | 2022 | 30 | +11,866円 | 1.21 | +0.10 | 50.0% | 28,558円(2.86%) |
+  | 2023 | 21 | +6,224円 | 1.15 | +0.24 | 33.3% | 27,779円(2.76%) |
+  | 2024 | 25 | -19,124円 | 0.68 | -0.84 | 32.0% | 32,708円(3.27%) |
+  | Fold合計 | 104 | +12,961円 | — | — | — | — |
+  | 継続run（2021-01〜2024-12通し実行、参考） | 105 | +5,294円 | 1.02 | +0.06 | 39.0% | 38,842円 |
+
+  **年次不安定性（重大な懸念）**: PFが2021→2022→2023→2024で1.22→1.21→1.15→0.68と単調に悪化し、2024年は唯一の明確な負け年（Sharpe-0.84、期待値-765円/取引）。TP到達率（close_reason=TP/取引数）も28.6%→23.3%→23.8%→16.0%と同様に単調減少しており（`SL`はいずれの年も14〜18件と大きく変わらない）、単年の偶然ではなく複数年にわたる緩やかな劣化トレンドとして観測される。
+
+  **方向別内訳（2024年に構造変化）**: 2021〜2023年はいずれもBUYが主たる利益源（2021: BUY+19,374円/SELL-5,379円、2022: BUY+5,002円/SELL+6,864円、2023: BUY+20,129円/SELL-13,905円）だったが、2024年は**BUY自体が-14,871円と初めて負け**、SELLも-4,253円で両建てで損失（全期間OOS内訳で確認済みのBUY優位・SELL劣位という構造が2024年に崩れている）。USDJPYは2024年半ばに大幅な急落・乱高下（実勢相場のトレンド反転）を経験しており、これが本戦略のトレンドフォロー前提（ADX高水準＝強いトレンド継続を期待）と整合しない値動きだった可能性がある。
+
+  **継続run vs Fold合計の乖離（手法上の重要な発見）**: 年次Foldを独立に実行し合算した純損益（+12,961円）は、同一パラメータで2021-2024を通しで1回実行した場合の純損益（+5,294円）の2倍以上に達する。取引数はほぼ同数（104 vs 105）であるため、実際に発生した取引自体はほぼ同じだが、各取引のロットサイズ（残高に対するリスク%ベース）が異なる。年次Foldは各年とも口座残高100万円からの再スタートのため、2021〜2023年の含み益を2024年へ引き継がない。継続runでは2021〜2023年の利益で残高が増加した状態で2024年の損失局面を迎えるため、より大きいロットで損失を出し、同じ取引系列でも損益が悪化する。**これは実運用（残高は継続的に変動する）に近い挙動は継続runの方であり、年次Fold合算の+12,961円は実態より楽観的な数字である**。複利効果と「利益が出た後に悪い年が来る」経路依存性が、本パラメータセットのリスクをFold単体の平均像より深刻に見せる。
+
+  **総合評価: Walk Forwardの結果は、IS期間で唯一PF>1を達成した`InpRegimeTrendAdxMin=40`構成が、OOS期間の前半（2021-2023、PF1.15〜1.22）ではおおむね頑健だったものの、直近の2024年で明確に破綻していることを示している。DEC-024/025のIS/OOS分離方針により、本結果を理由とした現IS期間（2017-09〜2020-12）パラメータの再チューニングは行わない。** 残存リスクと次のIS改訂時の調整案は本回答の対話メッセージを参照（`git`未コミットのため、対応方針が固まるまでcommitは保留する）。
+
+## 2.1.1 ローリングWalk Forward検証（新規、2026-08-23ユーザー指定）
+
+過去データで作った戦略が直後の未知データでも機能するかを検証するため、3年学習→1年検証を1年ずつロールする方式（Train2016-2018→Test2019、…、Train2021-2023→Test2024の6Fold）を新規に開始する。ユーザーとの事前合意事項:
+
+* 2021-2024を含むFoldのTest結果は、本セッションで既にOOS/年次Foldとして一度観測済みのため、厳密な意味でのブラインド検証ではない（データ汚染は解消できない、既知の限界として記録）。真にブラインドなのは2025-01〜2026-08のFinal Holdoutのみ。
+* 各Foldの「Train」は当初EA既定値から開始する方針だったが、**2026-08-23にユーザー指定で方針変更: 凍結済みIS最良パラメータセット（`InpRegimeTrendAdxMin=40`・`InpEntryUseStagedPipeline=true`等、`mt5/test-config/StrategyTester-USDJPY-H1.ini`のまま）をベースに適用し、そこから調整する方針とする。** 既定値ベースラインの`mt5/test-config/StrategyTester-USDJPY-H1-wfo-baseline.ini`と`tools/run-strategy-tester.ps1`の`-Template`引数は、比較用の参考記録として残す。
+* **重要な限界（2026-08-23確認）**: 凍結IS最良パラメータセットは、元々IS期間全体（2017-09〜2020-12）を使って調整されたものである。したがってTrain区間が2017-09〜2020-12の部分区間となるFold1・Fold2（Test=2019・2020）は、「既知のパラメータを既知のデータの一部で再確認」しているに過ぎず、Testもその元のIS期間内（2019・2020）に含まれるため真のブラインド検証にならない。Fold3以降（Train開始が2018-01以降でTestが2021年以降）から初めて、元のIS期間外のデータに対する検証となる。
+
+* [x] Fold1のTrain区間でStrategy Testerを実行する（2026-08-23実施）。当初ユーザー指定のTrain=2016-2018はDEC-025の制約（USDJPY_HISTのD1/H4インジケーターウォームアップに実データ最古日2016-08-31から約9〜10か月のバッファが必要で、不足するとテスト実行中も指標が回復しない）に抵触し、`results/backtests/20260823-125642-USDJPY-H1/`で取引0件・`SIGNAL_ERROR code=MARKET_DATA_UNAVAILABLE` 14,365件（実行全期間にわたって回復せず）という既知の異常パターンを再現した。ユーザーへ確認の上、**Fold1のみTrain開始日を2017-09-01へ補正**（Train=2017-09〜2018-12、約16か月、他Foldより短い。Fold2以降はTrain開始が元々2017-01・2018-01…であり、Fold2（2017-2019）も同様に2017-09-01へ補正が必要、Fold3以降（2018-01開始）は補正不要）、Test年（2019〜2024）は元の表を維持する方針で合意した。補正後、EA既定値ベースライン（`results/backtests/20260823-130244-USDJPY-H1/`）で取引数171・純損益-7,755円・PF0.98・Sharpe-0.07を確認したが、ユーザー指定により凍結IS最良パラメータセットを適用する方針へ変更し、同一Train区間（2017-09-01〜2018-12-27実績）で再実行（`results/backtests/20260823-131654-USDJPY-H1/`）: 取引数36・純損益+10,065円・PF1.12・Sharpe+0.27・勝率41.7%・最大DD21,309円(2.08%)。既定値ベースラインより明確に良好だが、上記の限界（このTrain区間は元のIS期間の一部）を踏まえると当然の結果であり、新規の汎化性能を示すものではない。
+* [x] Fold1のTrain区間（2017-09〜2018-12）内で、凍結IS最良パラメータセットをベースに`InpStopAtrMultiple`（1.5/1.75/2.0/2.25/2.5）・`InpRiskRewardRatio`（1.5/1.75/2.0）・`InpRegimeTrendAdxMin`（30/35/40/45/50）をスイープする（2026-08-23実施、ユーザー依頼）。取引数増加によるサンプル信頼性向上のため`InpMaxOpenPositions`を既定値1から**5**へ変更して全runに適用（ユーザー指定）。追加の検証値は導入せず指定範囲のみ実施（結果が非単調だったため、追加は次の一手候補として記録するに留めた）。全11通り（各レバー1軸のみ変更、他は基準値StopATR=2.0/RR=2.0/ADX=40で固定）を実行、詳細は`results/backtests/fold1-train-sweep-20260823-summary.json`参照。
+
+  | レバー | 値 | 取引数 | 純損益 | PF | Sharpe |
+  |---|---|---|---|---|---|
+  | 基準値 | ATR2.0/RR2.0/ADX40 | 36 | +10,065円 | 1.12 | +0.27 |
+  | StopAtrMultiple | 1.5 | 39 | **+29,140円** | **1.33** | **+0.78** |
+  | StopAtrMultiple | 1.75 | 36 | +2,820円 | 1.03 | +0.09 |
+  | StopAtrMultiple | 2.25 | 36 | -8,610円 | 0.89 | -0.21 |
+  | StopAtrMultiple | 2.5 | 35 | -10,330円 | 0.86 | -0.28 |
+  | RiskRewardRatio | 1.5 | 37 | +4,948円 | 1.06 | +0.14 |
+  | RiskRewardRatio | 1.75 | 36 | +516円 | 1.01 | +0.03 |
+  | RegimeTrendAdxMin | 30 | 87 | -48,328円 | 0.76 | -0.81 |
+  | RegimeTrendAdxMin | 35 | 57 | -8,188円 | 0.94 | -0.15 |
+  | RegimeTrendAdxMin | 45 | 15 | -11,834円 | 0.73 | -0.43 |
+  | RegimeTrendAdxMin | 50 | 7 | -4,965円 | 0.80 | -0.23 |
+
+  **`InpMaxOpenPositions=5`は本EAでは常に無効（2026-08-23、ユーザー質問を受けて根本原因を特定）**: 基準値（ATR2.0/RR2.0/ADX40, MaxOpenPositions=5）の取引数36件は、以前の同一パラメータ・`InpMaxOpenPositions=1`のrun（`20260823-131654`）と完全一致した。当初「ADX=40は候補生成頻度が低く同時保有が発生しないため」と推測したが、これは誤りだった。実際には基準値runでも`RISK_DECISION`が`DUPLICATE_POSITION`理由で12件拒否されており（ADX30では79件、ADX35では47件、ADX45では7件）、同時保有の試行自体は発生している。真因は`mt5/Include/Risk/ExposureGuard.mqh`の`Evaluate()`にある: `InpMaxOpenPositions`は`IsPositionCountAllowed(total,max_positions)`で正しく評価されるが、その直後に**同一シンボルに既存ポジションが1件でもあれば`max_positions`の値に関わらず無条件で追加を拒否する**別ルール（`reason_code=DUPLICATE_POSITION`、「Any existing position in the symbol blocks additions, preventing averaging and pyramiding.」というコメントどおり、ナンピン・ピラミッディング防止のための意図的な安全設計、`CLAUDE.md`第14節の禁止事項と一致）が存在する。本EA・本バックテストは単一シンボル（USDJPY_HIST）のみを取引するため、この同一シンボル排他ルールが実質的に同時保有数を常に1へ固定し、`InpMaxOpenPositions`を何に設定しても（1でも5でも）挙動が変わらない。**バグではなく設計どおりの安全機構だが、単一シンボル運用では`InpMaxOpenPositions`は事実上無効なパラメータであり、取引数を増やす目的では機能しない。** 取引数を増やすには、Entry条件（ADX閾値等）を緩めるほかなく、その場合はPFが悪化するトレードオフがある（本節既存の測定結果参照）。
+
+  **`InpStopAtrMultiple=1.5`が突出（要警戒）**: PF1.33・純利益29,140円と全組み合わせ中最良だが、隣接値（1.75:PF1.03、2.0:PF1.12）に対し非単調。元のIS期間全体（2017-09〜2020-12）での過去のStopAtrMultipleスイープでも同一パターン（1.5のみ突出、1.25/1.75は悪化）が確認済みであり、本Train区間は元のIS期間の部分集合（真に独立した検証ではない）であるため、この一致は過学習リスクの再確認にとどまり新規のロバスト性の証拠にはならない。
+
+  **`InpRegimeTrendAdxMin=40`（現行値）は本Train区間内でも最良のPF**: 30/35/45/50のいずれも下回った。ただし45（n=15）・50（n=7）はサンプル数が少なく統計的な意味を持たない。
+
+  **`InpRiskRewardRatio`は明確な優劣なし**: 1.5/1.75/2.0いずれもPFが1.0近辺で拮抗しており、現行値2.0が3値中では最良。
+
+  **総合評価**: 現行のADX=40・RR=2.0は本Train区間でも妥当性が確認できた（変更の根拠なし）。StopAtrMultiple=1.5は魅力的な数値だが、既知の非単調パターンの再現であり単独の根拠として採用しない。追加の調整はユーザーの評価を待つ（本節末尾の対話メッセージ参照）。
+
+* [x] 複数ポジション保有の設計見直し（コミット`88baacb`）後、Fold1のTrain区間でATR2.0/RR2.0/ADX40を基準に新規リスクパラメータを適用し再実施する（2026-08-23実施、ユーザー依頼）。`InpRiskPerTradePercent=1.0`・`InpDailyLossLimitPercent=3.0`・`InpMaxSameDirectionPositions=2`・`InpMaxOpenRiskPercent=3.0`・`InpMinMarginLevelPercent=300.0`を適用（`InpMaxOpenPositions`はユーザー指定になかったが、`Config.mqh`のバリデーション制約`max_same_direction_positions<=max_open_positions`を満たすため2へ設定、推論による補完）。`InpMinSameDirectionEntryDistancePoints`を観測ATR（約145pt）・StopAtrMultiple=2.0時の典型SL距離（約290pt）を参考に0/50/100/200/300ptでスイープした。詳細は`results/backtests/fold1-train-multipos-sweep-20260823-summary.json`参照。
+
+  | dist(pt) | 取引数 | 純損益 | PF | Sharpe | 最大DD率 |
+  |---|---|---|---|---|---|
+  | 0（距離制約は無効） | 43 | -1,630円 | 0.99 | +0.02 | 6.05% |
+  | 50 | 42 | +7,232円 | 1.04 | +0.11 | 5.17% |
+  | **100** | 40 | **+28,882円** | **1.16** | **+0.35** | 4.14% |
+  | 200 | 37 | +17,807円 | 1.11 | +0.26 | 4.19% |
+  | 300 | 36 | +17,474円 | 1.10 | +0.25 | 4.19% |
+  | 参考: 見直し前（単一ポジション、RiskPerTrade0.5%） | 36 | +10,065円 | 1.12 | +0.27 | 2.08% |
+
+  **機構の動作確認**: `MIN_ENTRY_DISTANCE`拒否件数はdist値に対し単調増加（50pt:1件→100pt:4件→200pt:9件→300pt:11件）し、監査ログで意図どおりの動作を確認した。一方`MAX_OPEN_RISK_EXCEEDED`・`MARGIN_LEVEL_TOO_LOW`は全runで一度も発火せず、`InpMaxOpenRiskPercent=3%`・`InpMinMarginLevelPercent=300%`が実際に拒否として機能することは本Train区間では未検証（コードレビューでは正しく実装されていることを確認済み）。
+
+  **リスク量倍増との分離**: `InpRiskPerTradePercent`を0.5%→1.0%へ倍増した影響で、積み増しがほぼ発生しないdist=300（取引数36、単一ポジション基準と同数）でも$純利益・$最大DDとも基準のおよそ2倍規模（DD率2.08%→4.19%）になった。これは積み増し効果ではなくリスク量そのものを倍にした結果であり、混同しないよう分離して評価する必要がある。
+
+  **dist=0（距離制約が無効。`docs/configuration.md`に明記のとおり、これは「制約が無効化される」既定挙動であり「積み増し無制限が有効になる」設定ではない。2026-08-23ユーザー指摘を受け訂正）は明確に悪化**（PF0.99・Sharpe+0.02、DD率6.05%）。距離制約なしでの同方向積み増しは`CLAUDE.md`が禁止する「無制限のポジション追加」に近い劣化パターンを再現しており、距離制約の必要性を裏付けた。
+
+  **dist=100ptが本スイープ中最良**（PF1.16・Sharpe+0.35・純利益+28,882円）で、DD率（4.14%）はdist200/300とほぼ同水準ながらより高い純利益・PFを達成しており、単なるリスク量増加（dist=300で近似）を超える効果を示唆する。ただしn=40と少数であり、本Train区間内での単一の山であるため、本セッションで繰り返し確認されてきた過学習パターン（StopAtrMultiple=1.5、ADX=40等）と同様の再現性リスクに留意が必要。
+
+  **総合評価: `InpMinSameDirectionEntryDistancePoints=100`を有力候補として記録するが、単独のTrain区間内スイープの結果であり採用は保留する。** 残存リスクと追加の調整要否はユーザーの評価を待つ（本節末尾の対話メッセージ参照）。
+
+* [x] `InpMaxOpenRiskPercent`・`InpMinMarginLevelPercent`の実効性をストレステストで確認する（2026-08-23実施、ユーザー依頼）。同一Train区間（2017-09〜2018-12）・dist=100pt構成をベースに、各ガードのみ一時的に厳格化して再実行した。詳細は`results/backtests/fold1-train-multipos-sweep-20260823-summary.json`の`stress_test_results`参照。
+
+  * `InpMaxOpenRiskPercent`を3%→**1.5%**（`InpRiskPerTradePercent`=1%以上という制約上の実質的な下限に近い値）へ厳格化: `MAX_OPEN_RISK_EXCEEDED`が6件発火し、機構が正しく動作することを確認した（`results/backtests/20260823-165435-USDJPY-H1/`）。
+  * `InpMinMarginLevelPercent`を300%→**10000%**（通常の証拠金維持率を大きく上回る極端な値）へ厳格化: `MARGIN_LEVEL_TOO_LOW`が6件発火し、機構が正しく動作することを確認した（`results/backtests/20260823-165615-USDJPY-H1/`）。なお本チェックは`AccountInfoDouble(ACCOUNT_MARGIN)>0`（既存ポジションが1件以上ある状態）でのみ評価されるため、10000%でも新規ポジション0件の候補（最初の1件目）は拒否されない仕様であり、これは意図どおりの挙動。
+  * 両runとも拒否対象は「2件目以降の同方向積み増し候補」に限られ、取引数・純損益（36件・+17,474円・PF1.10）はdist=300pt runと完全一致した。
+
+  **総合評価: 両ガードとも実データで正しく拒否として発火することを確認した。安全機構としての実効性に問題は見つからなかった。** ユーザー指摘（2026-08-23）を受け、`InpMinSameDirectionEntryDistancePoints=0`の挙動説明を「積み増し無制限」から`docs/configuration.md`記載どおりの「距離制約が無効化される」へ訂正した（本節上部のdist=0の記述を修正済み）。
+
+* [x] Fold1のTest区間（2019年）でブラインド検証を実施する（2026-08-23実施、ユーザー依頼）。Train区間で確認した構成（ADX40/StopATR2.0/RR2.0、dist=100pt、`InpMaxOpenRiskPercent`=3%、`InpMinMarginLevelPercent`=300%）に、ユーザー指定で`InpMaxOpenPositions`を2から**5**へ変更して適用した（`Config.mqh`の制約`max_same_direction_positions<=max_open_positions`は2<=5で充足）。詳細は`results/backtests/fold1-test2019-20260823-summary.json`参照（`results/backtests/20260823-172448-USDJPY-H1/`）。
+
+  | 区間 | 取引数 | 純損益 | PF | Sharpe | 最大DD率 |
+  |---|---|---|---|---|---|
+  | Train（2017-09〜2018-12、単一ポジション構成の参考値） | 36 | +10,065円 | 1.12 | +0.27 | 2.08% |
+  | **Test（2019、本run）** | 20 | **-80,988円** | **0.39** | **-1.65** | 9.19% |
+
+  **重要な警告シグナル**: Test区間はTrain区間から一転して大幅に悪化した。TP到達率は15%（3/20件）に留まり、決済の70%（14/20件）がSLヒットで終わっている。`InpMaxOpenPositions=5`は本区間では一度も制約として機能せず（`POSITION_LIMIT`拒否0件）、実際の制約は`InpMaxSameDirectionPositions=2`（3件拒否）と`InpMinSameDirectionEntryDistancePoints=100`（7件拒否）だった。
+
+  **解釈上の留意点（本節冒頭の限界と合わせて評価する必要がある）**: Test=2019は凍結IS最良パラメータセットの元の調整期間（IS=2017-09〜2020-12）の内側にあるため、厳密な意味でのブラインド検証ではない。ただしFold1のTrain区間自体（2017-09〜2018-12）は2019年データを一切参照していないため、「Train区間での調整結果が、その直後の未知期間へ汎化するか」という観点では意味のある悪化シグナルである。CLAUDE.mdの原則（推測で実装しない、危険な状態で動くことを避ける）に照らし、この結果を無視して次のFoldへ進むべきではない。
+
+* [x] Test=2019の悪化要因を`python.analysis.trade_breakdown`で分析する（2026-08-23実施、ユーザー依頼）。詳細は`results/backtests/20260823-172448-USDJPY-H1/breakdown/trade-breakdown-report.md`参照。
+
+  **主要因1: TrendUp判定エントリーの壊滅的失敗が損失の87%を占める**。`market_regime_trend=TrendUp`の9件は勝率0%・純損益-70,630円（総損失-80,988円の87%）。対する`TrendDown`の11件は勝率27.3%・純損益-10,358円と相対的に軽微。2019年のUSDJPYは1〜4月に108→112へ上昇後、5〜8月に106近辺まで下落し11〜12月に109台へ戻すという往復相場で、持続的な一方向トレンドが乏しかったことと整合する。
+
+  **主要因2: 高ADX（エグゾーション圏）エントリーの全滅**。`adx_band=ADX_47.36-60.35`の7件は勝率0%・純損益-52,247円。ADXが極端に高い局面（既にトレンドが伸び切った状態）でのエントリーが軒並み失敗しており、順張りの「高値掴み・安値掴み」に近いパターンが疑われる。
+
+  **主要因3: 大多数の負けトレードはエントリー直後にほぼ含み益を作れずSLへ直行**。負け17件中12件はMFE_R<0.5（含み益が最大リスクの半分未満）で反転しており、決済管理（Breakeven等）では救えない「エントリー精度」の問題。残り5件はMFE_R 0.6〜1.4まで到達後に反転しており、うち大半は既存のBreakeven機構（`InpBreakevenTriggerR=1.0`）で小損失に抑えられていたが、1件（2019-01-22、MFE_R0.91で僅かに閾値未達）はBreakeven発動直前で反転し-1.12Rの損失となった。
+
+  **総合評価**: 2019年はGiveback比率が極端に高く（平均546%・中央値279%、負けトレード全17件が一度含み益化してから反転）、Train区間（2017-09〜2018-12）と異なり持続的トレンドが乏しい往復相場だったことが、トレンドフォロー戦略の構造的な不利として表れたと考えられる。
+
+* [x] **「C. Setup/Trigger条件の強化」を実装し、Train区間で再検証する（ユーザー依頼、2026-08-23実施）。** 悪化要因3（負け17件中12件がMFE_R<0.5でSLへ直行）へ対応するため、Pullback Entry Trigger（`CTrendFollowingRules::IsPullbackTrigger`）に、タッチ足高安値を単に上回る/下回るだけでなくATR基準の余裕幅を要求する追加条件`trigger_atr_buffer`を導入した。既存の`IsBreakout`が持つbuffer機構（`breakout_buffer_points`）と同じ設計パターンを踏襲し、新規input `InpPullbackTriggerAtrBuffer`（既定値`0.0`＝無効、従来挙動と完全一致）で制御する。B案（高ADX局面での新規エントリー抑制）・D案（レジームフィルタ強化）は、今回のTest=2019で観測された具体的な閾値をそのまま使うと後付け最適化になるリスクが高いため対象外とし、ユーザー指定どおりC案のみに絞った。
+
+  変更ファイル: `mt5/Include/Strategy/TrendFollowingRules.mqh`（`IsPullbackTrigger`・`IsPullback`にデフォルト引数`atr`・`trigger_atr_buffer`を追加、既定値0.0で数式上従来と完全等価）・`mt5/Include/Strategy/TrendFollowingStrategy.mqh`（呼び出し2箇所に`m_config.pullback_trigger_atr_buffer`を追加）・`mt5/Include/Core/Config.mqh`（新規フィールド`pullback_trigger_atr_buffer`、既定値0.0、validation追加）・`mt5/Experts/CoreEA.mq5`（新規input `InpPullbackTriggerAtrBuffer`、配線）・`mt5/Tests/TestTrendFollowingRules.mq5`（新規4アサーション）・`docs/configuration.md`。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS（`TestTrendFollowingRules`は新規4アサーション含む23件全PASS、他は既知事象と同じTerminal Exit Code 1のみ）で確認済み。
+
+  Train区間（2017-09〜2018-12、現行の複数ポジション構成: ADX40/StopATR2.0/RR2.0/dist=100pt/`InpMaxOpenPositions=5`/`InpMaxSameDirectionPositions=2`/`InpMaxOpenRiskPercent=3%`/`InpMinMarginLevelPercent=300%`）で`InpPullbackTriggerAtrBuffer`を0.00/0.05/0.10/0.15/0.20でスイープした。
+
+  | buffer | 取引数 | 純損益 | PF | Sharpe | 最大DD率 | 勝率 |
+  |---|---|---|---|---|---|---|
+  | 0.00（無効、従来挙動） | 40 | +28,882円 | 1.161 | +0.348 | 4.14% | 45.0% |
+  | 0.05 | 39 | +30,801円 | 1.174 | +0.369 | 3.96% | 46.2% |
+  | 0.10 | 39 | +30,801円 | 1.174 | +0.369 | 3.96% | 46.2% |
+  | 0.15 | 39 | +30,801円 | 1.174 | +0.369 | 3.96% | 46.2% |
+  | 0.20 | 38 | +40,535円 | 1.239 | +0.478 | 4.00% | 47.4% |
+
+  **後方互換性の確認**: buffer=0.00は、この節で先に確認したdist=100pt構成のTrain結果（取引数40・純損益+28,882円・PF1.16・Sharpe+0.35・DD率4.14%）と完全一致し、コード変更が既定値で従来挙動を一切変えていないことを実データで確認した。
+
+  **機構の動作確認**: buffer引き上げにより除外された取引は、0.00→0.05で1件（2018-09-07 BUY、-1,919円）、0.05→0.20で1件（2017-09-27 BUY、-9,826円）のみで、いずれも負けトレードだった。「弱いTrigger（タッチ足高安値を僅かに超えるだけの再加速）を除外する」という設計意図どおりに機能しており、除外対象が偶然ではなく損失トレードに偏っていることを確認した。
+
+  **総合評価: 方向性としては改善が見られ、設計意図（弱いTriggerの除外）どおりに機能していることも確認できたが、効果の実体はTrain区間40件中わずか1〜2件の除外に留まる薄いサンプルであり、本セッションで繰り返し指摘してきた過学習リスク（StopAtrMultiple=1.5、ADX=40等の単一区間内での「山」）と同様の注意が必要**。特にbuffer=0.20が最良となっているのは、スイープ範囲の端点で1件を追加除外した結果であり、単独の根拠として採用すべきではない。0.05〜0.15が同一取引セットで安定していることから、採用する場合はプラトーの中間である0.10を候補とするのが0.20の端点选択より穏当と考える。
+
+  **未対応の残存課題**: 本変更は悪化要因3（エントリー直後の即時反転）の一部にのみ対応するものであり、悪化要因1（TrendUp判定エントリーの0/9勝、総損失の87%）・悪化要因2（高ADX局面エントリーの0/7勝）には一切対応していない（ユーザー指定によりC案のみに限定したため）。Test=2019の悪化を包括的に説明・改善する変更ではなく、部分的な改善候補である。
+
+  **次のステップに関する提案**: IS/OOS分離の原則上、この閾値をTest=2019の結果を見て調整することは避けるべきである（本ラウンドはTrain区間のみを使用しており、この点は遵守済み）。採用する場合は、(1) buffer=0.10を暫定候補として固定し、(2) Test=2019で一度だけ確認する、という手順を推奨する。ただし要因1・2が未対応のままでは、Test=2019の大幅な悪化（-80,988円）を覆すほどの改善は期待できない可能性が高い。
+
+* [x] **`InpPullbackTriggerAtrBuffer=0.10`をベースライン（現状の設定）として固定し、「D. レジームフィルタの強化」を実装してTrain区間で再検証する（ユーザー依頼、2026-08-23実施）。** 悪化要因1（TrendUp判定エントリーの0/9勝、Test=2019総損失の87%）へ対応する狙いで、既存の市場レジーム判定（`CMarketRegimeClassifier::ClassifyTrend`、H1 ADX＋EMAスロープに基づく単発判定）を「直近1本だけでなく、過去N本連続でTrend状態（Range/Unknownでない）が継続していること」を要求する形へ強化した。トレンドへ切り替わった直後の不安定な状態（＝まだ持続性が確認できていない状態）でのEntryを避ける狙いで、新規input `InpRegimeTrendPersistenceBars`（既定値`1`＝従来の単発判定と完全等価）で制御する。既存の`stage_market_regime_passed`ゲート（Stage 1、`InpEntryUseStagedPipeline=true`時のみ有効）を拡張する形で実装し、ログ用の`market_regime_trend`フィールド（直近1本の分類、trade_breakdown等で参照）は変更していない。
+
+  変更ファイル: `mt5/Include/Strategy/TrendFollowingStrategy.mqh`（新規private method `IsRegimeTrendPersistent`、Stage 1ゲートへ組み込み）・`mt5/Include/Core/Config.mqh`（新規フィールド`regime_trend_persistence_bars`、既定値1、validation追加）・`mt5/Experts/CoreEA.mq5`（新規input `InpRegimeTrendPersistenceBars`、配線）。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS（既存23アサーション、回帰なし）で確認済み。`IsRegimeTrendPersistent`は既存の`CMarketRegimeClassifier::ClassifyTrend`（`TestMarketRegimeClassifier`で単体テスト済み）を複数本ループで呼び出すのみの薄い集約ロジックであり、単体テストは追加せず、以下のTrain区間フル実行（既存の`ReadAtrBaseline`・`ReadBreakoutRange`等の他の複数本参照ヘルパーと同様、統合テストのみで検証する既存方針を踏襲）で検証した。
+
+  Train区間（2017-09〜2018-12、現行の複数ポジション構成＋`InpPullbackTriggerAtrBuffer=0.10`固定）で`InpRegimeTrendPersistenceBars`を1（無効・従来挙動）/2/3/4/5でスイープした。
+
+  | persistence(本) | 取引数 | 純損益 | PF | Sharpe | 最大DD率 | 勝率 |
+  |---|---|---|---|---|---|---|
+  | 1（無効、従来挙動） | 39 | +30,801円 | 1.174 | +0.369 | 3.96% | 46.2% |
+  | 2 | 28 | -5,249円 | 0.964 | -0.037 | 6.88% | 46.4% |
+  | 3 | 22 | -24,706円 | 0.792 | -0.333 | 5.55% | 45.5% |
+  | 4 | 20 | -4,651円 | 0.954 | -0.044 | 4.59% | 50.0% |
+  | 5 | 19 | 5,626円 | 1.063 | +0.109 | 3.63% | 52.6% |
+
+  **後方互換性の確認**: persistence=1は、先に確認した`InpPullbackTriggerAtrBuffer=0.10`単独のTrain結果（取引数39・純損益+30,801円・PF1.174・Sharpe+0.369・DD率3.96%）と完全一致し、コード変更が既定値で従来挙動を一切変えていないことを確認した。
+
+  **メカニズムの調査**: persistence=1→3で除外された21件を分析したところ、勝ちトレード9件・負けトレード12件が混在し、除外された取引群の純損益合計は**+26,555円（プラス）**だった。すなわちレジーム持続性フィルタは、狙っていた「不安定な状態での負けトレード」だけでなく、それと同程度以上に「トレンド転換直後の初動を捉える質の良い勝ちトレード」も一緒に除外してしまっており、悪化要因1（TrendUp判定の質）の改善という設計意図とは逆方向に作用していた。
+
+  **総合評価: 「D. レジームフィルタの強化」は、本Train区間の実データでは性能を悪化させる結果となり、採用を推奨しない。** persistence=2〜4は純損益・PF・Sharpeのいずれも悪化（PF<1、Sharpeマイナス）し、persistence=5でわずかに回復するものの依然としてpersistence=1（現行ベースライン）を下回る。これは「レジーム転換直後を避ける」という設計仮説が、少なくとも本Train区間・本実装方式では成立しなかったことを示す、明確な反証結果である。B案（ADX上限フィルタ）とは異なりTest=2019データを一切参照していないため、これはIS/OOS分離の原則に沿った正当なTrain内検証の結果であり、過学習ではなく「仮説が誤っていた」という判断ができる。
+
+  **残存課題**: 悪化要因1（TrendUp判定エントリーの0/9勝、Test=2019総損失の87%）は依然として未対応のまま残っている。今回の反証結果を踏まえると、単純な「持続性要求」というアプローチでは対応できない可能性が高く、別のアプローチ（例: HTF Bias側の強化、方向別の追加確認条件、あるいはレジーム判定ロジック自体の見直し）を検討する必要がある。悪化要因2（高ADX局面エントリーの0/7勝）も引き続き未対応。`InpRegimeTrendPersistenceBars`は既定値1（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも1以外の値は適用していない。
+
+* [x] **「B. 高ADX局面での新規エントリー抑制」を実装し、Train区間で再検証する（ユーザー依頼、2026-08-23実施）。** 悪化要因2（Test=2019で`ADX 47.4〜60.4`帯のエントリー7件が0勝、-52,247円）へ対応する狙いで、H1 ADXの上限閾値`InpMaximumAdx`（既定値`0.0`＝無効）を新規追加した。既存の`InpMinimumAdx`（下限フィルタ）と対称の設計で、上回るとエグゾーション（過熱）局面として候補を棄却する。**Test=2019で観測された具体的な閾値（47.36等の分位点境界）は使わず**、TAの慣習的な区切り値（50/55/60/65）とTrain区間自体のADX分布（39件・平均45.4・最大65.5）から選んだ値でスイープした。
+
+  変更ファイル: `mt5/Include/Strategy/TrendFollowingStrategy.mqh`（`ADX_TOO_HIGH`ゲート追加）・`mt5/Include/Core/Config.mqh`（新規フィールド`maximum_adx`、既定値0.0、validation追加）・`mt5/Experts/CoreEA.mq5`（新規input `InpMaximumAdx`、配線）・`docs/configuration.md`。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS（回帰なし）で確認済み。
+
+  Train区間（2017-09〜2018-12、現行構成＋`InpPullbackTriggerAtrBuffer=0.10`固定）で`InpMaximumAdx`を無効(0)/65/60/55/50でスイープした。
+
+  | maxADX | 取引数 | 純損益 | PF | Sharpe | 最大DD率 | 勝率 |
+  |---|---|---|---|---|---|---|
+  | 無効(0、従来挙動) | 39 | +30,801円 | 1.174 | +0.369 | 3.96% | 46.2% |
+  | 65 | 38 | +10,920円 | 1.062 | +0.164 | 3.96% | 44.7% |
+  | 60 | 38 | +10,920円 | 1.062 | +0.164 | 3.96% | 44.7% |
+  | 55 | 35 | +11,778円 | 1.076 | +0.180 | 3.98% | 45.7% |
+  | 50 | 33 | +1,893円 | 1.013 | +0.053 | 4.79% | 45.5% |
+
+  **メカニズムの調査**: 無効(0)→65で除外された唯一の1件（2018-01-24 05:00 SELL）は**+20,040円の大きな勝ちトレード**だった。以降の段階的な閾値引き下げでも、除外される取引は勝ち（+19,456円・+19,695円）と負け（-9,976円・-10,011円・-10,261円）が混在するが、除外される勝ちトレードの金額が負けトレードより大きく、閾値を厳しくするほど純損益が悪化する構造だった。
+
+  **総合評価: 「B. 高ADX局面での新規エントリー抑制」は、本Train区間の実データでは性能を悪化させる結果となり、採用を推奨しない。** 全swept値（65/60/55/50）が無効(0)を明確に下回った。重要なのは、Test=2019で「高ADX＝壊滅的な負け」だったパターンが、Train区間（2017-09〜2018-12）では真逆に「高ADX＝最大級の勝ちトレード」として現れたことである。これは「高ADX＝エグゾーション」という仮説がTest=2019に固有のパターンであり、Train区間へ一般化できないことを示す強い反証であり、この観点に基づく閾値を安易にTest=2019の分位点から借用していた場合、典型的な後付け最適化（過学習）に陥っていたリスクを裏付ける結果でもある。
+
+  **残存課題**: 悪化要因2（高ADX局面エントリーの0/7勝）はTrain内では反証されたが、Test=2019で実際に発生した損失パターンとしては依然として未説明のまま残っている。C案（buffer=0.10）以外に採用可能な改善策は本ラウンドまでで見つかっていない。B案・D案がいずれもTrain区間で反証されたことを踏まえると、Test=2019の悪化は単純な入口フィルタの追加では解消できない、より構造的な問題（トレンドフォロー戦略が往復相場に本質的に不利、というTASKS.md冒頭の分析どおり）である可能性が高まっている。`InpMaximumAdx`は既定値0（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも0以外の値は適用していない。
+
+* [x] **C案（`InpPullbackTriggerAtrBuffer=0.10`）を適用した状態でTest=2019を一度だけ再実行し、確認する（ユーザー依頼、2026-08-23実施）。** B案・D案採用見送りに伴い、C案のみを適用した構成（IS最良パラメータセット＋複数ポジション構成＋`InpPullbackTriggerAtrBuffer=0.10`、`InpMaximumAdx`・`InpRegimeTrendPersistenceBars`は既定値のまま）でTest=2019（`results/backtests/20260823-204224-USDJPY-H1/`）を実行した。IS/OOS分離の原則に従い、Test区間へのアクセスはこの1回に限定した。
+
+  **結果: 元のTest=2019結果（`results/backtests/20260823-172448-USDJPY-H1/`、buffer無効）と完全に同一（取引数20・純損益-80,988円・PF0.386・Sharpe-1.645・DD率9.19%・勝率15.0%）**。`trades-normalized.csv`を突き合わせたところ全20件が完全一致するバイナリレベルの同一結果であり、`InpPullbackTriggerAtrBuffer=0.10`はTest=2019区間では一度も発火しなかった（Train区間で除外していた「弱いTrigger」パターンが、たまたまTest=2019の候補群には存在しなかった）。
+
+  **総合評価: C案はTest=2019に対して一切の改善効果を持たなかった。** これは、C案がTrain区間内のごく少数（40件中1〜2件）の除外に依拠した薄い効果だったという既報の懸念を裏付ける結果であり、Test=2019の悪化はC/B/D案のいずれによっても改善されないことが確定した。エントリー側のフィルタ強化（B/C/D案）だけでは対応できないことが、Train・Test両方の実データで示された。**なお、この直後にF案（決済管理強化）の実装を開始した記録が残っていたが、これは誤って送信された別プロンプトによるものであり、ユーザー確認の上で2026-08-23に取り消した（`mt5/Include/Trading/PositionManager.mqh`・`mt5/Include/Core/Config.mqh`・`mt5/Experts/CoreEA.mq5`・`docs/configuration.md`・`mt5/Tests/TestTradingRules.mq5`への未コミット変更を`git checkout HEAD --`でコミット済み状態へ復元）。** ユーザー指定によりE案（ロールフォワード継続、Fold2以降）を優先する方針とする。
+
+* [x] Fold2（Train2017-09〜2019-12→Test2020）を現状の調整（IS最良パラメータセット＋複数ポジション構成＋`InpPullbackTriggerAtrBuffer=0.10`、`InpMaximumAdx`・`InpRegimeTrendPersistenceBars`は既定値）で実行する（ユーザー依頼、2026-08-23実施）。
+
+  | 区間 | 取引数 | 純損益 | PF | Sharpe | 最大DD率 | 勝率 |
+  |---|---|---|---|---|---|---|
+  | Train（2017-09〜2019-12、`results/backtests/20260823-205804-USDJPY-H1/`） | 64 | +14,919円 | 1.046 | +0.126 | 6.87% | 39.1% |
+  | **Test（2020、`results/backtests/20260823-210123-USDJPY-H1/`）** | 25 | **+51,141円** | **1.529** | **+0.664** | 4.26% | 36.0% |
+
+  **Fold1との対比**: Fold1のTest=2019（取引数20・純損益-80,988円・PF0.39・Sharpe-1.65）とは対照的に、Fold2のTest=2020は取引数こそ少ないものの明確に良好な結果（PF1.53・Sharpe+0.66）となった。これは2019年の悪化が、往復相場全般に共通する構造的な弱点ではなく、2019年固有の相場環境（トレンド期間の乏しさ）に起因していた可能性を示唆する。ただし判断にはFold3以降の追加データが必要。
+
+  **留意点**: Fold2のTrain区間（2017-09〜2019-12）は、Fold1のTrain区間（2017-09〜2018-12、単一継続run）を含む延長区間だが、継続run内の取引数・損益はFold1単体の結果（39件・+30,801円）と単純合算にならない（本セッションで既知のDD_LIMIT発動・ポジション状態の連続性等による差異、詳細はTASKS.md該当節参照）。
+
+* [x] Fold3（Train2018-2020→Test2021）を現状の調整で実行する（ユーザー依頼、2026-08-23実施）。Train開始は2018-01-01（DEC-025補正不要、Fold1・Fold2のみ2017-09-01への補正が必要だった）。
+
+  | 区間 | 取引数 | 純損益 | PF | Sharpe | 最大DD率 | 勝率 |
+  |---|---|---|---|---|---|---|
+  | Train（2018〜2020、`results/backtests/20260823-211033-USDJPY-H1/`） | 72 | +5,995円 | 1.017 | +0.063 | 9.19% | 34.7% |
+  | **Test（2021、`results/backtests/20260823-211401-USDJPY-H1/`）** | 31 | **+25,888円** | **1.175** | **+0.391** | 6.46% | 38.7% |
+
+  **Fold1〜3のTest結果まとめ**: Fold1(2019) -80,988円・PF0.39／Fold2(2020) +51,141円・PF1.53／Fold3(2021) +25,888円・PF1.18。3年中2年がプラスとなり、2019年が引き続き外れ値の位置づけである。Fold4以降で傾向を確認する必要がある。
+
+* [x] Fold4（Train2019-2021→Test2022）を現状の調整で実行する（ユーザー依頼、2026-08-23実施）。
+
+  | 区間 | 取引数 | 純損益 | PF | Sharpe | 最大DD率 | 勝率 |
+  |---|---|---|---|---|---|---|
+  | Train（2019〜2021、`results/backtests/20260823-211728-USDJPY-H1/`） | 76 | -9,144円 | 0.975 | -0.011 | 9.19% | 31.6% |
+  | **Test（2022、`results/backtests/20260823-212058-USDJPY-H1/`）** | 37 | **+86,073円** | **1.626** | **+0.744** | 5.33% | 54.1% |
+
+  **Fold1〜4のTest結果まとめ**: Fold1(2019) -80,988円・PF0.39／Fold2(2020) +51,141円・PF1.53／Fold3(2021) +25,888円・PF1.18／Fold4(2022) +86,073円・PF1.63（現時点最良）。4年中3年がプラスとなり、2019年が引き続き唯一の外れ値である。Fold5・6で傾向を確認する必要がある。
+
+* [x] Fold5（Train2020-2022→Test2023）を現状の調整で実行する（ユーザー依頼、2026-08-23実施）。
+
+  | 区間 | 取引数 | 純損益 | PF | Sharpe | 最大DD率 | 勝率 |
+  |---|---|---|---|---|---|---|
+  | Train（2020〜2022、`results/backtests/20260823-212513-USDJPY-H1/`） | 93 | +171,860円 | 1.429 | +0.611 | 6.48% | 44.1% |
+  | **Test（2023、`results/backtests/20260823-212914-USDJPY-H1/`）** | 16 | **-72,990円** | **0.214** | **-1.553** | 8.97% | 12.5% |
+
+  **重要な修正: 「2019年が唯一の外れ値」という直前までの見立ては誤りだった。** Fold5のTest=2023は、Fold1のTest=2019（-80,988円・PF0.39・勝率15.0%）と酷似する悪化パターン（-72,990円・PF0.21・勝率12.5%、5Fold中最悪のPF）を示した。**Fold1〜5のTest結果まとめ**: 2019 -80,988円・PF0.39／2020 +51,141円・PF1.53／2021 +25,888円・PF1.18／2022 +86,073円・PF1.63／2023 -72,990円・PF0.21。5年中2年（2019・2023）が明確な悪化年であり、「往復相場的な年は約5年に2回程度の頻度で発生し、その年は大きく損失を出す」という、単発の外れ値ではなくパターンとして捉えるべき可能性が高まった。Fold6（2024）の結果を踏まえて総合評価する必要がある。
+
+* [x] **Fold6（Train2021-2023→Test2024）を現状の調整で実行し、ローリングWalk Forward検証（Fold1〜6）を完了する（ユーザー依頼、2026-08-23実施）。**
+
+  | 区間 | 取引数 | 純損益 | PF | Sharpe | 最大DD率 | 勝率 |
+  |---|---|---|---|---|---|---|
+  | Train（2021〜2023、`results/backtests/20260823-213227-USDJPY-H1/`） | 80 | +30,958円 | 1.083 | +0.177 | 9.32% | 41.2% |
+  | **Test（2024、`results/backtests/20260823-213615-USDJPY-H1/`）** | 31 | **-28,272円** | **0.800** | **-0.477** | 6.57% | 35.5% |
+
+  **Fold1〜6 Test結果 総括表**
+
+  | Fold | Test年 | 取引数 | 純損益 | PF | Sharpe |
+  |---|---|---|---|---|---|
+  | 1 | 2019 | 20 | -80,988円 | 0.39 | -1.65 |
+  | 2 | 2020 | 25 | +51,141円 | 1.53 | +0.66 |
+  | 3 | 2021 | 31 | +25,888円 | 1.18 | +0.39 |
+  | 4 | 2022 | 37 | +86,073円 | 1.63 | +0.74 |
+  | 5 | 2023 | 16 | -72,990円 | 0.21 | -1.55 |
+  | 6 | 2024 | 31 | -28,272円 | 0.80 | -0.48 |
+
+  **合算結果（6年・160取引を単純合算）**: 純損益**-19,148円**（初期資金100万円に対し-1.9%）、集計Profit Factor**0.974**（gross_profit合算/|gross_loss合算|）、集計勝率**35.6%**。プラスの年3回（2020・2021・2022）・マイナスの年3回（2019・2023・2024）で、年別の振れ幅が非常に大きい（最良+86,073円〜最悪-80,988円）。
+
+  **総合評価: 凍結IS最良パラメータセット＋本セッションで確認した調整（複数ポジション構成、`InpPullbackTriggerAtrBuffer=0.10`）は、6年間の真のブラインドWalk Forward検証において、集計PFが1を下回り、正味でわずかにマイナスとなった。** これはIS期間（2017-09〜2020-12）で確認された良好な指標（PF1.12前後）が、その後の未知期間へ安定して汎化していないことを意味する。B案・D案（本節前段）がTrain区間で反証されたことと合わせ、単純な入口フィルタの調整では対応できない、より根本的な課題（IS期間が偶然良好なトレンド局面を多く含んでいた可能性、またはトレンドフォロー戦略自体が長期的に見て明確な正のエッジを持たない可能性）を示唆する。`docs/production-readiness-report.md`のNO-GO判定を継続する根拠として重要な発見であり、IS最良パラメータセットをそのまま本番相当の候補として扱うべきではない。次の一手（IS期間自体の再定義・再調整、戦略ロジックの根本的見直し、あるいはこの結果を受け入れて本番化を見送る判断）はユーザーの評価を待つ。
+
+## 2.1.2 戦略ロジックの根本的見直し: I案（サイジングのレジーム適応、2026-08-23ユーザー指定）
+
+* [x] **I案（直近実績に基づくリスク量の適応的縮小）を実装し、Train区間で検証する（ユーザー依頼、2026-08-23実施）。** Fold1〜6の合算結果（集計PF0.974、正味マイナス）を受け、B案・D案（事前にレジームを予測して入口を絞る）とは異なる方向性として、事前予測を行わず**実際に悪い結果が続いた場合にのみ**リスク量を縮小する仕組みを実装した。
+
+  **実装**: 新規`mt5/Include/Risk/AdaptiveSizingGuard.mqh`。`CAdaptiveSizingRules::RiskMultiplier()`（純粋関数、直近`lookback_trades`件の決済済みポジション数が閾値に満たない場合は1.0、勝率が`win_rate_trigger`を下回る場合のみ`reduced_multiplier`を返す）と`CAdaptiveSizingGuard::RecentWinRate()`（`HistorySelect`＋`DEAL_POSITION_ID`集約で、指定magicの直近N件の決済済みポジション＝部分決済は1件扱いの勝率を算出、取得不能時はfalse-safeでtrade_count=0を返す）。`RiskManager::Evaluate()`のポジションサイジング直前に組み込み、`risk_rate = risk_per_trade_rate × multiplier`として`CPositionSizer::Calculate`へ渡す。新規input `InpEnableAdaptiveSizing`（既定`false`）・`InpAdaptiveSizingLookbackTrades`（既定10）・`InpAdaptiveSizingWinRateTrigger`（既定0.30）・`InpAdaptiveSizingReducedMultiplier`（既定0.5）。`SRiskDecision`へ`adaptive_risk_multiplier`（既定1.0）を追加し、`RISK_DECISION`監査ペイロードへ記録して動作確認できるようにした。CLAUDE.md 14章「損失後の自動Lot増加」の禁止事項とは逆方向（縮小のみ、1.0を上回ることはない）であり抵触しない。
+
+  変更ファイル: `mt5/Include/Risk/AdaptiveSizingGuard.mqh`（新規）・`mt5/Include/Risk/RiskManager.mqh`・`mt5/Include/Risk/RiskDecision.mqh`・`mt5/Include/Core/Config.mqh`・`mt5/Include/Core/EAController.mqh`・`mt5/Experts/CoreEA.mq5`・`mt5/Tests/TestRiskGuards.mq5`（新規9アサーション）・`docs/configuration.md`。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS（`TestRiskGuards`は新規9アサーション含む全PASS）。既定値（`InpEnableAdaptiveSizing=false`）でTrain区間（2017-09〜2018-12）を再実行し、直前の`InpPullbackTriggerAtrBuffer=0.10`単独結果（取引数39・純損益+30,801円・PF1.1735・Sharpe+0.369）と完全一致することを確認し、後方互換性を実データで確認した（`results/backtests/20260823-215645-USDJPY-H1/`）。
+
+  **有効化してのTrain区間スイープ**（lookback=10・reduced_multiplier=0.5固定、win_rate_trigger 0.20/0.30/0.40/0.45）:
+
+  | trigger | 発火回数 | 取引数 | 純損益 | PF | Sharpe |
+  |---|---|---|---|---|---|
+  | 0.20 | 0 | 39 | +30,801円 | 1.174 | +0.369 |
+  | 0.30 | 0 | 39 | +30,801円 | 1.174 | +0.369 |
+  | 0.40 | 0 | 39 | +30,801円 | 1.174 | +0.369 |
+  | **0.45** | **8** | 39 | **-6,000円** | **0.964** | **-0.048** |
+
+  **機構の動作確認**: 監査ログ（`RISK_DECISION.adaptive_risk_multiplier`）とTRADE_CLOSEDの時刻を突き合わせ、各承認時点の「直近10件決済済みポジションの勝率」を手動再計算したところ、本Train区間内の最小値はちょうど0.40（狭義未満条件のため0.20/0.30/0.40では一度も発火しない）で、0.45で初めて8回発火することを確認した。実装は設計どおり正しく動作している。
+
+  **重要な発見: 発火した8件中7件が勝ちトレード（+926円〜+9,883円）、負けは1件（-4,899円）のみだった。** 「直近成績が悪化した直後に縮小する」という設計は、本Train区間では成績悪化の直後に訪れた回復局面（勝ちトレードの連続）まで縮小してしまい、結果的に純損益を+30,801円→-6,000円へ悪化させた。これは、実現成績の平均回帰（悪い後には良いことが多い）という統計的な性質に対し、単純な勝率トリガーが構造的に不利に働くことを示す、原理的な限界である。
+
+  **総合評価: I案（勝率ベースの単純な縮小トリガー）は、少なくとも本Train区間・本パラメータでは効果が実証できず、緩い閾値（0.20〜0.40）では単に発火せず無意味、やや踏み込んだ閾値（0.45）では回復局面を巻き込んで悪化させるという、いずれの側でも採用の根拠が得られなかった。** ただし本セッションで繰り返し指摘してきた注意点と同様、これは単一の39取引・16か月という薄いサンプルでの結果であり、より長い区間（例: Fold5 Train、93取引）や異なる指標（勝率でなく直近PF・R倍数平均等の連続値）で改めて検証する余地は残る。既定値（`InpEnableAdaptiveSizing=false`）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。
+
+* [x] **I案を連続値指標（直近平均R倍数相当）ベースへ再設計する（ユーザー依頼、2026-08-23実施）。** 二値閾値方式（勝率が閾値を下回った瞬間に固定倍率へ切り替わる）が「境界を跨いだ直後の回復トレードまで一律に巻き込む」という原理的な弱点を持っていたことを踏まえ、`avg_r`（直近`lookback_trades`件の損益を、現在の基準リスク額`equity×risk_per_trade_rate`で正規化したものの平均）が0未満の場合にのみ、その絶対値に比例して滑らかに縮小する設計へ変更した。`multiplier = clamp(1.0 + sensitivity×avg_r, floor_multiplier, 1.0)`（`avg_r>=0`では常に1.0、拡大方向へは働かない）。
+
+  変更ファイル: `mt5/Include/Risk/AdaptiveSizingGuard.mqh`（`RecentWinRate`→`RecentAverageR`、`RiskMultiplier`のシグネチャを連続値方式へ全面書き換え）・`mt5/Include/Risk/RiskManager.mqh`（呼び出し箇所を更新、`base_risk_amount=equity×risk_per_trade_rate`を算出して渡す）・`mt5/Include/Core/Config.mqh`（`adaptive_sizing_win_rate_trigger`/`adaptive_sizing_reduced_multiplier`を`adaptive_sizing_sensitivity`（既定1.0）/`adaptive_sizing_floor_multiplier`（既定0.5）へ置換）・`mt5/Experts/CoreEA.mq5`（input名を`InpAdaptiveSizingSensitivity`/`InpAdaptiveSizingFloorMultiplier`へ変更）・`mt5/Tests/TestRiskGuards.mq5`（12アサーションへ全面更新）・`docs/configuration.md`。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS（`TestRiskGuards`新規12アサーション含む）。既定値（`InpEnableAdaptiveSizing=false`）でTrain区間を再実行し、直前の結果（取引数39・純損益+30,801円・PF1.173543・Sharpe+0.369203）と完全一致することを確認し、後方互換性を実データで確認した（`results/backtests/20260824-001235-USDJPY-H1/`）。
+
+  **有効化してのTrain区間スイープ**（lookback=10固定、sensitivity/floor_multiplierを変更）:
+
+  | sensitivity | floor | 発火回数 | 取引数 | 純損益 | PF | Sharpe |
+  |---|---|---|---|---|---|---|
+  | （無効、参考） | — | 0 | 39 | +30,801円 | 1.174 | +0.369 |
+  | 1.0 | 0.5 | 13 | 39 | +20,376円 | 1.117 | +0.267 |
+  | 2.0 | 0.5 | 14 | 39 | +4,392円 | 1.026 | +0.085 |
+  | 2.0 | 0.3 | 14 | 39 | +4,392円 | 1.026 | +0.085 |（floor未到達、最大縮小は0.622倍に留まりfloor=0.3は非拘束）
+
+  **機構の動作確認**: sensitivity=1.0/floor=0.5の縮小発動13件のうち内訳が判明した12件は、勝ちトレード10件（合計+113,007円、全額サイズ時換算）・負けトレード2件（合計-18,418円）だった。連続値方式は二値方式より発動が滑らか（0.83〜0.99倍の範囲で段階的）になったが、**縮小が勝ちトレードに偏るという根本的な性質は解消されなかった**。
+
+  **総合評価: 連続値方式への再設計は、実装としては二値方式より洗練された（境界での急激な悪化を避け、段階的に縮小する）ものの、収益性の観点では改善しなかった。** sensitivity・floorのいずれの組み合わせでも、無効時（+30,801円）を上回る結果は得られず、感度を上げるほど（sensitivity 1.0→2.0）純損益はむしろ悪化した（+20,376円→+4,392円）。これは実装方式（二値か連続値か）の問題ではなく、**「直近の実現成績が近い将来の成績を予測する」という前提自体が、本Train区間のデータでは成立していない（むしろ平均回帰的で、悪い後には良い結果が来やすい）ことを示す、より根本的な反証**と考えられる。
+
+  **残存課題・今後の判断材料**: B案・D案（入口側の事前予測）、I案二値方式・連続値方式（出口側の事後反応）と、性質の異なる4つのアプローチがいずれもTrain区間で反証された。これは個々の実装の巧拙ではなく、「過去の限られた情報から近い将来の相場・トレード成績の良否を予測する」というアプローチ全般が、本戦略・本データセットでは十分な予測力を持たない可能性を示唆する。次に検討すべきは、予測に依存しないアプローチ（例: IV案のポートフォリオ化＝トレンドフォロー以外の戦略との分散）か、あるいはこの制約を受け入れた上での本番化見送りの継続である。既定値（`InpEnableAdaptiveSizing=false`）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。
+
+* [x] **III案（regime分類器の高度化）・II案（平均回帰の新規戦略）を実装し、Train区間で検証する（ユーザー依頼、2026-08-24実施）。** B案・D案（入口の事前予測）・I案（出口の事後反応）がいずれも反証されたことを踏まえ、「トレンドフォロー以外のアプローチ」として、既存のトレンドフォロー戦略とは独立した第二の候補生成源＝平均回帰戦略を追加した。
+
+  **III案（regime分類器の高度化）**: 既存の`CMarketRegimeClassifier`（ADX＋MAスロープ）はB案・D案でいずれも反証済みのため、これを置き換えるのではなく、独立した確認軸としてChoppiness Index（E.W.Dreiss考案、価格経路効率性に基づくトレンド/レンジ判定、100に近いほどレンジ）を新設した。新規`mt5/Include/Filter/ChoppinessIndex.mqh`（`CChoppinessIndex::Calculate`・`IsChoppy`、いずれも純粋関数）。既存ATRインジケーターの平滑化値をTrue Range代用として合算する簡略実装（新規インジケーターハンドルを増やさない設計を優先）。
+
+  **II案（平均回帰の新規戦略）**: 新規`mt5/Include/Strategy/MeanReversionStrategy.mqh`（`IStrategy`実装）。Choppiness Indexが閾値以上（レンジ相場確認）の場合のみ活動し、Bollinger Band下限＋RSI売られすぎでBUY、上限＋買われすぎでSELL、TPはBand中心線・SLはATR倍率という古典的な平均回帰ロジック。既存のトレンドフォロー戦略が該当確定足で候補を生成しなかった場合のみ評価される排他制御とし、両戦略が同一口座へ同時発注することを避けた。既存のRisk Manager・PositionManager・監査ログ基盤（同一magic number）をそのまま共有する設計とし、新たな安全機構は追加していない（Risk Managerの最終拒否権は両戦略に等しく適用される、CLAUDE.md 4.1準拠）。
+
+  変更ファイル: `mt5/Include/Filter/ChoppinessIndex.mqh`（新規）・`mt5/Include/Strategy/MeanReversionStrategy.mqh`（新規）・`mt5/Include/Signal/SignalResult.mqh`（`ENTRY_PATTERN_MEAN_REVERSION`追加）・`mt5/Include/Core/Config.mqh`（新規フィールド8件、既定`enable_mean_reversion_strategy=false`）・`mt5/Include/Core/EAController.mqh`（第二の`CSignalEngine`インスタンスを追加、トレンドフォロー戦略が候補なしの確定足でのみ評価）・`mt5/Experts/CoreEA.mq5`（新規input 8件）・`mt5/Tests/TestMarketRegimeClassifier.mq5`（Choppiness Index 10アサーション）・`mt5/Tests/TestTrendFollowingRules.mq5`（平均回帰エントリー判定6アサーション）・`docs/configuration.md`。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS（新規16アサーション含む）。既定値（`InpEnableMeanReversionStrategy=false`）でTrain区間を再実行し、直前結果（取引数39・純損益+30,801円・PF1.173543）と完全一致することを確認し、後方互換性を実証済み（`results/backtests/20260824-004124-USDJPY-H1/`・`20260824-005316-USDJPY-H1/`）。
+
+  **機構の動作確認と発見された不具合**: `InpEnableMeanReversionStrategy=true`かつ既定閾値（Choppiness最小61.8）でTrain区間を実行したところ、平均回帰候補が0件だった。原因調査のため一時的に閾値を0（無効化）にして再実行したところ361件の平均回帰候補が生成され、ロジック自体は正しく動作していることを確認した。あわせてChoppiness値の実測分布（361件、最小10.95・最大60.24・平均33.6）を確認し、**既定閾値61.8は本データセット・本簡略実装（ATR平滑化値の代用）のスケールに対して厳しすぎ、一度も到達しない値だった**ことが判明した（TA文献の慣習値をそのまま採用したことが原因、詳細はdocs/configuration.md参照）。また、この過程で**`EAController::CandidateForPosition()`のtrade_candidate_id復元ロジックが平均回帰戦略のID形式（`{ea_id}-MR-{symbol}-{bar_time}`）に対応しておらず、TRADE_CLOSED側のIDが不一致となりPython側`by_strategy`集計が"UNKNOWN"に分類される不具合を発見・修正した**（`CandidateForPosition`はDeal Commentから`{ea_id}-{symbol}-{bar_time}`形式のみを復元する実装のため、平均回帰戦略のID形式をトレンドフォロー戦略と同一形式へ変更して解消。両戦略は排他制御によりID衝突しないため安全）。修正後、`by_strategy`が正しく"MEAN_REVERSION"として分類されることを確認した。
+
+  **Train区間での検証**（Choppiness閾値を実測分布に基づき50.0へ調整。61.8のままでは一度も発火しないため、実測データに基づく現実的な値へ変更）:
+
+  | 構成 | 取引数 | 純損益 | PF | Sharpe |
+  |---|---|---|---|---|
+  | 平均回帰無効（参考、既存ベースライン） | 39 | +30,801円 | 1.174 | +0.369 |
+  | 平均回帰有効・Choppiness閾値50 | 52 | -1,472円 | 0.993 | +0.019 |
+
+  戦略別内訳（Choppiness閾値50）: BREAKOUT 28件・+50,158円・PF1.41（トレンドフォロー、既存とほぼ同水準）／PULLBACK 11件・-19,056円・PF0.64（トレンドフォロー、既存とほぼ同水準）／**MEAN_REVERSION 13件・-32,574円・PF0.0・勝率0%**（新規、全13件が損失）。
+
+  **総合評価: II案（平均回帰戦略）は、本Train区間では明確に機能しなかった。** 13件全てが損失となり、既存のトレンドフォロー戦略単体の好成績（+30,801円）を、追加した平均回帰の損失（-32,574円）がほぼ相殺し、合算では正味わずかにマイナス（-1,472円）となった。B案・D案・I案（二値/連続値）に続き、これで5つ目の性質の異なるアプローチが本Train区間で反証されたことになる。
+
+  **残存課題**: (1) Choppiness Indexの簡略実装（ATR平滑化値をTrue Range代用）により、閾値のスケールが標準的なChoppiness Indexの慣習値と一致しない。正式なTrue Range（各足の高安値・前足終値から算出、平滑化しない値）ベースへ改めるべきか検討の余地がある。(2) 平均回帰エントリー条件（Band接触＋RSI閾値のみ）が単純すぎ、真の反発を確認する追加条件（例: 反発を示す確定足のロウソク足形状、出来高等）を欠く可能性がある。(3) SL幅（ATR×1.5）とTP（Band中心線）の比率が、13件全敗という結果から見て不適切だった可能性がある。(4) 本検証は単一Train区間（39→52取引、16か月）に基づくものであり、他のアプローチと同様、単一区間での過学習リスクに注意が必要。`InpEnableMeanReversionStrategy`は既定値false（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。
+
+* [x] **上記II案（平均回帰）の残存課題(2)(3)を踏まえ、ユーザー指示によりレンジ相場逆張りロジックの仕様を全面的に変更する（2026-08-24実施）。** RSI閾値によるBand接触のみのEntryから、「Band外側へのブレイク→次の確定足でBand内側へ復帰」という2本足確認パターンへ変更し、Range FilterもChoppiness Index単独からChoppiness Index（`InpMeanReversionChoppinessMin`以上）＋ADX（`InpMeanReversionAdxMax`未満）の複合判定へ強化した。RSI関連パラメータ（`mean_reversion_rsi_oversold`/`overbought`）は削除。SLはエントリー価格からの単純なATR倍率ではなく、Lower/Upper Bandまたは直近レンジ高安値（`InpMeanReversionBbPeriod`本）のうち保守的な方の外側にATR×`InpMeanReversionStopAtrMultiple`（既定1.0、旧1.5から変更）のバッファを設ける方式へ変更。TPはBB Middle既定のまま、将来比較用に反対側Band方式（`InpMeanReversionTakeProfitMode`）を追加。新規の強制決済ロジック（Range Filter解除／レンジ上限下限の確定足Closeブレイク／BB Width急拡大`InpMeanReversionBbWidthLookback`・`InpMeanReversionBbWidthExpansionRatio`のいずれか）と、トレンド戦略とは独立した時間切れ決済（`InpMeanReversionMaxHoldingBars`、既定20本）を追加した。レンジ戦略のポジションをトレンドロジックへ引き継がない設計を明確にするため、専用Magic Number（`InpMeanReversionMagicNumber`、既定26072002）でポジションを識別するよう変更し、`CPositionProtectionRules::IsManagedPosition`に3引数オーバーロード（プライマリ/セカンダリのいずれかに一致すれば管理下と判定）を追加して`PositionManager::Monitor`（保護SL安全網・建値ストップ）・`OnTradeTransaction`・`EAController::AuditDailySnapshots`がレンジポジションも正しく対象にするよう拡張した。`RiskManager::Evaluate`・`OrderManager::Submit`は`signal.entry_pattern`に応じて発注時のMagic Numberを切り替える。トレンド戦略専用の`EvaluateSignalInvalidationExits`/`EvaluateTimeStopExits`（プライマリMagic Numberのみを対象とする2引数版`IsManagedPosition`を維持）はロジック・挙動とも一切変更しておらず、新設の`EvaluateMeanReversionForcedExits`/`EvaluateMeanReversionTimeStopExits`と完全に独立している。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`（全面書き換え）・`mt5/Include/Core/Config.mqh`（RSIフィールド2件削除、新規フィールド7件）・`mt5/Include/Core/EAController.mqh`（新規メソッド2件・`AuditDailySnapshots`のMagic判定拡張）・`mt5/Include/Trading/PositionManager.mqh`（`IsManagedPosition`3引数オーバーロード追加）・`mt5/Include/Risk/RiskManager.mqh`・`mt5/Include/Trading/OrderManager.mqh`（Magic Number切替）・`mt5/Experts/CoreEA.mq5`（input 2件削除・7件追加）・`mt5/Tests/TestTrendFollowingRules.mq5`（平均回帰ルール群のアサーションを新ロジックへ全面更新）・`mt5/Tests/TestTradingRules.mq5`（3引数`IsManagedPosition`のアサーション追加）・`docs/configuration.md`。`mt5/Include/Filter/ChoppinessIndex.mqh`・`mt5/Include/Signal/SignalResult.mqh`（`ENTRY_PATTERN_MEAN_REVERSION`）は変更なし（既存のまま再利用）。トレンドフォロー戦略側のファイル（`TrendFollowingStrategy.mqh`・`TrendFollowingRules.mqh`）は一切変更していない。
+
+  **検証**: `.\tools\release-gate.ps1 -Mode Development`全体（必須文書チェック・秘密情報スキャン・JSON contracts検証・Python Phase12テスト119件・MQL5コンパイル10ターゲット0 errors/0 warnings・MQL5 Script Test 9件）が完走しPASSすることを確認済み。**未実施・未確認**: 新仕様でのStrategy Tester実データ検証（IS/OOS区間での取引数・PF・Sharpe等）は未実施であり、`InpEnableMeanReversionStrategy`は既定値false（無効）のまま据え置いている。有効化して検証する場合は、旧仕様の検証（残存課題(2)(3)）が新仕様でどう変化したかをTrain区間で確認したうえで判断すること。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する。
+
+* [x] **上記のBand内復帰判定（次の1本のみ）を、ユーザー指示により最大N本以内の復帰を許容するReentry Window方式へ修正する（2026-08-24実施）。** レンジ相場ではBand内への復帰に数本を要するケースがあるため、`CMeanReversionRules::EntryDirection`（touch/entryの2本固定判定）を`EntryDirectionWithReentry`（配列ベース、可変長の窓）へ置き換えた。新規input `InpMeanReversionMaxReentryBars`（既定3、`mean_reversion_max_reentry_bars`）で、Band外側へのブレイクから何本以内の復帰を許可するか外部パラメータ化する。ブレイク（Reentry待ち開始）が起きた最初の確定足からの経過本数（gap）を、窓内の連続ブレイク本数（streak）として算出し、streakが窓の境界（`max_reentry_bars`本）に達している場合のみ、その1本先（`max_reentry_bars+2`本目）のBand外側継続有無を追加参照して「ブレイクが窓より前から継続していたか（期限切れ）」を判定する設計とした。これにより、復帰した確定足の直前の足（touch）がまだBand外側だった場合のみを新規の復帰事象として扱い（既に内側へ戻っていた足がある場合はその時点で判定済みのはずなので二重に発火しない＝同一ブレイクからの複数回エントリー防止）、`MaxReentryBars=1`では実質的に従来の「次の1本で復帰」と同等になる（単発ブレイクの場合は完全一致。ブレイクが2本以上継続していた場合は、従来実装にはなかった期限切れ判定が新たに働き拒否する、より厳密な挙動になる）。SL/TP・Range Filter・強制決済・時間切れ決済・リスク管理・Magic Number識別など、他のロジックは一切変更していない。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`（`EntryDirection`を`EntryDirectionWithReentry`へ置換、`ReadReentryWindow`新設、`Evaluate`を窓読み取りへ変更）・`mt5/Include/Core/Config.mqh`（`mean_reversion_max_reentry_bars`追加、既定3、`ValidateConfig`に1以上の制約追加）・`mt5/Experts/CoreEA.mq5`（`InpMeanReversionMaxReentryBars`追加）・`mt5/Tests/TestTrendFollowingRules.mq5`（`SetReentryWindow3`/`SetReentryWindow5`ヘルパー新設、Entry関連アサーションを新API・新シナリオ（MaxReentryBars=1の従来相当ケース・期限切れケース、MaxReentryBars=3の境界成立ケース・期限切れケース、SELL対称ケース、不正入力ケース）へ全面更新）・`docs/configuration.md`。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・MQL5 Script Test 9件全PASS（新規Reentry Windowアサーション含む、ログで個別PASS確認済み）・`.\tools\release-gate.ps1 -Mode Development`全体PASS。**未実施**: Strategy Tester実データ検証（`InpEnableMeanReversionStrategy`は既定値false据え置き）。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する。
+
+* [x] **保有中レンジポジションの強制決済条件を、ユーザー指示によりRange Filter（CI/ADX閾値）の一時的な跨ぎで反応しない設計へ修正する（2026-08-24実施）。** それまでの`IsRangeStillValid`は、新規エントリー用のRange Filter（CI>60かつADX<25）が保有中に1バーでも解除されると即座に決済していたが、CI/ADXは指標のノイズで閾値付近を頻繁に跨ぐため過剰反応（ホイッスル）の懸念があった。ユーザー指示により、Range Filterは新規エントリー条件としてのみ用い、保有中ポジションの決済判断からは完全に除去した。代わりに、レンジ崩壊を示すより強い2条件（(a)レンジ高値/安値の確定足ブレイク、(b)ADX急伸）を新設し、既存のBB Width急拡大と合わせた3条件で強制決済を判定する構成へ変更した。(a)は従来Bollinger Bandを参照していた`IsRangeBreak`を、実際の直近スイング高安値（`ReadRecentRange`、SL算出と同じ参照）を参照するよう変更（統計的な構成物であるBandではなく価格構造そのものを見る、より強い条件への変更）。(b)は新設`CMeanReversionExitRules::IsAdxSurging`（ADXが`InpMeanReversionForcedExitAdxThreshold`＝既定30.0を超え、かつ直近確定足間で上昇中の両方を要求、単純な閾値跨ぎでは反応しない）。あわせて、エントリー条件とポジション強制決済条件をコード上も明確に分離するというユーザー指示に従い、`CMeanReversionRules`を`CMeanReversionEntryRules`（Range Filter・Reentry Window付きEntry判定・SL/TP算出）と`CMeanReversionExitRules`（レンジブレイク・ADX急伸・BB Width急拡大）の2クラスへ分割した。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`（`CMeanReversionRules`を`CMeanReversionEntryRules`/`CMeanReversionExitRules`へ分割、`IsRangeBreak`の参照をBandから直近スイング高安値へ変更、`IsAdxSurging`新設、`IsRangeStillValid`からRange Filterチェックを除去しADX急伸チェックを追加）・`mt5/Include/Core/Config.mqh`（`mean_reversion_forced_exit_adx_threshold`追加、既定30.0、`ValidateConfig`に0<x<=100の制約追加）・`mt5/Experts/CoreEA.mq5`（`InpMeanReversionForcedExitAdxThreshold`追加）・`mt5/Tests/TestTrendFollowingRules.mq5`（`CMeanReversionRules::`参照を`CMeanReversionEntryRules::`/`CMeanReversionExitRules::`へ更新、`IsAdxSurging`のアサーション5件・`IsRangeBreak`の未方向ケース1件を追加）・`docs/configuration.md`。エントリー条件（Range Filter・Reentry Window・SL/TP算出）・時間切れ決済・Magic Number識別・他の安全機構は一切変更していない。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・MQL5 Script Test 9件全PASS（新規`IsAdxSurging`アサーション含む、ログで個別PASS確認済み）・`.\tools\release-gate.ps1 -Mode Development`全体PASS。**未実施**: Strategy Tester実データ検証（`InpEnableMeanReversionStrategy`は既定値false据え置き）。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する。
+
+* [x] **上記のRange Filter解除トリガー（このセッション中に一時`IsRangeQualityLost`＝強制決済専用のCI/ADX別閾値へ差し戻されていた）を、ユーザー指示により「警戒状態＋猶予期間」の状態機械へ再修正する（2026-08-25実施）。** Range Filterが1バーでも解除されると即座に決済する挙動は、レンジが一時的に崩れただけでもTP到達前に決済される頻度が高いという問題を残したまま（`IsRangeQualityLost`は判定式こそ変わっていたが、依然として「解除を検知した確定足で即決済」という即時性は同じだった）。ユーザー指示により、Range Filter自体の判定条件（`CMeanReversionEntryRules::IsRangeFilterActive`、CI>60かつADX<25、エントリーと完全に同一）は一切変更せず、保有ポジションの決済判断だけを「解除を検知したら即決済」から「解除を検知したら警戒状態へ移行し、最大`InpMeanReversionRangeExitGraceBars`本（既定3、新規input）以内に確定足Closeが直近レンジ高値/安値を明確にブレイクした場合のみ決済、猶予期間内にRange Filterが再成立すれば通常状態へ復帰、猶予期間超過時は決済せず既存SL/TP等の管理に委ねる」という状態機械へ変更した。`IsRangeQualityLost`（強制決済専用のCI/ADX別閾値、`mean_reversion_forced_exit_adx_threshold`/`_choppiness_max`）は廃止し、既存のRange Filter閾値をそのまま再利用する設計に統一した（パラメータの二重管理を解消）。ticket単位の警戒状態は新設`CRangeExitGraceTracker`（`MeanReversionStrategy.mqh`内、`CTimeStopTracker`と同じ「レコードの有無で状態を表す」設計だがStrategy層がTrading層へ依存しないよう同ファイル内に定義）で追跡し、`IsRangeStillValid`のシグネチャに`ticket`引数を追加した。BB Width急拡大は警戒状態と独立した常時有効な条件として維持（変更なし）。あわせて、強制決済回数・TP到達率・SL到達率を区別できるようにという要望に応え、既存の監査イベント`RANGE_EXIT`（reason_code別に既に区別可能だった）をPython側`python/analysis/trade_breakdown.py`でも`TIME_STOP_EXIT`と同じパターンで結合するよう拡張し（`range_exit_reason_code`/`range_exit_triggered`列、`range_exit_summary()`、Markdownレポートへの新セクション）、実際にレポートから参照可能にした。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`（`IsRangeQualityLost`削除、`CRangeExitGraceTracker`新設、`IsRangeStillValid`を状態機械へ全面書き換え、`ElapsedGraceBars`ヘルパー追加）・`mt5/Include/Core/Config.mqh`（`mean_reversion_forced_exit_adx_threshold`/`_choppiness_max`削除、`mean_reversion_range_exit_grace_bars`追加、既定3）・`mt5/Include/Core/EAController.mqh`（`IsRangeStillValid`呼び出しへ`ticket`引数追加、コメント更新）・`mt5/Experts/CoreEA.mq5`（`InpMeanReversionForcedExitAdxThreshold`/`InpMeanReversionForcedExitChoppinessMax`削除、`InpMeanReversionRangeExitGraceBars`追加）・`mt5/Tests/TestTrendFollowingRules.mq5`（`IsRangeQualityLost`のアサーション6件を削除、状態機械はticket単位の状態を要するため`IsTrendStillValid`と同様に静的関数テストの対象外である旨をコメントで明記）・`docs/configuration.md`・`python/analysis/trade_breakdown.py`（`_extract_range_exit_context`・`range_exit_summary`新設、`range_exit_reason_code`/`range_exit_triggered`列、Markdownレポート新セクション）・`python/tests/test_trade_breakdown.py`（新規アサーション3件）・`contracts/trade-breakdown-report.schema.json`（`range_exit`プロパティ追加）。エントリー条件（Range Filter判定式・Reentry Window・SL/TP算出）・時間切れ決済・Magic Number識別・他の安全機構は一切変更していない。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・MQL5 Script Test 9件全PASS・Python単体テスト121件全PASS（`test_trade_breakdown.py`新規3件含む）・`.\tools\release-gate.ps1 -Mode Development`全体PASS。**未実施**: Strategy Tester実データ検証（`InpEnableMeanReversionStrategy`は既定値false据え置き）。状態機械（警戒状態・猶予期間の遷移）自体は、ticket単位の永続状態とライブ確定足データを要するため、`IsTrendStillValid`と同様に本セッションでは静的単体テストの対象外とした（実データ検証はStrategy Tester側で行う必要がある、詳細は未実施）。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する。
+
+* [x] **上記の新仕様（Band外側ブレイク→Reentry Window内復帰、Choppiness＋ADX複合Range Filter、専用Magic Number、強制決済・独立Time Stop）について、未実施だったStrategy Tester実データ検証をTrain区間で実施する（ユーザー依頼「レンジ相場逆張りロジックを変更したため、再度検証してください」、2026-08-24実施）。** 検証対象はコミット`4391801`（`git status`はクリーン、作業ツリーはコミット済み状態と完全一致）の既定パラメータ（`InpMeanReversionChoppinessMin=60.0`・`InpMeanReversionAdxMax=25.0`・`InpMeanReversionMaxReentryBars=3`・`InpMeanReversionStopAtrMultiple=1.0`・`InpMeanReversionTakeProfitMode=0`・`InpMeanReversionBbWidthLookback=20`・`InpMeanReversionBbWidthExpansionRatio=1.5`・`InpMeanReversionMaxHoldingBars=20`・`InpMeanReversionMagicNumber=26072002`）。
+
+  **後方互換性の確認**: `InpEnableMeanReversionStrategy=false`（既定）でTrain区間を再実行し、直前結果（取引数39・純損益+30,801円・PF1.173543）と完全一致することを確認した（`results/backtests/20260824-201301-USDJPY-H1/`）。
+
+  **Train区間での検証結果**（`InpEnableMeanReversionStrategy=true`、既定パラメータ、`results/backtests/20260824-201448-USDJPY-H1/`）:
+
+  | 構成 | 取引数 | 純損益 | PF | Sharpe |
+  |---|---|---|---|---|
+  | 平均回帰無効（参考、既存ベースライン） | 39 | +30,801円 | 1.174 | +0.369 |
+  | **平均回帰有効・新仕様・既定パラメータ** | 44 | **+20,780円** | **1.111** | **+0.324** |
+
+  戦略別内訳: BREAKOUT 28件・+49,514円・PF1.40（トレンドフォロー、既存とほぼ同水準）／PULLBACK 11件・-18,693円・PF0.65（トレンドフォロー、既存とほぼ同水準）／**MEAN_REVERSION 5件・-10,041円・PF0.07・勝率20%**（新規）。
+
+  **旧仕様との比較**: 旧仕様（RSI＋Band接触のみ、Choppiness単独Filter）は13件全敗・-32,574円だった。新仕様は5件・1勝4敗・-10,041円で、**取引数・損失額とも大幅に縮小し、合算結果への悪影響は明確に軽減された**（合算純損益: 旧-1,472円→新+20,780円）。ただし依然として平均回帰単体は正味マイナスであり、既存トレンドフォロー戦略の収益を目減りさせている状態は変わらない。
+
+  **機構の動作確認**: 5件全ての`close_reason`が`EXPERT`（EA発の強制決済）であり、SL・TPいずれの到達でもなかった。保有時間は全件1〜2時間（H1で1〜2本）と極めて短く、新設の`EvaluateMeanReversionForcedExits`（Range Filter解除／レンジブレイク／BB Width急拡大）が意図どおり発火していることを確認した。個別にどの条件が発火したかは監査JSONLへ構造化記録されておらず（`PrintFormat`のコンソールログのみ）、本ラウンドでは判別していない（残存課題として後述）。`SYSTEM_ERROR`が1件（`INVALID_TRADE_GEOMETRY`）記録されたが、これはSL/TP幾何整合性チェックによるfail-safeな候補拒否であり、発注や既存ポジション管理には影響していない。
+
+  **総合評価: 新仕様は旧仕様からの明確な改善だが、平均回帰単体としては依然として収益に寄与していない。** 全5件がSL・TP到達前にRange Filter解除等の強制決済で切り上げられていることから、**「Entry条件（Choppiness≥60かつADX<25という厳格な複合条件）が成立する瞬間は、その状態自体が長続きしにくい」**という構造的な問題が示唆される。エントリーが成立するほど厳格なレンジ状態を要求すると、その状態はほぼ同時に終わりやすく、平均回帰が効果を発揮する前に強制決済されてしまう可能性が高い。
+
+  **残存課題**:
+  1. Entry条件とExit条件（強制決済）の厳格さのバランスが取れておらず、エントリー直後に強制決済される構造的パターンが疑われる。強制決済側の条件（特にBB Width Expansion Ratio=1.5、比較的厳しい）を緩めるか、Entry条件を緩めて母数を増やすか、いずれかの検討が必要。
+  2. 強制決済の発火理由（RANGE_FILTER_RELEASED/RANGE_BREAK/BB_WIDTH_EXPANSION）が監査JSONLに構造化記録されておらず、5件それぞれの正確な原因を機械的に特定できなかった。原因分析を今後も行う場合は、`TIME_STOP_EXIT`と同様の専用監査イベント追加を検討する必要がある。
+  3. n=5と極めて少数のサンプルであり、本セッションで繰り返し指摘してきたとおり単一Train区間・少数サンプルからの結論は過学習リスクを伴う。良化・悪化どちらの方向についても断定は避けるべき。
+  4. `InpEnableMeanReversionStrategy`は既定値false（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。
+
+* [x] **レンジ戦略の強制決済（`EvaluateMeanReversionForcedExits`/`EvaluateMeanReversionTimeStopExits`）の発火理由を判別できるよう、専用監査イベント`RANGE_EXIT`を追加する（ユーザー依頼、2026-08-24実施）。** 既存の`TIME_STOP_EXIT`（トレンド戦略のTime Stop専用診断イベント）と同じ設計パターンを踏襲し、ローカル監査のみ（Telemetry契約は変更しない）で`position_ticket`・`reason_code`（`RANGE_FILTER_RELEASED`/`RANGE_BREAK`/`BB_WIDTH_EXPANSION`/`MEAN_REVERSION_MAX_HOLDING_BARS`のいずれか）・`elapsed_bars`を記録する。
+
+  実装過程で2件の不具合を発見・修正した。(1) `mt5/Include/Logging/TradeLogger.mqh`の`CTradeLogRules::SafeEventType`（監査イベント種別の許可リスト）に`RANGE_EXIT`を追加しないと、ローカル監査ログへの書き込み自体が黙って失敗する構造だった（2026-08-17に`TIME_STOP_EXIT`で発生した既知の不具合パターンと同種、TASKS.md該当節参照）。(2) 決済実行（`CloseOnSignalInvalidation`/`CloseOnTimeStop`）の**後**に`PositionGetString`/`PositionGetInteger`で`symbol`・`position_identifier`を取得しようとしていた箇所が2か所あり、決済済みポジションに対する取得順序として不安全だったため、既存の`EvaluateTimeStopExits`と同じ安全な順序（決済実行**前**に必要な識別子を確保する）へ修正した。(3) `python/analysis/reports.py`の`SUPPORTED_AUDIT_EVENTS`（監査JSONLの許可イベント種別、厳格な集合一致チェック）に`RANGE_EXIT`が含まれておらず、`RANGE_EXIT`イベントを含む監査ログに対し`python.analysis.reports`の実行が`ValueError: unsupported audit event type`で失敗することを実行時に発見・修正した（`python/analysis/trade_breakdown.py`は許容的な実装のため影響なし）。
+
+  変更ファイル: `mt5/Include/Core/EAController.mqh`（`EvaluateMeanReversionForcedExits`・`EvaluateMeanReversionTimeStopExits`へ`RANGE_EXIT`監査呼び出しと識別子取得順序の修正）・`mt5/Include/Logging/TradeLogger.mqh`（許可リストへ追加）・`python/analysis/reports.py`（`SUPPORTED_AUDIT_EVENTS`へ追加）。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS。既定値（`InpEnableMeanReversionStrategy=false`）でTrain区間を再実行し、直前結果（取引数39・純損益+30,801円・PF1.173543）と完全一致することを確認し、後方互換性を実証した（`results/backtests/20260824-202925-USDJPY-H1/`）。`InpEnableMeanReversionStrategy=true`・既定パラメータでTrain区間を再実行し（`results/backtests/20260824-203106-USDJPY-H1/`）、取引数・純損益（44件・+20,780円）が前回ラウンドと完全一致すること（純粋加算のみで挙動に影響しないことの確認）、および`RANGE_EXIT`イベントが5件正しく記録されることを確認した。`.\tools\release-gate.ps1 -Mode Development`全体（必須文書チェック・秘密情報スキャン・JSON contracts検証・Python Phase12テスト119件・MQL5コンパイル・MQL5 Script Test）もPASSした。
+
+  **発火理由の内訳が判明**: 前ラウンドで残存課題としていた「5件の強制決済の内訳が不明」という点が解消された。5件中**4件が`RANGE_FILTER_RELEASED`**（Choppiness≥60かつADX<25という複合条件が、エントリー成立直後の0〜2本以内に再び満たされなくなった）、**1件が`RANGE_BREAK`**（確定足Closeがレンジ外へ明確にブレイク）で、`BB_WIDTH_EXPANSION`・`MEAN_REVERSION_MAX_HOLDING_BARS`の発火は0件だった。これは前ラウンドで立てた仮説（「エントリーが成立するほど厳格なレンジ状態は、その状態自体が長続きしにくい」）を実データで裏付ける結果であり、**Range Filterの条件自体（特にADX上限25という閾値）が、成立から解除までの継続時間を極端に短くしている主因である可能性が高い**。
+
+  **残存課題**: (1) `RANGE_FILTER_RELEASED`が支配的要因と判明したため、次の調整候補はADX上限（`InpMeanReversionAdxMax`、既定25）またはChoppiness閾値（`InpMeanReversionChoppinessMin`、既定60）の緩和検討だが、これは単一Train区間の観測に基づく後付け調整になりやすく、過学習リスクに注意が必要（本セッションで繰り返し確認された罠と同種）。(2) n=5と極めて少数のサンプルのままであり、発火理由の内訳（4:1:0:0）も統計的に脆弱。(3) `InpEnableMeanReversionStrategy`は既定値false（無効）のまま据え置き。
+
+* [x] **上記残存課題(1)を受け、Choppiness閾値（`InpMeanReversionChoppinessMin`）を緩める方向でスイープする（ユーザー依頼、2026-08-24実施）。** Fold1 Train（16か月、n=5と少数）だけではサンプル不足が懸念されたため、ユーザー指定によりFold5 Train（2020〜2022、3年間、既存ベースラインで93取引）も追加で用いた。
+
+  **Fold1 Train（2017-09〜2018-12）でのスイープ結果**（`InpMeanReversionAdxMax`等は既定値のまま、Choppiness閾値のみ変更）:
+
+  | Choppiness閾値 | 合算取引数 | 合算純損益 | 合算PF | MR取引数 | MR純損益 | MR PF | MR勝率 |
+  |---|---|---|---|---|---|---|---|
+  | 30（大幅に緩和） | 87 | -55,231円 | 0.802 | 48 | -85,957円 | 0.187 | 17% |
+  | 35 | 81 | -59,197円 | 0.787 | 42 | -89,923円 | 0.141 | 17% |
+  | 40 | 74 | -52,907円 | 0.805 | 35 | -82,322円 | 0.148 | 17% |
+  | 45 | 61 | -25,948円 | 0.895 | 22 | -57,307円 | 0.156 | 18% |
+  | 50 | 52 | +2,138円 | 1.010 | 13 | -28,615円 | 0.116 | 15% |
+  | 55（既定60に近い） | 46 | +18,377円 | 1.095 | 7 | -12,224円 | 0.290 | 29% |
+
+  **Fold5 Train（2020〜2022）での追試結果**（3点のみ、傾向確認目的）:
+
+  | Choppiness閾値 | 合算取引数 | 合算純損益 | 合算PF | MR取引数 | MR純損益 | MR PF | MR勝率 |
+  |---|---|---|---|---|---|---|---|
+  | 40（緩和） | 96 | -166,809円 | 0.604 | 46 | -178,902円 | 0.019 | 4% |
+  | 50 | 47 | -45,486円 | 0.762 | 19 | -74,444円 | 0.007 | 5% |
+  | 60（既定） | 107 | +127,869円 | 1.294 | 14 | -40,988円 | 0.049 | 14% |
+
+  **総合評価: 「緩める方向」は完全に反証された。二つの独立したTrain区間（Fold1・Fold5）の両方で、Choppiness閾値を下げるほど取引数は増えるが、勝率・PF・純損益のいずれも一貫して悪化するという、極めて明瞭な単調悪化パターンが再現した。** Fold5では閾値40でMR勝率がわずか4%（46件中2件未満の勝ち）まで落ち込み、既定値60（勝率14%）と比べても著しく悪い。これはユーザーが当初想定した仮説（「厳格すぎる条件がRANGE_FILTER_RELEASEDを招くなら、緩めれば改善するはず」）とは逆の結果であり、**既定の厳格な閾値（Choppiness≥60）は、たとえ早期強制決済を頻発させているとしても、緩めた場合よりも損失を抑える方向に機能している**ことを示す。2つの独立した区間で同一方向の結果が再現しているため、単一区間の過学習という通常の懸念は低いと判断できる。
+
+  **残存課題**: (1) 「緩める」方向の調整は明確に否定されたが、「さらに厳しくする」方向（閾値65・70等）や、ADX上限側の調整（`InpMeanReversionAdxMax`を25より厳格化）は未検証。(2) MEAN_REVERSIONのPF・勝率はどの閾値でも1.0/50%を大きく下回っており、閾値調整だけでは正のエッジを作れない可能性が高い。エントリー条件・SL/TP設計自体の再考が必要かもしれない。(3) `InpEnableMeanReversionStrategy`は既定値false（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。
+
+* [x] **閾値を下げた場合の損失原因の内訳分析を実施する（ユーザー依頼、2026-08-24実施）。** 分析の過程で、`CTradeAnalyticsTracker`（MFE・MAE追跡）が`m_config.magic_number`（トレンド戦略の主Magic Number）のみでポジションをフィルタしており、専用Magic Numberを使うレンジ戦略のポジションを一切追跡していなかった（レンジ戦略追加時の見落とし）ため、`mfe`/`mae`/`mfe_r`/`mae_r`が全件NaNになる不具合を発見・修正した。`PositionManager::IsManagedPosition`の3引数オーバーロードと同じ設計（`secondary_magic_number`引数、既定0＝セカンダリなし）で`CTradeAnalyticsTracker::Initialize`を拡張し、`EAController`の初期化呼び出しへ`m_config.mean_reversion_magic_number`を渡すよう変更した。
+
+  変更ファイル: `mt5/Include/Logging/TradeAnalyticsTracker.mqh`（`Initialize`にsecondary_magic_number引数追加、`Update`のフィルタ条件拡張）・`mt5/Include/Core/EAController.mqh`（初期化呼び出しの引数追加）。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS。既定値でTrain区間を再実行し、直前結果（取引数39・純損益+30,801円・PF1.173543）と完全一致することを確認し、後方互換性を実証した（`results/backtests/20260824-212459-USDJPY-H1/`）。
+
+  **損失原因の内訳（`RANGE_EXIT`理由コード別、Fold1 Train）**:
+
+  | Choppiness閾値 | RANGE_FILTER_RELEASED | RANGE_BREAK | BB_WIDTH_EXPANSION | Time Stop |
+  |---|---|---|---|---|
+  | 30（緩） | 23（48%） | 13（27%） | **11（23%）** | 1（2%） |
+  | 40（緩） | 19（54%） | 11（31%） | **4（11%）** | 1（3%） |
+  | 45 | 14（64%） | 8（36%） | 0（0%） | 0（0%） |
+  | 50 | 10（77%） | 3（23%） | 0（0%） | 0（0%） |
+  | 55（既定60に近い） | 5（71%） | 2（29%） | 0（0%） | 0（0%） |
+
+  `RANGE_FILTER_RELEASED`はどの閾値でも支配的要因（48〜77%）で構成比は大きく変わらないが、**`BB_WIDTH_EXPANSION`（BB幅の急拡大）が閾値45以上では一度も発生しないのに対し、閾値30・40では11〜23%を占める新規の失敗モードとして出現する**。
+
+  **MFE・MAE分析（Choppiness閾値40 vs 55、Fold1 Train）**: 修正済みのMFE/MAE追跡データを用いて比較したところ、閾値40（緩、n=35）は平均MFE_R **0.205**（リスクの20.5%相当まで含み益が伸びた時点で反転）に対し、閾値55（厳、n=7）は平均MFE_R **0.317**と、より大きく含み益を伸ばせていた（MAE_Rは両者ともほぼ同水準、-0.41前後）。負けトレードのうち一度でも含み益になった割合は、閾値40で82.8%、閾値55で100%。
+
+  **総合評価: 閾値を緩めると、単に「弱い」平均回帰セットアップ（反発の伸びが小さい、MFE_Rが低い）が大量に混入し、さらにBB幅急拡大という閾値45以上では存在しなかった新しい失敗モードまで発生するようになる。** Choppiness Indexが高いほど、レンジの「往復の純度」が高く、真の平均回帰が起きやすい条件であることを裏付ける結果であり、閾値の緩和はこの「純度」を犠牲にする方向の変更であるため、単純な緩和では改善しない。
+
+  **「閾値を下げつつ損失を回避する方法」の検討（未検証の仮説、提案のみ）**:
+  1. **BB幅の急拡大を事前に排除する**: エントリー時点でのBB幅が過去平均に対して既に拡大傾向にある場合は候補から除外する（現在は決済側の`IsBbWidthExpanded`しか使っていないが、同じ判定をEntry側のフィルタとしても使う）。閾値30・40で新たに出現した`BB_WIDTH_EXPANSION`（11〜23%）を狙い撃ちで防げる可能性がある。
+  2. **MFE_Rに応じた早期の部分利確・建値化**: 閾値を緩めた場合の平均MFE_Rが0.2程度に留まることを踏まえ、より小さいR（例: 0.15〜0.2R）で部分利確または建値ストップへ移行する仕組みを追加すれば、反転前に一部の含み益を確定できる可能性がある。ただし現在は5〜35件という少数サンプルからの推定であり、この対策の効果自体を別途検証する必要がある。
+  3. **どちらも未検証の仮説であり、本ラウンドでは提案に留める**。過去の類似ケース（B案・D案・I案）と同様、新しい仮説をTrain区間で検証してから採用可否を判断する必要がある。閾値を緩めること自体を単独で採用する根拠は、本ラウンドの分析でも得られなかった。
+
+* [x] **レンジポジションの強制決済条件を再設計する（別セッションによる実装、2026-08-24実施、commit `de89651`）。** 前回分析で判明した「`RANGE_FILTER_RELEASED`（Choppiness/ADXの一時的な閾値跨ぎ1本のみで反応）が支配的要因であり、決済タイミングがMAEに対して平均73.5%の水準（ほぼ最悪値近辺）に達してから発動する」という根本原因を踏まえ、エントリー条件（`CMeanReversionEntryRules`、Range Filter＝Choppiness/ADX閾値）と保有中ポジションの強制決済条件（`CMeanReversionExitRules`）をクラスレベルで分離。強制決済条件を以下へ変更した。
+  1. `RANGE_FILTER_RELEASED`（Choppiness/ADXの閾値跨ぎ）を**削除**。エントリー条件のRange Filterは新規エントリー成立判定にのみ使用し、保有中ポジションの決済判断には使わない方針へ変更。
+  2. `RANGE_BREAK`: 判定基準をBollinger Bandから、直近`InpMeanReversionBbPeriod`本の実際のスイング高安値（Recent Range）へ変更。
+  3. `ADX_SURGE`（新規）: ADXが新設の`InpMeanReversionForcedExitAdxThreshold`（既定30.0、Range Filterの`InpMeanReversionAdxMax`＝25より高い閾値）を超え、かつ直近確定足間で上昇中の場合のみ発動（閾値跨ぎの一時的な上下動では反応しない）。
+  4. `BB_WIDTH_EXPANSION`は変更なし。時間切れ決済（`MEAN_REVERSION_MAX_HOLDING_BARS`）も変更なし。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`（`CMeanReversionRules`を`CMeanReversionEntryRules`／`CMeanReversionExitRules`へ分離、`IsRangeStillValid`のロジック変更）・`mt5/Include/Core/Config.mqh`（`mean_reversion_forced_exit_adx_threshold`追加、既定30.0、Validationに範囲チェック追加）・`mt5/Experts/CoreEA.mq5`（`InpMeanReversionForcedExitAdxThreshold`追加）・`docs/configuration.md`（強制決済条件の記述更新）・`mt5/Tests/TestTrendFollowingRules.mq5`（クラス名変更に伴うテスト更新）。同commitに、前回ラウンドで実施した`CTradeAnalyticsTracker`のsecondary_magic_number対応（MFE/MAE追跡バグ修正）も含まれている。
+
+  **検証**（本ラウンド実施）: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS・`.\tools\release-gate.ps1 -Mode Development`全体（必須文書チェック・秘密情報スキャン・JSON contracts検証・Python Phase12テスト119件・MQL5コンパイル・MQL5 Script Test）もPASS。Fold1 Train（2017-09〜2018-12、`results/backtests/20260824-224338-USDJPY-H1/`）とFold5 Train（2020-01〜2022-12、`results/backtests/20260824-224506-USDJPY-H1/`）の2区間で既定パラメータ（`InpMeanReversionChoppinessMin=60`・`InpMeanReversionForcedExitAdxThreshold=30`）を用いて実データ検証した。
+
+  | 区間 | 合算取引数 | 合算純損益 | 合算PF | トレンドのみ取引数 | トレンドのみ純損益 | MR取引数 | MR純損益 | MR勝率 |
+  |---|---|---|---|---|---|---|---|---|
+  | Fold1 Train | 41 | +24,432円 | 1.133 | 39 | +30,426円 | 2 | -5,994円 | 0% |
+  | Fold5 Train | 98 | +143,424円 | 1.347 | 93 | +166,791円 | 5 | -23,367円 | 0% |
+
+  **旧ロジック（`RANGE_FILTER_RELEASED`あり、前回検証時点）との比較**: Fold5 Train・閾値60において、MR取引数は14件→**5件**、MR純損益は-40,988円→**-23,367円**、合算純損益は+127,869円→**+143,424円**（改善）。取引数が大幅に減った主因は、強制決済が発動しにくくなり保有時間が延びたため（`elapsed_bars`は旧ロジックの1〜3本から、新ロジックでは2〜20本へ延長）、同一期間内に成立する往復回数自体が減ったことによる。
+
+  **決済理由の内訳**: Fold1（`ADX_SURGE`1件・`MEAN_REVERSION_MAX_HOLDING_BARS`1件）、Fold5（`ADX_SURGE`5件、100%）。**`RANGE_BREAK`（新設のRecent Range構造ブレイク判定）は両区間で1件も発動しなかった**。新設した3条件のうち、実際に機能しているのは`ADX_SURGE`のみで、企図した「レンジ崩壊のより強い構造的シグナル」としての`RANGE_BREAK`は未検証のまま（本データでは出番がなかった）。
+
+  **残存する根本問題**: MFE/MAE（修正済み追跡データ）を突き合わせたところ、Fold5の5敗全てで、決済時点のpnlがMAEに対して平均**71.2%**の水準（49〜89%）に達していた時点で決済されており、これは旧ロジックの`RANGE_FILTER_RELEASED`時点の平均73.5%とほぼ同水準だった。**強制決済のトリガー条件を変更しても、「決済がほぼ最悪値近辺で発動する」という非対称な問題自体は解消されていない**。Fold1のticket94はMFE 4,903まで含み益を伸ばした後、`MEAN_REVERSION_MAX_HOLDING_BARS`（20本経過）まで持ち越されて-4,773の損失で終わっており、含み益を保全する仕組みが無いまま反転を許している典型例。
+
+  **総合評価: 今回の再設計は、決済条件を「弱いシグナル（閾値跨ぎ1本）」から「より強いシグナル（ADX急伸・実際のレンジ構造ブレイク）」へ変更するという方向性は妥当であり、Fold5では取引数・損失額とも縮小し合算パフォーマンスも改善した。しかし核心的な問題（決済がMAE近辺まで引きずられてから発動する非対称性）は未解決であり、MR単体の勝率は両区間とも0%（n=2、n=5と極めて少数）のままである。** 取引数が大幅に減ったことでサンプルがさらに小さくなり、本ラウンドの結論の頑健性は前回以上に低い。
+
+  **残存課題**:
+  1. n=2・n=5という極めて少数のサンプルであり、勝率0%という結果を含め、統計的な結論を出すには他Foldでの追試が必須。
+  2. `RANGE_BREAK`が両区間で1度も発動しておらず、この条件の実効性自体が未検証。より長い/別の期間で発動事例を集める必要がある。
+  3. 決済のタイミングがMAE近辺に偏る根本問題（前回ラウンドで指摘、今回も再現）は未解決。前回提案した「MFE_Rに応じた早期の部分利確・建値化」等、含み益保全の仕組みを別途検討する必要があるが、これも未検証の仮説。
+  4. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。
+
+* [x] **強制決済条件を「CI<50 OR ADX>30」相当（ADX_SURGE、上昇中要求）から「CI<50 AND ADX>30」（新設`RANGE_QUALITY_LOST`、上昇中要求を削除）へ変更する（ユーザー依頼、2026-08-24実施）。** ユーザー確認により、既存の`ADX_SURGE`を置き換える変更として実装した。`CMeanReversionExitRules::IsRangeQualityLost(choppiness,adx,choppiness_max,adx_min)`を新設し、`choppiness<choppiness_max && adx>adx_min`のAND条件のみで判定する（「上昇中」要求は削除）。新規config `mean_reversion_forced_exit_choppiness_max`（既定50.0）を追加、既存`mean_reversion_forced_exit_adx_threshold`（既定30.0）を流用。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`（`IsAdxSurging`を`IsRangeQualityLost`へ置換、`IsRangeStillValid`のロジック更新）・`mt5/Include/Core/Config.mqh`（`mean_reversion_forced_exit_choppiness_max`追加）・`mt5/Experts/CoreEA.mq5`（`InpMeanReversionForcedExitChoppinessMax`追加）・`docs/configuration.md`・`mt5/Tests/TestTrendFollowingRules.mq5`（テスト更新、6アサーション）。MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS。
+
+  **【重要】検証中に、この変更とは独立した既存の監査ログバグを発見した。** `EAController::OnTradeTransaction()`が`HistoryDealGetInteger(deal,DEAL_MAGIC)!=m_config.magic_number`（トレンド戦略の主Magic Numberのみ）でフィルタしており、`mean_reversion_magic_number`を考慮していない（初回コミットから存在する構造的な不備、レンジ戦略追加時に未更新）。`m_pending_closed_positions`（`TRADE_CLOSED`監査イベントの生成元）はこの同じフィルタの内側でのみ積まれるため、**レンジ戦略のポジションがSL/TPヒット（ブローカー側の自動決済）で決済された場合、`DEAL`・`TRADE_CLOSED`・`TRADE_ANALYTICS`の監査イベントが一切記録されない**。一方、EA自身が`CloseOnSignalInvalidation`/`CloseOnTimeStop`で能動的に決済した場合（`RANGE_BREAK`・`RANGE_QUALITY_LOST`・`BB_WIDTH_EXPANSION`・`MEAN_REVERSION_MAX_HOLDING_BARS`）は、決済リクエストがEA自身の呼び出しで完結するため`DEAL_MAGIC`が同期的に確定し、正しく記録される（`RANGE_EXIT`監査イベント自体は`OnTradeTransaction`を経由しない別経路のため、この不具合の影響を受けない）。
+
+  Fold5 Train（AND条件版）でMR CANDIDATE 26件・OrderSubmission 25件accepted・`RANGE_EXIT`イベント0件・`TRADE_CLOSED`（pattern=MEAN_REVERSION）0件という不自然な結果から発覚。Strategy Testerの生ログ（`TRADE_DEAL`行）とTester .htmレポートの総損益を突き合わせて検証した結果、25件全てのMRポジションが実際には正常にSL/TP等で決済されており（.htm総損益123,205円と、監査ログ由来のトレンドのみ集計166,737円との差-43,532円が、行方不明だったMR分の実際の純損益と一致）、**EAの発注・リスク管理・決済処理自体は正しく機能しているが、監査ログ（ローカルJSONL）だけが該当分を欠落させていた**ことを確認した。
+
+  **本セッションのMean Reversion戦略関連の分析全般への影響**: この不具合は本ラウンドで新たに発覚したが、`OnTradeTransaction`のロジック自体は初回コミットから不変であり、レンジ戦略を検証した過去のラウンド（II案実装以降の全ラウンド）は同一の欠落を抱えていたと考えられる。特に、EA強制決済（`RANGE_EXIT`）で決済された取引は相対的に記録されやすく、SL/TPで自然決済された取引（利益が伸びたトレードを含む可能性が高い）が相対的に記録されにくいという**非ランダムな欠落パターン**であるため、過去に報告した勝率・PF・取引数（特に「MR勝率0%」「RANGE_FILTER_RELEASED支配的」等の結論）は、実際の取引全体ではなく、EA強制決済で捕捉できた一部の取引のみに基づいていた可能性が高く、**過小・偏った推定だった**と考えられる。ただし、`RANGE_EXIT`イベント自体が示す「捕捉できた強制決済の理由内訳」自体は正しい（別経路のため）。
+
+  **Strategy Tester生ログとの突合により再構成した正しい実績（Fold1・Fold5 Train、変更前後）**:
+
+  | 区間 | 強制決済ロジック | MR取引数 | MR純損益 | MR勝率 | 合算取引数 | 合算純損益 |
+  |---|---|---|---|---|---|---|
+  | Fold1 Train | ADX_SURGE（変更前） | 12 | -12,507円 | 58.3% | 51（+1件保有中） | +17,919円 |
+  | Fold1 Train | RANGE_QUALITY_LOST（AND、変更後） | 12 | **-20,915円** | 58.3% | 51（+1件保有中） | +8,815円 |
+  | Fold5 Train | ADX_SURGE（変更前） | 25 | -45,526円 | 56.0% | 118 | +121,265円 |
+  | Fold5 Train | RANGE_QUALITY_LOST（AND、変更後） | 25 | **-43,532円** | 64.0% | 118 | **+123,205円**（Tester .htm総損益と完全一致） |
+
+  取引数・エントリー条件は変更していないため両ロジックで同数（12件・25件）。AND条件への変更は、Fold5では純損益・勝率とも改善（-45,526→-43,532円、56%→64%）した一方、Fold1では悪化した（-12,507→-20,915円、勝率は同数7勝のまま損失側の損切りが深くなった）。**方向性は区間により逆転しており、一貫した改善効果があるとは言えない。**
+
+  **総合評価: 今回のAND条件変更自体は実装・テストとも問題ない。しかし、本ラウンドで発見した監査ログ欠落バグは、これまでのMean Reversion戦略検証（II案実装以降の全ラウンド）の信頼性に疑義を生じさせる重大な問題であり、優先的な対応が必要と判断する。** 実際の売買判断・発注・リスク管理・SL/TP執行は正しく機能しており安全性への影響はないが、分析・意思決定の根拠となってきた集計値（勝率・PF・純損益・RANGE_EXIT理由別内訳の分母）の多くが不正確だった可能性が高い。
+
+  **残存課題**:
+  1. `OnTradeTransaction`の`DEAL_MAGIC`フィルタを`mean_reversion_magic_number`にも対応させる修正が必要（未実施、対応方針をユーザーに確認してから着手する）。
+  2. 修正後、II案（サイジングのレジーム適応、影響なし・adaptive sizingは別ガード）を除く、Mean Reversion戦略に関わる過去ラウンドの結論（Choppiness閾値スイープ、閾値60での損失原因分析、ADX_SURGE版の強制決済検証等）を再検証する必要がある。
+  3. Telemetry（HTTP送信）がこの監査ログと同じ経路の影響を受けるかは未確認（`InpTelemetryEnabled=false`のTester実行のため、本ラウンドでは検証できていない）。
+  4. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。
+
+* [x] **`OnTradeTransaction`の`DEAL_MAGIC`フィルタを`mean_reversion_magic_number`にも対応させ、過去のMR関連ラウンドを再検証する（ユーザー依頼、2026-08-25実施）。** `CPositionProtectionRules::IsManagedPosition`の3引数版（既存、プライマリ/セカンダリいずれかに一致すれば管理下と判定）を用い、`HistoryDealGetInteger(deal,DEAL_MAGIC)!=m_config.magic_number`という単純比較を`IsManagedPosition(magic,m_config.magic_number,m_config.mean_reversion_magic_number)`へ置換した。変更ファイル: `mt5/Include/Core/EAController.mqh`のみ（1箇所）。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS。`.\tools\release-gate.ps1 -Mode Development`（必須文書・秘密情報・JSON contracts・Python 119件・MQL5コンパイル・Script Test）全PASS。後方互換性: `InpEnableMeanReversionStrategy=false`でFold5 Trainを再実行し、取引数93・純損益+171,860円がII案実装当初の基準値と完全一致（`results/backtests/20260824-235401-USDJPY-H1/`）。効果確認: `InpEnableMeanReversionStrategy=true`（既定閾値60）でFold1・Fold5 Trainを再実行し、MR取引数（Fold1:12件、Fold5:25件）・純損益が、Strategy Tester生ログ（`TRADE_DEAL`）から独立に再構成した正しい値（前回ラウンドで算出）と完全一致することを確認した（Fold5合算純損益+123,205円はTester .htm総損益と一致、`results/backtests/20260825-000323-USDJPY-H1/`・`20260825-000853-USDJPY-H1/`）。**修正後は`DEAL`・`TRADE_CLOSED`・`TRADE_ANALYTICS`・`RANGE_EXIT`のいずれもMRポジションを漏れなく記録することを確認した。**
+
+  **過去のMR関連ラウンドの再検証（Choppiness閾値スイープ、修正済み監査ログで再実行）**:
+
+  | 区間 | 閾値 | MR取引数 | MR純損益 | MR勝率 | MR PF | 合算純損益 |
+  |---|---|---:|---:|---:|---:|---:|
+  | Fold1 Train | 30 | 97 | +14,477円 | 55.7% | 1.052 | +44,213円 |
+  | Fold1 Train | 35 | 91 | +10,345円 | 58.2% | 1.037 | +40,081円 |
+  | Fold1 Train | 40 | 80 | -34,195円 | 57.5% | 0.870 | -5,132円 |
+  | Fold1 Train | 45 | 59 | -22,521円 | 62.7% | 0.894 | +7,669円 |
+  | Fold1 Train | 50 | 40 | -72,612円 | 55.0% | 0.576 | -43,901円 |
+  | Fold1 Train | 55 | 23 | +5,891円 | 69.6% | 1.092 | +36,039円 |
+  | Fold1 Train | 60（既定） | 12 | -20,915円 | 58.3% | 0.530 | +8,815円 |
+  | Fold5 Train | 40 | 34 | -37,587円 | 55.9% | 0.701 | -18,241円 |
+  | Fold5 Train | 50 | 36 | -62,998円 | 52.8% | 0.586 | -35,576円 |
+  | Fold5 Train | 60（既定） | 25 | -43,532円 | 64.0% | 0.530 | +123,205円 |
+
+  **旧報告（監査ログ欠落バグの影響下）との比較で判明した誤り**: 旧報告では「MR勝率0〜29%」「閾値を緩めるほど単調に悪化」としていたが、修正後の正しいデータでは**MR勝率は全閾値で52〜70%**であり、「勝率0%」は誤りだった（EA強制決済で捕捉できていた少数の取引だけが低勝率に偏っていたため）。また「単調悪化」という傾向も再現せず、**両区間・全閾値でMR純損益・PFは閾値に対して非単調（ノイズ状）に変動する**ことが判明した。「閾値を緩める方向は完全に反証された」という前回の結論は撤回する。
+
+  **閾値60での損失原因の再分析（正しいデータで再実施）**: Fold5 Train（n=25、修正済みRANGE_EXIT・TRADE_ANALYTICS）を精査したところ、**25件全てがSL（9件）またはTP（16件）で直接決済されており、`RANGE_QUALITY_LOST`・`RANGE_BREAK`・`BB_WIDTH_EXPANSION`のいずれも一度も発動していなかった**（AND条件化により強制決済がほぼ発動しなくなったことの裏付け）。旧報告の「決済がMAE近辺まで引きずられる非対称性」という説明は、実際には母数の94%（117件中94件、旧集計での「行方不明」分）を欠いた状態での誤った結論であり、撤回する。
+
+  正しい損失原因は、**Take Profit（BB中心線）とStop Loss（Band外側+ATRバッファ）の非対称なリスクリワード比**である。平均利益 = 49,075円÷16件 = 3,067円、平均損失 = 92,607円÷9件 = 10,290円で、**平均損失は平均利益の約3.35倍**。64%という高い勝率にもかかわらず、1回あたりの損益サイズの非対称性だけでPF0.530（正味-43,532円）まで悪化している。これはBB中心線（basis、Band幅の中央）がBand外側+ATRバッファ（SL）よりも構造的にエントリー価格に近いことに起因する、設計上のリスクリワード問題であり、Choppiness閾値の調整では解決しない。
+
+  **総合評価: 監査ログ欠落バグの修正により、過去のMR戦略検証の結論の多くが不正確だったことが判明した。修正後のデータでは、MR戦略単体は「勝率は高いが1回あたりの損益が非対称（TPが近すぎる）」という、これまでとは全く異なる性質の課題を抱えていることが分かった。** Choppiness閾値・ADX関連の強制決済条件の調整は、少なくとも閾値60ではほぼ意味を持たない（強制決済が実質発動しないため）。
+
+  **残存課題**:
+  1. TP方式（`InpMeanReversionTakeProfitMode`、既定`MEAN_REVERSION_TP_BB_MIDDLE`）を`MEAN_REVERSION_TP_OPPOSITE_BAND`（反対側Band、より遠いTP）へ変更した場合にリスクリワード比が改善するかは未検証。
+  2. SL幅（`InpMeanReversionStopAtrMultiple`、既定1.0）を狭める、またはTPをより遠くする、のいずれかがPF改善に有効かは未検証であり、Train区間での個別検証が必要。
+  3. Choppiness閾値スイープの非単調性の原因（区間・閾値ごとに異なる相場構成による可能性）は未分析。
+  4. Telemetry（HTTP送信）が同じ監査経路の影響を受けていたかは引き続き未確認（`InpTelemetryEnabled=false`のTester実行のため）。
+  5. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。全結果は未コミット。
+
+* [x] **強制決済条件をレンジ相場判定（エントリー条件と同一のCI/ADX閾値）へ復帰し、TP方式を`MEAN_REVERSION_TP_OPPOSITE_BAND`へ変更して再検証する（ユーザー依頼、2026-08-25実施）。**
+
+  **強制決済条件の復帰**: `CMeanReversionExitRules::IsRangeQualityLost`（専用閾値によるAND条件）を削除し、`IsRangeStillValid`の該当箇所を`CMeanReversionEntryRules::IsRangeFilterActive(choppiness,adx,m_config.mean_reversion_choppiness_min,m_config.mean_reversion_adx_max)`の否定（reason_code=`RANGE_FILTER_RELEASED`）へ復帰した。あわせて、不要になった専用config `mean_reversion_forced_exit_adx_threshold`・`mean_reversion_forced_exit_choppiness_max`（struct・既定値・validation・`InpMeanReversionForcedExitAdxThreshold`/`InpMeanReversionForcedExitChoppinessMax`入力）を削除した。`RANGE_BREAK`（スイング高安値ベース）・`BB_WIDTH_EXPANSION`は変更していない。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`・`mt5/Include/Core/Config.mqh`・`mt5/Experts/CoreEA.mq5`・`docs/configuration.md`・`mt5/Tests/TestTrendFollowingRules.mq5`（`IsRangeQualityLost`用6アサーション削除、Range Filter解除判定は冒頭の`IsRangeFilterActive`アサーションで引き続きカバー）。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS・`.\tools\release-gate.ps1 -Mode Development`全PASS。後方互換性: `InpEnableMeanReversionStrategy=false`でFold1 Trainを再実行し、取引数39・純損益+30,801円が既知の基準値と完全一致（`results/backtests/20260825-014833-USDJPY-H1/`、config構造体からのフィールド削除が既存挙動へ影響しないことを確認）。
+
+  **TP方式変更**: `InpMeanReversionTakeProfitMode=1`（`MEAN_REVERSION_TP_OPPOSITE_BAND`）をTester ini上書きで指定し、強制決済条件の復帰版・変更前（BB Middle）双方と比較した。
+
+  **再検証結果（Fold1・Fold5 Train）**:
+
+  | 区間 | 強制決済条件 | TP方式 | MR取引数 | MR純損益 | MR勝率 | MR PF | RANGE_EXIT率 |
+  |---|---|---|---:|---:|---:|---:|---:|
+  | Fold1 Train | RANGE_QUALITY_LOST（変更前） | BB Middle | 12 | -20,915円 | 58.3% | 0.530 | 0%（0/12） |
+  | Fold1 Train | RANGE_FILTER_RELEASED（復帰後） | BB Middle | 12 | **-9,863円** | 58.3% | 0.637 | 33%（4/12） |
+  | Fold1 Train | RANGE_FILTER_RELEASED（復帰後） | Opposite Band | 13 | -21,468円 | 46.2% | 0.471 | 54%（7/13） |
+  | Fold5 Train | RANGE_QUALITY_LOST（変更前） | BB Middle | 25 | -43,532円 | 64.0% | 0.530 | 0%（0/25） |
+  | Fold5 Train | RANGE_FILTER_RELEASED（復帰後） | BB Middle | 25 | **-31,711円** | 48.0% | 0.407 | 56%（14/25） |
+  | Fold5 Train | RANGE_FILTER_RELEASED（復帰後） | Opposite Band | 28 | -37,224円 | 32.1% | 0.531 | 71%（20/28） |
+
+  **強制決済条件を戻したことによる影響（ユーザー質問への回答）**: 明確な問題は確認されなかった。むしろ、**両区間ともMR純損益が改善した**（Fold1: -20,915→-9,863円、Fold5: -43,532→-31,711円）。勝率は低下した（Fold1は同率、Fold5は64.0%→48.0%）が、`RANGE_FILTER_RELEASED`がエントリー直後の弱いレンジ状態を早期に検知して損失を小さいうちに打ち切るため、深いSL到達（1件あたり平均-10,290円）を一部回避できたことが要因と考えられる（勝率は下がるがPFは改善、Fold1: 0.530→0.637、Fold5: 0.530→0.407で悪化＝区間により効果が異なる点には注意）。取引数はFold1・Fold5とも変化なし（12件・25件、エントリー条件は変更していないため）。
+
+  **TP方式変更（反対側Band）の効果**: **両区間で悪化した**（Fold1: -9,863→-21,468円、Fold5: -31,711→-37,224円）。原因は、`RANGE_FILTER_RELEASED`を強制決済条件へ復帰させたことで、より遠いTP（反対側Band）に到達する前にレンジ状態が解除され強制決済される頻度が増加したため（RANGE_EXIT率: Fold1 33%→54%、Fold5 56%→71%）。TPを遠くしても、その前に強制決済で刈り取られてしまい、狙った利幅を享受できていない。
+
+  **総合評価: 強制決済条件をレンジ相場判定へ戻すこと自体は両区間で純損益を改善させた（勝率低下と引き換えに大きな損失を回避する効果）。一方、TP方式の変更（反対側Bandへ）は、強制決済条件との相互作用により両区間で悪化した。** 「エントリー条件と強制決済条件を分離する」という前回の設計変更は、少なくとも今回の2区間では純損益の面で悪化要因だったことになる。TP距離を伸ばす調整は、強制決済がエントリー条件と連動している現在の設計とは相性が悪く、両立させるには別のアプローチ（例: 強制決済とは独立した最小保有時間の確保、TP距離とRange Filterの持続性を踏まえた設計）が必要と考えられる。
+
+  **残存課題**:
+  1. MR単体は依然として全ケースでPF<1（0.407〜0.637）であり、今回の2種類の変更のいずれもMR戦略を黒字化するには至っていない。
+  2. TP方式変更の悪化は強制決済条件との相互作用による可能性が高いが、強制決済条件を無効化した状態でのTP方式単体の効果は未検証。
+  3. SL幅（`InpMeanReversionStopAtrMultiple`）の調整は依然未検証。
+  4. Choppiness閾値スイープの非単調性の原因は未分析のまま。
+  5. Telemetry（HTTP送信）が監査ログと同じ経路の影響を受けていたかは引き続き未確認。
+  6. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。全結果は未コミット。
+
+* [x] **強制決済条件とレンジ相場判定の分離設計（コード構造）を維持する（ユーザー依頼、2026-08-25実施）。** 前タスクの復帰作業で`IsRangeStillValid`が`CMeanReversionEntryRules::IsRangeFilterActive`を直接呼び出す実装になっており、エントリー側クラスへの直接依存が生じていた（2026-08-24に導入した「エントリー条件とはコード上も明確に分離する」設計原則から逸脱）。`CMeanReversionExitRules`へ`IsRangeFilterReleased(choppiness,adx,choppiness_min,adx_max)`を新設し、`IsRangeStillValid`はこちらを呼ぶよう変更した。**config閾値（`mean_reversion_choppiness_min`/`mean_reversion_adx_max`）はエントリー条件と共用のまま**（前タスクの検証で共用の方が両区間とも純損益が改善したため、値自体は分離しない）。エントリー側クラスへの直接呼び出しをなくし、決済判断ロジックが`CMeanReversionExitRules`内で完結する構造のみを復元した。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`（`IsRangeFilterReleased`新設、`IsRangeStillValid`の呼び出し先変更、クラスコメント更新）・`mt5/Tests/TestTrendFollowingRules.mq5`（`IsRangeFilterReleased`の単体テスト4件追加: Choppiness低下・ADX上限到達・両条件維持時に解除されないこと・NaN ADXでのfail-safe close）。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS（新規4アサーション含む）。Fold5 Trainを再実行し、取引数25・純損益-31,711円・勝率48.0%が、リファクタ前（エントリー側クラスへ直接依存していた版）の結果と完全一致することを確認し、純粋な構造変更（挙動に影響しない）であることを実証した（`results/backtests/20260825-020748-USDJPY-H1/`）。
+
+  **残存課題**: 前タスクの残存課題（TP方式単体効果の切り分け、SL幅調整、Choppiness閾値スイープの非単調性）は未着手のまま。`InpEnableMeanReversionStrategy`は既定値`false`のまま、全結果未コミット。
+
+* [x] **強制決済のパラメータをエントリー条件とは独立に指定したいというユーザー要望により、直前タスクで削除した`IsRangeQualityLost`（専用閾値によるAND条件判定）を復元する（2026-08-25実施）。** `IsRangeFilterReleased`（エントリーとconfig閾値を共用する方式）を削除し、`IsRangeQualityLost(choppiness,adx,choppiness_max,adx_min)`と、専用config`mean_reversion_forced_exit_adx_threshold`（既定30.0）・`mean_reversion_forced_exit_choppiness_max`（既定50.0）を復元した。`IsRangeStillValid`の判定順序も、削除前の実装（`RANGE_BREAK`→`RANGE_QUALITY_LOST`→`BB_WIDTH_EXPANSION`）へ復帰した。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`（`IsRangeQualityLost`復元・`IsRangeStillValid`の呼び出し先と判定順序を復帰）・`mt5/Include/Core/Config.mqh`（専用config 2件復元）・`mt5/Experts/CoreEA.mq5`（`InpMeanReversionForcedExitAdxThreshold`/`InpMeanReversionForcedExitChoppinessMax`復元）・`docs/configuration.md`・`mt5/Tests/TestTrendFollowingRules.mq5`（`IsRangeQualityLost`用6アサーション復元）。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS（復元した6アサーション含む）。Fold5 Trainを再実行し、取引数25・純損益-43,532円・勝率64.0%・PF0.530が、削除前の`IsRangeQualityLost`実装時の実績と完全一致することを確認した（`results/backtests/20260825-022710-USDJPY-H1/`）。
+
+  現状のパラメータ（強制決済: Choppiness<50かつADX>30、エントリー: Choppiness≥60かつADX<25）では、直前タスクで検証したとおり強制決済が実質発動しない（0/25件）ため、現行の既定値のままでは「パラメータ分離」の効果はまだ現れていない。分離された`InpMeanReversionForcedExitChoppinessMax`/`InpMeanReversionForcedExitAdxThreshold`を、エントリー閾値とは異なる値へ個別にチューニングする余地が生まれた、という点が本タスクの主な意味である。
+
+  **残存課題**: 分離されたパラメータをどのように調整すべきかは未検証（本タスクは復元のみ、チューニングは未実施）。前タスクまでの残存課題（TP方式単体効果の切り分け、SL幅調整、Choppiness閾値スイープの非単調性）も未着手のまま。`InpEnableMeanReversionStrategy`は既定値`false`のまま、全結果未コミット。
+
+* [x] **別セッションがレンジポジションの強制決済条件を独自に「警戒状態＋猶予期間」の状態機械へ再設計したため、再検証する（ユーザー依頼、2026-08-25実施、コミット`1b6fbf9`）。** 前タスクで復元した`IsRangeQualityLost`（専用閾値によるAND条件、即時決済）は撤回され、以下の新設計に置き換わっていた（自分の変更ではなく、独立したセッションによるコミット）。
+
+  **新設計の概要**: Range Filter（`IsRangeFilterActive`、エントリーと完全に同一の閾値。判定条件自体は変更なし）が解除されても即決済しない。解除を検知したポジションを新設`CRangeExitGraceTracker`でticket単位の「警戒状態」へ移行し、最大`InpMeanReversionRangeExitGraceBars`本（既定3）の猶予期間内に確定足Closeが実際に直近レンジ高安値をブレイク（`IsRangeBreak`）した場合のみ決済する。猶予期間内にRange Filterが再成立すれば警戒解除、猶予超過時はこの機構による決済をせずSL/TP等の既存管理に委ねる。旧`ADX_SURGE`/`IsRangeQualityLost`（専用閾値の別判定）は完全に削除され、専用config（`mean_reversion_forced_exit_adx_threshold`/`choppiness_max`）は`mean_reversion_range_exit_grace_bars`（int、既定3）へ置き換わった。`IsRangeStillValid`のシグネチャがticketを受け取るよう変更され、`EAController::OnTradeTransaction`のMagic Numberバグ修正（前タスク分）はそのまま維持されている。あわせて`python/analysis/trade_breakdown.py`に`range_exit_summary()`（`RANGE_EXIT`イベントをreason_code別に集計、`time_stop_summary()`と同型）が追加され、`contracts/trade-breakdown-report.schema.json`にも`range_exit`フィールドが追加された。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・9 Script Test全PASS。`.\tools\release-gate.ps1 -Mode Development`（Python 121件含む）全PASS。後方互換性: `InpEnableMeanReversionStrategy=false`でFold1 Trainを再実行し、取引数39・純損益+30,801円が既知の基準値と完全一致（`results/backtests/20260825-202000-USDJPY-H1/`）。
+
+  **効果検証（Fold1・Fold5 Train、既定`InpMeanReversionRangeExitGraceBars=3`）**:
+
+  | 区間 | MR取引数 | MR純損益 | MR勝率 | RANGE_BREAK発動 | BB_WIDTH_EXPANSION発動 | MAX_HOLDING_BARS発動 |
+  |---|---:|---:|---:|---:|---:|---:|
+  | Fold1 Train | 12 | -20,915円 | 58.3% | 0件（0%） | 0件（0%） | 1件（8%） |
+  | Fold5 Train | 25 | -43,532円 | 64.0% | 0件（0%） | 0件（0%） | 0件（0%） |
+
+  （`results/backtests/20260825-202138-USDJPY-H1/`・`20260825-202305-USDJPY-H1/`）
+
+  **重要な発見**: 取引数・純損益・勝率・個別取引のclose_reason/pnl/mfe/maeが、**「AND条件（`IsRangeQualityLost`）実装時代の実績」と全項目で完全一致した**（前タスクの検証結果と同一）。これは偶然の一致ではなく、**新設計（警戒状態＋猶予期間）が、既定パラメータ（猶予3本）ではFold1・Fold5 Train両区間で一度も`RANGE_BREAK`を確定できておらず、実質的に「CI/ADXベースの強制決済が完全に無効化された状態」と同じ挙動になっている**ためである。全25件（Fold5）・全12件（Fold1）が通常のSL/TP、またはFold1の1件のみ独立した時間切れ決済（`MEAN_REVERSION_MAX_HOLDING_BARS`）で決済されており、新設の警戒状態機構は一度も強制決済を発動していない。
+
+  **原因の推定（未検証の仮説）**: 猶予期間3本（H1で3時間）以内に、確定足Closeが実際のスイング高安値を明確にブレイクするという条件が、この2区間の実データでは一度も成立しなかった。Range Filter解除自体（警戒状態への移行）がそもそも稀なのか、警戒状態には入るがブレイク確定前に猶予期間切れになるのかは、警戒状態遷移自体を監査ログへ記録していないため本ラウンドでは判別できない（`CRangeExitGraceTracker`の状態遷移にAudit呼び出しがなく、`RANGE_EXIT`イベントは決済確定時のみ記録される）。
+
+  **総合評価: 新設計は「早すぎる決済でMAE近辺まで引きずられる」という旧`RANGE_FILTER_RELEASED`の構造的問題を回避する狙いとしては妥当だが、既定パラメータでは強制決済機構そのものが実質機能しておらず、MR戦略の核心的な課題（勝率は高いがPFが1を下回る、平均損失が平均利益の約3.35倍というリスクリワード非対称、Fold5 c=60時点の分析で確認済み）には一切寄与していない。** 結果として、TP/SL設計の見直し（前タスクで検証したOpposite Band TPは悪化）という、より根本的な課題が未解決のまま残っている。
+
+  **残存課題**:
+  1. 警戒状態への遷移自体が発生しているかどうかを監査ログで確認できない（観測性の欠如）。`CRangeExitGraceTracker`の`EnterAlert`/`ClearAlert`にAudit呼び出しを追加すれば、猶予期間の長さが適切かどうかを検証できる。
+  2. 猶予期間（既定3本）を延長した場合に`RANGE_BREAK`が確定するようになるかは未検証。
+  3. MR単体のPF<1（0.530）という核心的な問題は、強制決済条件をどう調整しても解決していない。TP/SL設計自体の見直しが依然として必要。
+  4. `python.analysis.trade_breakdown`の`range_exit_summary()`は追加されたが、実データでの動作は未検証（本ラウンドは`analyze_full.py`による独自集計で確認したのみ）。
+  5. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。全結果は未コミット。
+
+* [x] **警戒状態（Range Filter解除後の猶予期間）への遷移を監査ログへ記録する（ユーザー依頼、2026-08-25実施）。** 新設イベント`RANGE_ALERT`（`position_ticket`/`transition`/`elapsed_bars`）を追加した。`transition`は`ALERT_ENTERED`（Range Filter解除を検知し警戒状態へ移行）・`ALERT_CLEARED_FILTER_REACTIVATED`（猶予期間内にRange Filterが再成立し通常状態へ復帰）・`ALERT_CLEARED_GRACE_EXPIRED`（猶予期間超過、これ以上は監視せずSL/TP等の既存管理に委ねる）の3種。決済に至る遷移（`BB_WIDTH_EXPANSION`・`RANGE_BREAK`）は既存の`RANGE_EXIT`監査で捕捉済みのため二重記録しない。
+
+  `CRangeExitGraceTracker::EnterAlert`/`ClearAlert`が実際に状態を変更したかを`bool`で返すよう変更し、`CMeanReversionStrategy::IsRangeStillValid`に`string &alert_transition`・`int &alert_elapsed_bars`の出力引数を追加、`EAController::EvaluateMeanReversionForcedExits`が非空の場合に`RANGE_ALERT`を記録するよう変更した。既存の`TIME_STOP_EXIT`/`RANGE_EXIT`と同じく、`CTradeLogRules::SafeEventType`（`TradeLogger.mqh`）と`SUPPORTED_AUDIT_EVENTS`（`python/analysis/reports.py`）の両許可リストへ`RANGE_ALERT`を追加した（本セッションで繰り返し発覚した「許可リスト漏れによる無言の書き込み失敗」パターンを踏まえ、実装時点で両方同時に追加）。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`・`mt5/Include/Core/EAController.mqh`・`mt5/Include/Logging/TradeLogger.mqh`・`python/analysis/reports.py`。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・`.\tools\release-gate.ps1 -Mode Development`（Python 121件含む）全PASS。後方互換性: `InpEnableMeanReversionStrategy=false`でFold1 Trainを再実行し、取引数39・純損益+30,801円が完全一致（`results/backtests/20260825-203937-USDJPY-H1/`）。効果検証: Fold1・Fold5 Trainを再実行し、取引数・純損益・勝率が前タスクの結果と完全一致（純粋な観測性追加であり、決済判断・取引結果には一切影響しないことを実証、`results/backtests/20260825-204115-USDJPY-H1/`・`20260825-204245-USDJPY-H1/`）。
+
+  **RANGE_ALERTの実データ**（Fold1・Fold5 Train、既定`InpMeanReversionRangeExitGraceBars=3`）:
+
+  | 区間 | ALERT_ENTERED | 猶予超過で解除 | Filter再成立で解除 | 猶予超過時の経過本数 |
+  |---|---:|---:|---:|---:|
+  | Fold1 Train | 9件（4ポジション） | 3件 | 3件 | 全件3本（＝猶予上限） |
+  | Fold5 Train | 38件（14ポジション） | 21件 | 6件 | 全件3本（＝猶予上限） |
+
+  **これにより前タスクの残存課題が解消された**: 警戒状態への遷移は実際に頻繁に発生しており（Fold5では25件中14ポジションが少なくとも1回警戒状態を経験）、機構自体は「一度も動いていない」わけではない。しかし、**猶予超過で解除された24件（Fold1:3件、Fold5:21件）は全て、猶予期間の上限ちょうど3本で解除されている**（4本目以降まで警戒状態が続いた例は0件）。これは、Range Filterが解除されてから3本以内にRange Filterが再成立するか、猶予切れになるかのいずれかで完結しており、**`RANGE_BREAK`（実際のレンジ高安値ブレイク）の確定に必要な時間が、猶予期間3本よりも常に長くかかっている**ことを強く示唆する。
+
+  **総合評価: 警戒状態機構は設計どおり頻繁に発火しているが、既定の猶予期間（3本）が短すぎるために、レンジブレイクを一度も確定できていない。** 猶予期間を延長すれば`RANGE_BREAK`が確定するようになるかは、次の検証候補として有力になった（前タスクでは「発生頻度自体が不明」だったが、本タスクにより「発火はしているが猶予切れが早すぎる」ことが判明し、仮説の確度が上がった）。
+
+  **残存課題**:
+  1. 猶予期間（`InpMeanReversionRangeExitGraceBars`）を3本より延長した場合に`RANGE_BREAK`が確定するようになるか、また合算パフォーマンスが改善するかは未検証。
+  2. MR単体のPF<1（0.530）という核心的な問題（前々タスクで確認: 平均損失が平均利益の約3.35倍というリスクリワード非対称）は、本タスクでは変化していない。
+  3. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。全結果は未コミット。
+
+* [x] **猶予期間（`InpMeanReversionRangeExitGraceBars`）を延長して再検証し、あわせて損失の内訳から負けの原因を分析する（ユーザー依頼、2026-08-25実施）。** 分析には既存の`python.analysis.trade_breakdown`（`build_trade_context`によるMFE/MAE・R倍数・ATR/ADX帯・保有時間帯・Session・曜日・close_reason・range_exit_reason_code等の集計、他戦略分析で既に整備済み）で十分と判断し、新規機能は追加せず既存ツールで分析した。
+
+  **猶予期間スイープ**: Fold1・Fold5 Trainで`InpMeanReversionRangeExitGraceBars`を3（既定）→5→10→20本と延長して再実行した。
+
+  **結果: 猶予期間3・5・10・20本のいずれでも、取引数・純損益・勝率・個別取引のclose_reason/pnl/mfe/maeが完全一致した（1件も変化なし）。** grace=20（Fold5）でのRANGE_ALERT内訳を確認したところ、`ALERT_CLEARED_GRACE_EXPIRED`は0件（猶予期間20本以内で全て解決）、`ALERT_CLEARED_FILTER_REACTIVATED`は6件（Range Filter再成立、経過本数2〜13本）で、それでも`RANGE_BREAK`は一度も確定しなかった。**猶予期間の長さ自体は原因ではないと判明した。**
+
+  **原因の推定（構造的な理由、確度が高い仮説）**: `IsRangeStillValid`は確定足（1本ごと）でのみ評価されるのに対し、SLはブローカー側で価格到達時に即座（Tick単位）に発動する。SL位置は`MathMin(Band,直近レンジ安値)-ATRバッファ`であり、`IsRangeBreak`の閾値（直近レンジ安値そのもの、バッファなし）よりも**エントリーから見て遠い**。ADXが急伸するような速い逆行では、価格がレンジ安値を跨いでSLへ到達するまでが1本の確定足に満たない時間で起こりうるため、次の確定足評価が来る前にSLで決済されてしまい、`IsRangeBreak`が確定する機会自体が生じない。これは猶予期間をいくら延ばしても解消しない（時間の問題ではなく、確定足ベース判定とTick単位のSL執行の速度差の問題）。
+
+  **損失の内訳分析（Fold1+Fold5 Train合算、MR全37件、`trade_breakdown.build_trade_context`を`strategy=="MEAN_REVERSION"`でフィルタして分析）**:
+
+  | 観点 | 結果 |
+  |---|---|
+  | close_reason（負け14件の内訳） | SL 13件（93%）、EXPERT（時間切れ決済）1件（7%）。強制決済（RANGE_BREAK/BB_WIDTH_EXPANSION）0件 |
+  | 含み益からの反転 | 負け14件中13件（93%）が一度含み益（平均+2,335円）に達した後、損失決済に至っている |
+  | R倍数 | 負けトレード平均-0.95R（ほぼ設計どおりの1R到達）、勝ちトレード平均+0.31R |
+  | 保有時間帯 | 4.6時間未満: 勝率72%・PF0.72（25件）／4.6〜13.7時間: 勝率60%・PF0.69（5件）／**13.7時間超: 勝率28.6%・PF0.165（7件、最も悪い）** |
+  | Session | **Tokyo: 純利益+1,681円・PF1.06（唯一の黒字）**／London: PF0.17（最悪）／London_NewYork_Overlap: PF0.29／NewYork: PF0.78 |
+  | 方向 | BUY: 21件・勝率66.7%・PF0.65／SELL: 16件・勝率56.3%・PF0.42（SELLが弱い） |
+  | ATR帯・ADX帯 | いずれも3帯間で大きな差はなく、明確な閾値依存パターンは見られない |
+
+  **総合評価: MR戦略の損失は、「エントリー判断の誤り」よりも「含み益を保全できずに手放している」ことが主因である。** 93%の負けトレードが一度含み益に達しており（R倍数でも勝ち平均+0.31R・負け平均-0.95Rと非対称）、これは前々タスクで確認した「TPがSLより近い」というリスクリワード設計の問題と整合する。加えて、保有時間が長引くトレード（13.7時間超）とLondon/Overlapセッションでのエントリーが特に成績が悪く、Tokyoセッションのみが唯一プラスという傾向も判明した。強制決済条件（RANGE_BREAK・猶予期間）は上記の理由により実質的に無関係であることが確定した。
+
+  **残存課題**:
+  1. 含み益保全の仕組み（部分利確・建値ストップ・トレーリングストップ等、トレンド戦略の`InpEnableBreakevenStop`に相当する機構がMR戦略には存在しない）の追加が有力な改善候補として浮上したが、未検証。
+  2. 保有時間13.7時間超のトレードが特に悪いことから、`InpMeanReversionMaxHoldingBars`（既定20本=20時間）をより短く設定する、またはSession限定（Tokyoのみ許可等）でエントリーを絞る案も未検証。
+  3. SELL方向が弱い傾向は37件中16件と少数のため、他Foldでの追試が必要。
+  4. 強制決済の状態機械（警戒状態＋猶予期間・`RANGE_BREAK`）自体は、構造的な理由により実質的に機能しないことが判明したため、この方向でのさらなるチューニング（猶予期間の調整等）は優先度を下げるべきと考える。
+  5. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。全結果は未コミット。
+
+* [x] **SL幅（`InpMeanReversionStopAtrMultiple`）をRange端+0.3/0.5/0.75 ATRでスイープし、あわせて1.25 ATR（既定1.0の反対方向）も追加で検証する。検証後、損失の内訳から負けの原因を分析する（ユーザー依頼、2026-08-25実施）。**
+
+  **想定した機構**: リスク%基準のポジションサイジングでは、SL幅（価格距離）を狭めると同一リスク額に対しロット数が増える。TP（BB中心線、SLとは独立した固定距離）到達時の利益額はロット数に比例して拡大する一方、SL到達時の損失額はリスク%で一定に保たれる設計のため、SLを狭めるほどR倍数ベースの勝ちが大きくなり、前タスクで確認した「勝ち+0.31R・負け-0.95R」という非対称が改善する可能性を検証した。
+
+  **SLスイープ結果（Fold1・Fold5 Train、MR単体）**:
+
+  | ATR倍率 | Fold1 MR純損益 | Fold1 MR勝率 | Fold1 MR PF | Fold5 MR純損益 | Fold5 MR勝率 | Fold5 MR PF |
+  |---|---:|---:|---:|---:|---:|---:|
+  | 0.3 | -33,092円 | 50.0% | 0.434 | -11,045円 | 64.0% | **0.882** |
+  | 0.5 | -38,648円 | 50.0% | 0.359 | -23,989円 | 64.0% | 0.742 |
+  | 0.75 | -19,847円 | 58.3% | 0.580 | -34,392円 | 64.0% | 0.625 |
+  | 1.0（既定） | -20,915円 | 58.3% | 0.530 | -43,532円 | 64.0% | 0.530 |
+  | 1.25 | **-6,797円** | 66.7% | **0.804** | -33,240円 | 68.0% | 0.600 |
+
+  **重要な発見: Fold1とFold5で改善方向が正反対だった。** Fold5は0.3（最も狭い）が最良、SLを広げるほど単調に悪化する。Fold1は1.25（最も広い）が最良、SLを狭めるほど悪化する。**両区間に共通して有効な単一のSL幅は存在しなかった。**
+
+  **機構の確認（合算74件のR倍数分析）**: 想定どおり、SLを狭めるほど勝ちトレードの平均R倍数は拡大した（0.3xATR: +0.479R → 1.25xATR: +0.305R）。負けトレードの平均R倍数はSL幅によらずほぼ一定（-0.95〜-1.00R、設計どおりほぼ1R到達）。**ただし同時に勝率もSL幅と共に変動した**（0.3xATR: 59.5% → 1.25xATR: 67.6%、SLを広げるほどノイズによる早期損切りが減り勝率が上がる）。「R倍数拡大」と「勝率上昇」がSL幅に対して逆方向に効くトレードオフが存在し、**どちらの効果が勝るかは区間（Fold）ごとの値動きパターンに依存する**ため、一貫した最適値が定まらなかったと考えられる。
+
+  **損失の内訳分析（SL=0.3・1.25、合算74件）**: `reversal_from_profit_summary`で確認したところ、**含み益からの反転（負けトレードのうち一度含み益に達してから損失決済に至った割合）は、SL=0.3で93.3%、SL=1.25で91.7%と、SL幅を変えてもほぼ変化しなかった**。前タスクで確認した「含み益を保全できずに手放している」という構造的問題は、SL幅の調整では解消しないことが確認された。保有時間帯別では、SL=1.25で短時間保有（5時間未満）の勝率が82.6%・PF1.25（黒字）まで改善した一方、長時間保有（13.7時間超）は依然PF0.30〜0.39と悪いままであり、SL幅の効果は主に短時間で決着するトレードに限定されることも判明した。
+
+  **総合評価: SL幅の調整は、R倍数と勝率のトレードオフを通じて結果を変化させるが、その正味の方向は区間依存であり、単独では頑健な改善をもたらさない。** また、負けトレードの9割超が一度含み益に達してから反転するという核心的な問題は、SL幅を変えても解消しないことが確定した。前タスクで提案した含み益保全機構（部分利確・建値ストップ等）の検証が、依然として最も有望な改善方向である。
+
+  **残存課題**:
+  1. Fold1・Fold5で結果が正反対であるため、SL幅単独のチューニングは過学習リスクが高く、単一の推奨値を出せない。
+  2. 含み益保全機構は未検証のまま。SL幅とあわせて組み合わせた場合の効果も未検証。
+  3. 短時間保有トレードのみSL幅の効果が出るという知見から、保有時間に応じた動的なSL/TP調整も理論上考えられるが、未検証かつ複雑さが増すため優先度は低いと判断する。
+  4. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。全結果は未コミット。
+
+* [x] **時間切れ決済（`InpMeanReversionMaxHoldingBars`）を10/15/20本でスイープし、あわせて5本（前タスクの保有時間帯分析で13.7時間超が特に悪かったことを踏まえた追加値）も検証する。検証後、損失の内訳から負けの原因を分析する（ユーザー依頼、2026-08-25実施）。**
+
+  **スイープ結果（Fold1・Fold5 Train、MR単体、20は既定値のため既存データを再利用）**:
+
+  | MaxHoldingBars | Fold1 MR純損益 | Fold1 PF | Fold5 MR純損益 | Fold5 PF | 合算純損益 |
+  |---|---:|---:|---:|---:|---:|
+  | 5 | -12,362円 | 0.607 | -28,084円 | 0.580 | **-40,446円** |
+  | 10 | **-4,982円** | **0.835** | -40,597円 | 0.524 | -45,579円 |
+  | 15 | -12,563円 | 0.684 | -39,991円 | 0.547 | -52,554円 |
+  | 20（既定） | -20,915円 | 0.530 | -43,532円 | 0.530 | -64,447円（最悪） |
+
+  **重要な発見: SL幅スイープ（前タスク）とは異なり、両区間とも既定値20より短縮した全ての値（5・10・15）で改善し、方向性が一致した。** 最適値は区間で異なる（Fold1は10本が最良・PF0.835、Fold5は5本が最良・PF0.580で一貫して短いほど良い）が、**「20本は明確に最悪」という結論は両区間で一致しており、SL幅スイープよりも頑健な結果**である。合算では5本が最良（-40,446円）。
+
+  **損失の内訳分析（合算74件、`range_exit_summary`で`MEAN_REVERSION_MAX_HOLDING_BARS`のみ抽出）**:
+
+  | MaxHoldingBars | 時間切れ決済件数 | 時間切れ決済のPF | 時間切れ決済の平均損失 | 全体の負けR倍数平均 | 全体の勝ちR倍数平均 |
+  |---|---:|---:|---:|---:|---:|
+  | 5 | 10件 | 0.088（同サブセット単体では大幅な負け） | -2,536円 | -0.637R | +0.258R |
+  | 10 | 5件 | 0.100 | -4,953円 | -0.864R | +0.287R |
+  | 15 | 3件 | 0.938（ほぼ均衡） | -7,429円 | -0.959R | +0.310R |
+
+  **機構の確認: 時間切れ決済は「損失に上限を設ける」機構として機能している。** 本来のSL到達時の損失（設計上ほぼ1R、約-10,000円）に対し、`MaxHoldingBars`を短くするほど、時間切れで打ち切られる損失は縮小する（5本: 平均-2,536円 ≪ 15本: 平均-7,429円 ≪ 通常のSL到達損失）。時間切れ決済サブセット単体の勝率・PFは低い（早期に切ることで、その後回復してTPに到達したはずのトレードも一部道連れにしているため）が、**全体の負けR倍数平均も短縮するほど縮小しており**（5本: -0.637R → 15本: -0.959R）、正味では損失抑制効果が「取りこぼした回復機会」を上回っていることが確認できた。
+
+  **含み益からの反転（前タスクで確認した「93%が含み益から反転」問題）は、MaxHoldingBarsを短縮しても大きくは変わらなかった**（5本: 93.3%、10本: 92.3%、15本: 92.3%）。これはSL幅スイープと同じ結論であり、時間切れ決済の短縮は「反転を防ぐ」のではなく「反転後の損失サイズを抑える」形で寄与していると解釈できる。
+
+  **総合評価: 時間切れ決済の短縮は、SL幅調整よりも頑健で一貫した改善効果を持つ。両区間で20本が最悪という結論が一致しており、5〜10本の範囲が有望である。** ただし、根本的な「含み益を保全できない」問題自体は未解決のままであり、時間切れ決済の短縮はその損失規模を抑える対症療法的な効果にとどまる。
+
+  **残存課題**:
+  1. 最適値がFold1（10本）とFold5（5本）で異なるため、5本未満（例: 3本）や、10本と15本の間（例: 12本）を含むより細かいスイープは未実施。
+  2. SL幅調整（前タスク）と時間切れ決済短縮（本タスク）を組み合わせた場合の効果は未検証。
+  3. 含み益保全機構（部分利確・建値ストップ等）は依然未検証であり、時間切れ決済短縮と組み合わせることで、さらなる改善が見込める可能性がある。
+  4. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。全結果は未コミット。
+
+* [x] **SL幅（`InpMeanReversionStopAtrMultiple`）×時間切れ決済（`InpMeanReversionMaxHoldingBars`）の組み合わせ検証を実施する。検証後、損失の内訳から負けの原因を分析する（ユーザー依頼、2026-08-25実施）。** 全組み合わせ（5×4=20通り）は過大なため、各単独スイープで改善傾向が見られたSL∈{0.3, 0.75, 1.25}×Hold∈{5, 10}の6通りに絞ってFold1・Fold5 Trainで検証した（既定値20との組み合わせは前タスクまでの単独スイープデータを流用）。
+
+  **組み合わせスイープ結果（MR単体純損益）**:
+
+  | SL(ATR倍率) | Hold(本) | Fold1 | Fold5 | 合算 |
+  |---|---|---:|---:|---:|
+  | 0.3 | 5 | -23,696円 | -25,818円 | -49,514円 |
+  | 0.3 | 10 | -11,793円 | -20,311円 | -32,104円 |
+  | 0.75 | 5 | -11,289円 | -31,179円 | -42,468円 |
+  | 0.75 | 10 | -2,822円 | -40,937円 | -43,759円 |
+  | 1.25 | 5 | -1,152円 | -12,313円 | **-13,465円（合算最良）** |
+  | 1.25 | 10 | **+8,707円（黒字、PF1.417、勝率83.3%）** | -26,590円 | -17,883円 |
+  | （参考）0.3 | 20（既定、単独スイープ流用） | -33,092円 | **-11,045円（Fold5単独最良）** | -44,137円 |
+
+  **重要な発見: 最良の組み合わせは区間ごとに大きく異なり、レバー同士の相互作用も一様ではなかった。** Fold1はSL1.25×Hold10で唯一の黒字（+8,707円、PF1.417、勝率83.3%）を記録した一方、Fold5では同じ組み合わせが-26,590円と振るわなかった。逆に**Fold5単独では、SL幅スイープ単独（既定Hold=20のまま）でのSL0.3が最良（-11,045円）であり、これはHoldを短縮した6通りの組み合わせのいずれよりも良い結果だった**。つまりFold5では、SL幅短縮とHold短縮を同時に行うと、単独で行うより悪化するという負の相互作用が見られた（両方とも「損失を早期に抑える」方向のレバーであり、重ねがけすると回復可能だったトレードまで過剰に刈り取ってしまうためと考えられる）。合算で見ると SL1.25×Hold5 が最も損失が小さいが、これはFold1・Fold5双方が「そこそこ」である結果の合算であり、どちらか一方で突出して良いわけではない。
+
+  **損失の内訳分析（合算74件、SL1.25×Hold5とSL1.25×Hold10を比較）**:
+
+  | 組み合わせ | 勝率 | 含み益からの反転割合 | 負けR倍数平均 | 勝ちR倍数平均 |
+  |---|---:|---:|---:|---:|
+  | SL1.25×Hold5 | 64.9% | 92.3%（反転前平均含み益+1,300円） | -0.557R | +0.251R |
+  | SL1.25×Hold10 | 70.3% | 90.9%（反転前平均含み益+1,440円） | -0.820R | +0.285R |
+
+  **「含み益からの反転」問題は、SL幅とHoldを組み合わせても9割超のまま解消しなかった。** これは前2タスクと一貫した結論であり、パラメータチューニング（SL幅・Hold・その組み合わせのいずれも）ではこの構造的問題自体は解決できないことが、3回目の独立した検証で再確認された。
+
+  **総合評価: SL幅とHoldの組み合わせ検証により、単独チューニングより良い結果（Fold1のSL1.25×Hold10）が得られる場合がある一方、負の相互作用（Fold5でのSL0.3×Hold短縮）も確認され、区間依存性はむしろ強まった。** 単一区間で好成績（Fold1のSL1.25×Hold10、黒字）を理由に採用すると、Fold5では明確な悪化を招くため、**この組み合わせを推奨パラメータとして採用することは過学習リスクが高く適切でない**。含み益からの反転という核心的な問題が組み合わせ調整でも解決しないことが、独立した3回の検証（SL単独・Hold単独・組み合わせ）すべてで一致した。
+
+  **残存課題**:
+  1. 本タスクで確認された負の相互作用（SL短縮×Hold短縮の重ねがけが逆効果になるケース）を踏まえ、正の相互作用が働く領域（SLを広げる×Holdを適度に短縮）を中心とした、より広いグリッドの検証は未実施。
+  2. Fold1で唯一黒字化した組み合わせ（SL1.25×Hold10）について、他のFold（Fold2〜6のTrain区間）での再現性は未検証であり、単一区間の結果を過大評価しないよう注意が必要。
+  3. 含み益保全機構（部分利確・建値ストップ等）は、3回の独立した検証で一貫して「パラメータチューニングでは解決しない」と示された核心的課題への対応として、依然として最有力の未検証の改善方向である。
+  4. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。全結果は未コミット。
+
+* [x] **強制決済のレンジブレイク判定（`IsRangeBreak`）参照期間をエントリー側SL算出から分離し、短い値でスイープして「ブレイク条件の厳格化で今回の負けポジションを抑えられるか」を検証する（ユーザー依頼、2026-08-25実施）。** 実施前にユーザーへ機能案（既存の`IsRangeBreak`参照期間がエントリー側SL算出用の`InpMeanReversionBbPeriod`と共用されており、決済条件だけを独立調整できないため分離が必要）を提示し、承認を得たうえで実装した。
+
+  **実装**: 新規config `mean_reversion_range_break_lookback`（既定20、`InpMeanReversionRangeBreakLookback`）を追加し、`IsRangeStillValid`内の`ReadRecentRange`呼び出し（決済判定専用）にのみ適用した。エントリー側SL算出（`Evaluate()`内の`ReadRecentRange`呼び出し）は`mean_reversion_bb_period`のまま変更していない。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`（`ReadRecentRange`呼び出し分離、コメント更新）・`mt5/Include/Core/Config.mqh`・`mt5/Experts/CoreEA.mq5`・`docs/configuration.md`（あわせて、既に廃止済みの`InpMeanReversionForcedExitAdxThreshold`/`ChoppinessMax`を参照していた古い記述を現行の警戒状態＋猶予期間方式に合わせて修正した）。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・`.\tools\release-gate.ps1 -Mode Development`（Python 121件含む）全PASS。後方互換性: 既定値20でFold5 Trainを再実行し、純損益-43,532円・勝率64.0%が既存基準値と完全一致（`results/backtests/20260826-210211-USDJPY-H1/`）。
+
+  **スイープ結果（参照期間5・8・10・2本、Fold1・Fold5 Train）**: **いずれの値でも取引数・純損益・勝率・個別取引のclose_reason/pnl/mfe/maeが既定値20と完全に一致した（1件も変化なし）。極端に短い2本（確定足2本分のみの高安値、Fold5で確認）でも同様だった。**
+
+  **総合評価: ユーザーの2つの質問に対する回答は、いずれも「いいえ」である。**
+  1. **「ブレイク条件を厳格化することで今回の負けポジションを抑えられるか」→ 抑えられない。** 参照期間を20本から2本まで短縮しても、`RANGE_BREAK`は一度も確定しなかった。前々タスクで確認した「確定足ベースの判定はTick単位のSL執行に対して原理的に間に合わない」という構造的理由が、参照期間の長さと無関係であることが、最も極端な条件（2本）でも再確認された。
+  2. **「回復可能だったポジションを手放さずに、負けポジションだけをブレイク条件で拾えるか」→ 機構自体が一度も発動しないため、この選別自体が起こり得ない。** ブレイク条件が発動する機会が皆無であるため、負けポジションを拾うこともなく、同時に回復可能だったポジションを誤って手放すこともない（＝現状維持）。
+
+  **損失の原因（再確認）**: 本ラウンドでは取引結果が既定値から一切変化しなかったため、損失の内訳は前々タスク（Fold1+Fold5合算37件）で確認した内容から変わらない。負けトレードの93%が一度含み益に達してから反転しており、この反転は多くの場合、確定足の判定が追いつかない速さ（Tick単位、単一確定足以内）で完結していると考えられる。ブレイク条件（確定足ベース）でこれを捕捉する方向性は、本タスクにより実証的に否定された。
+
+  **残存課題**:
+  1. レンジブレイク判定を確定足ベースからTick/価格ベース（例: 保有中ポジションのSL自体をトレーリングストップ的に動かす、含み益到達後に建値へ移動する等）に変更すれば、原理的に間に合う可能性があるが、これは「ブレイク条件」ではなく別の機構（建値ストップ・トレーリングストップ）であり、未検証。
+  2. 3回連続の独立した検証（SL幅・Hold・ブレイク条件参照期間）すべてで「含み益からの反転」問題が解決しなかったため、パラメータチューニングの延長線上でのさらなる調整は費用対効果が低いと判断する。含み益保全機構（建値ストップ・部分利確・トレーリングストップ）の実装検証が最優先の残存課題である。
+  3. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。全結果は未コミット。
+
+* [x] **Tokyoセッション限定でエントリーを絞り、レンジ相場逆張り戦略の効果を検証する（ユーザー依頼、2026-08-26実施）。前タスクまでのSession別分析でTokyoセッションのみが唯一プラス（PF1.06）だった知見を踏まえた検証。**
+
+  **実装**: `CMeanReversionEntryRules::IsTokyoSession(hour_utc)`（`python.analysis.trade_breakdown`のSESSION_BOUNDARIESのTokyo区分と同一境界: hour∈[0,8)∪[22,24)）を新設し、`CMeanReversionStrategy::Evaluate()`の冒頭（他の判定より前）でエントリー確定足の時刻をチェックし、Tokyoセッション外なら候補を棄却するようにした。新規config `mean_reversion_restrict_to_tokyo_session`（既定`false`、`InpMeanReversionRestrictToTokyoSession`）で制御し、既定では従来どおり全セッションでエントリー判定を行う。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`・`mt5/Include/Core/Config.mqh`・`mt5/Experts/CoreEA.mq5`・`docs/configuration.md`・`mt5/Tests/TestTrendFollowingRules.mq5`（`IsTokyoSession`単体テスト6件: hour=0/7/8/21/22/23の境界値）。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・release-gate（Python 121件含む）全PASS（新規6アサーション含む）。後方互換性: 既定`false`でFold5 Trainを再実行し、純損益-43,532円が既存基準値と完全一致（`results/backtests/20260826-220943-USDJPY-H1/`）。
+
+  **Tokyoセッション限定の結果（Fold1・Fold5 Train）**:
+
+  | 区間 | 全セッション（既定） | Tokyoセッション限定 |
+  |---|---|---|
+  | Fold1 Train | 12件・-20,915円・勝率58.3%・PF0.530 | 5件・**-10,576円（改善）**・勝率60.0%・PF0.477 |
+  | Fold5 Train | 25件・-43,532円・勝率64.0%・PF0.530 | 5件・**+12,364円（黒字化）**・勝率80.0%・PF2.202 |
+  | 合算 | 37件・-64,447円 | 10件・**+1,788円（本セッション中、初めて合算で黒字化）** |
+
+  **重要な発見: 両区間とも改善方向が一致し、合算では初めて黒字化した。** SL幅スイープ（区間で正反対）とは異なり、Tokyoセッション限定はFold1・Fold5双方で損益が改善する方向に一致している（Fold1は依然赤字だが半減、Fold5は黒字転換）。ただし**取引数が12件→5件、25件→5件と大幅に減少しており（合算10件）、この改善が統計的に頑健かどうかの判断材料としては非常に少ないサンプルである点に強い注意が必要**。
+
+  **損失の内訳分析（合算10件、負け3件）**: 3件全てSLで決済され、**3件全て（100%）が一度含み益（平均+2,075円）に達してから反転**しており、「含み益からの反転」パターンは変わらず残存している。負けR倍数平均は-0.997R（ほぼ設計どおりの1R到達）で従来と同水準だが、**勝ちR倍数平均は+0.445Rと、全セッション条件（+0.25〜0.31R程度）より明確に大きく**、Tokyoセッションの勝ちトレードはより深く含み益を伸ばせている（Tokyoセッションの方が値動きが「素直」なレンジ往復になりやすいという解釈と整合する）。
+
+  **総合評価: Tokyoセッション限定は、これまで検証した単独・組み合わせのいずれのパラメータ調整よりも一貫性のある改善を示した。** ただし取引数がFold1・Fold5合計で10件しかなく、他のFold（Fold2〜4・6）での再現性を確認しないまま採用するのは時期尚早である。「含み益からの反転」という核心的な問題自体は、Tokyoセッション限定でも解消していない（3/3が反転）。
+
+  **残存課題**:
+  1. サンプル数が極端に少ない（合算10件）ため、他Fold（Fold2〜4・6）での再現性確認が必須。単一区間・少数サンプルでの過学習リスクは本セッションで繰り返し確認されたパターンであり、同じ轍を踏まないよう注意が必要。
+  2. 「含み益からの反転」問題は未解決のままであり、含み益保全機構（建値ストップ等）との組み合わせが依然として検討候補である。
+  3. Tokyoセッション限定と、これまで検証したSL幅・Hold短縮との組み合わせ効果は未検証。
+  4. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。全結果は未コミット。
+
+* [x] **Tokyoセッション限定の効果を、他Fold（Fold2・Fold3・Fold4・Fold6のTrain区間）で再現性確認する（ユーザー依頼、2026-08-26実施）。** 各FoldのTrain区間で、全セッション（既定）版とTokyoセッション限定版をそれぞれ実行し比較した。
+
+  **全6Fold（Fold1〜6 Train）での結果**:
+
+  | 区間 | 全セッション（既定） | Tokyoセッション限定 |
+  |---|---|---|
+  | Fold1 Train（2017-09〜2018-12） | 12件・-20,915円 | 5件・-10,576円（改善） |
+  | Fold2 Train（2017-09〜2019-12） | 19件・-30,427円 | 6件・-5,520円（改善） |
+  | Fold3 Train（2018-01〜2020-12） | 15件・-30,693円 | 9件・**+10,884円（黒字化）** |
+  | Fold4 Train（2019-01〜2021-12） | 5件・-11,811円 | 5件・**+11,128円（黒字化）** |
+  | Fold5 Train（2020-01〜2022-12） | 25件・-43,532円 | 5件・**+12,364円（黒字化）** |
+  | Fold6 Train（2021-01〜2023-12） | 19件・-15,317円 | 2件・-4,635円（改善、n=2と極少） |
+  | **合算（6区間）** | **95件・-152,695円** | **32件・+13,645円（黒字転換）** |
+
+  **重要な発見: 全6区間で改善方向が完全に一致した（6/6）。** 本セッションで検証してきた他のいかなるパラメータ調整（SL幅・時間切れ決済・ブレイク条件参照期間・それらの組み合わせ）よりも頑健な結果である。3区間（Fold3・4・5）で黒字転換し、残り3区間（Fold1・2・6）でも損失が大幅に縮小した。合算では95件・-152,695円から32件・+13,645円へ転換し、本セッションで唯一「全区間で一貫した方向の改善」を示したチューニングとなった。
+
+  **損失の内訳分析（全6区間合算32件、Tokyoセッション限定）**: 負け9件は全てSLで決済され、**9件全て（100%）が一度含み益（平均+2,056円）に達してから反転**しており、「含み益からの反転」問題は、取引数が3倍以上に増えたより頑健なサンプルでも100%のまま変わらず残存している。負けR倍数平均-0.997R（前回同様ほぼ設計どおりの1R到達）、勝ちR倍数平均+0.449R（前回の+0.445Rとほぼ同水準、全セッション条件の+0.25〜0.31R程度より明確に大きい）。方向別では、**BUY（20件・+39,974円）が一貫して好調な一方、SELL（12件・-26,329円）は依然として足を引っ張っている**（前タスクの全セッション分析でもSELLが弱い傾向は確認済みだったが、Tokyoセッション限定後はその差がより際立った）。
+
+  **総合評価: Tokyoセッション限定は、6つの独立したTrain区間全てで一貫して改善する、本セッション中最も頑健な調整であることが確定した。** 「単一区間・少数サンプルの過学習」という通常の懸念は、6区間中6区間で同方向という結果により大幅に低減されている。ただし、取引頻度が全セッション合計95件から32件へ約1/3に減少している点（3年区間あたり平均5〜6件程度）は、実運用における統計的検出力・機会損失の観点で考慮が必要である。「含み益からの反転」という核心的な問題は、Tokyoセッション限定でも一切解消しておらず、含み益保全機構の必要性は変わらず残る。
+
+  **残存課題**:
+  1. Fold6（n=2）はサンプル数が極端に少なく、この区間単体での結論は慎重に扱う必要がある。
+  2. SELL方向が依然弱いため、Tokyoセッション限定にBUY方向限定を組み合わせる案は理論上さらなる改善余地があるが未検証（ただし過剰な条件の重ねがけによる更なるサンプル減少・過学習リスクに注意）。
+  3. 「含み益からの反転」問題（負けの100%）は未解決であり、含み益保全機構（建値ストップ・部分利確等）の実装検証が依然として最優先の残存課題である。
+  4. OOS区間（Fold1〜6のTest区間）での確認は未実施。Train区間での頑健性が確認された段階であり、実運用判断にはOOS確認が必須（本プロジェクトのIS/OOS分離規律）。
+  5. `InpEnableMeanReversionStrategy`は既定値`false`（無効）のまま据え置き、EA既定値・Tester ini構成のいずれにも変更を適用していない。全結果は未コミット。
+
+* [x] **`InpMeanReversionMaxHoldingBars`の既定値を20→10へ変更し、あわせて2点の確認事項を調査する（ユーザー依頼、2026-08-26/29実施）。**
+
+  **パラメータ変更**: `InpMeanReversionMaxHoldingBars`の既定値を20→10へ変更（`mt5/Include/Core/Config.mqh`・`mt5/Experts/CoreEA.mq5`・`docs/configuration.md`）。前タスクのスイープ結果（Fold1〜6全区間で20本が最悪、5〜10本の範囲が改善）を踏まえた変更。コンパイル・release-gate（Python 121件含む）全PASSを確認。
+
+  **確認1: 保有中のポジションについて、BB端を都度再計算し、SLが変動しているか。**
+
+  コードベース全体で`request.sl=`が設定される箇所は3か所のみ（`RiskManager.mqh`・`OrderManager.mqh`の新規発注時、`PositionManager.mqh`の`ModifyStopLoss`）であり、保有中ポジションのSLを変更できる経路は`PositionManager::Monitor()`内の建値ストップ（`CBreakevenStopRules::ShouldMoveToBreakeven`）のみである。この機構は`open_price`（固定値）へSLを移動するものであり、**Band等の指標を都度再計算してSLを追従させる処理は存在しない**。
+
+  ただし調査の過程で、**建値ストップ自体はMR・トレンド両戦略の保有ポジションを対象とする設計（`IsManagedPosition`の3引数版でMagic Numberを判定）になっているが、実際にはMRポジションに一度も発動していないことが判明した**。Fold5 Trainの実行（`results/backtests/20260829-160702-USDJPY-H1/`）で、既知のMRポジションticket（25件）と、同一実行時間帯に発生した`SL_MODIFIED`イベント（48件）を突き合わせたところ、**重複は0件**だった。原因は、建値ストップの発動条件（含み益が初期リスクの`InpBreakevenTriggerR`倍＝既定1.0R以上）に対し、MR戦略の勝ちトレードの含み益は前タスクまでの分析で一貫して+0.25〜0.45R程度に留まっており、**1.0Rに到達する前にTP到達または反転しているため、建値ストップの発動条件自体にほぼ到達しない**ためと考えられる。これはバグではなく、トレンド戦略向けに校正された`InpBreakevenTriggerR=1.0`が、TPがSLより近いMR戦略には構造的に不適合であることを示す。
+
+  **確認2: BB幅の平均算出用の本数の中に、レンジ相場に入る前のものが入る可能性があるか。**
+
+  `ReadBbWidthBaseline(m_config.mean_reversion_bb_width_lookback)`（既定20本）は、呼び出し時点から直近20本の確定足BB Upper/Lower値を単純に読み取るローリングウィンドウであり、**レンジ相場（Range Filter成立）が実際に始まった時点を起点とせず、ポジションの保有期間やレンジ相場の継続期間とは無関係に常に「現在から直近20本」を参照する**。エントリー自体はRange Filterが直近1本で成立していれば良く、その前の19本がレンジ相場だった保証はないため、**平均算出用の20本にレンジ相場入り前（トレンド相場等、より広いBB幅だった時期）のデータが混入する可能性がある**。
+
+  この設計は、BB Width急拡大の判定基準（現在幅が過去平均の`InpMeanReversionBbWidthExpansionRatio`倍＝既定1.5倍以上）を実質的に緩める方向に作用する。過去平均にレンジ相場入り前の広い幅が混入すると、平均自体が本来のレンジ相場の実態より大きくなり、1.5倍という閾値に到達しにくくなる。**実際、本セッションで実施した全てのMR関連検証（30件超のStrategy Tester実行）を通じて、`BB_WIDTH_EXPANSION`によるRANGE_EXITは一度も発火していない**ことを確認しており、この設計上の特性が一因である可能性が高い。
+
+  **総合評価: 2つの確認事項はいずれも「問題あり」と判断する。** 確認1は建値ストップの発動条件（`InpBreakevenTriggerR`）がMR戦略に対して事実上機能していない校正ミスマッチであり、確認2はBB幅ベースラインがレンジ相場開始前のデータで汚染されうる設計上の弱点である。いずれもコード上の「バグ」ではなく、複数の独立機構（建値ストップ・BB Width急拡大）を流用したことによるパラメータ・前提条件の不整合である。
+
+  **残存課題**:
+  1. 確認1への対応案（未実施）: MR戦略専用の建値ストップトリガー（例: `InpMeanReversionBreakevenTriggerR`を既定0.3〜0.5R程度に個別設定）を追加すれば、機構自体は理論上機能するようになる。ただし別途Train区間での効果検証が必要。
+  2. 確認2への対応案（未実施）: BB Width平均算出を、レンジ相場成立からの経過本数に応じた可変長ウィンドウにする、またはRange Filter成立中の確定足のみでフィルタするなどの再設計が考えられるが、実装・検証は未実施。
+  3. `InpMeanReversionMaxHoldingBars=10`への変更は既定値の変更であり、MR戦略自体は`InpEnableMeanReversionStrategy=false`のまま無効のため、既定挙動（トレンド戦略のみ）には一切影響しない。全結果は未コミット。
+
+* [x] **強制決済のレンジブレイク判定を、確定足ベースの猶予期間方式からTickベースの実時間確認方式へ変更する（ユーザー指示、2026-08-26実施）。** それまでの`InpMeanReversionRangeExitGraceBars`（既定3本）は、Range Filter解除後に確定足で最大3本以内のレンジブレイクしか監視できず、猶予期間が短くブレイクを十分に検知できていなかった。Range Filter自体の判定条件（`Choppiness Index>60 AND ADX<25`、`CMeanReversionEntryRules::IsRangeFilterActive`）は変更せず、Range Filter解除時に「警戒状態」へ移行する設計（2026-08-25実装）もそのまま維持したうえで、警戒状態中の監視方式のみを「確定足ベースで最大N本」から「Bid/Askを毎Tickで監視し、ブレイク条件（BUY: `Bid<RangeLow-ATR×BreakAtrMultiplier`、SELL: `Ask>RangeHigh+ATR×BreakAtrMultiplier`）が実時間で`BreakConfirmSeconds`秒以上継続したら強制決済」という方式へ変更した。継続中に価格がBreakLevelの内側へ戻ればタイマーをリセットし、再度ブレイクすれば新たにタイマーが開始する（Tick数ではなく`TimeCurrent()`の差分で判定、Strategy Tester上でもシミュレート時刻を正しく参照する）。
+
+  **実装**: `mt5/Include/Strategy/MeanReversionStrategy.mqh`で、旧`CMeanReversionExitRules::IsRangeBreak`（確定足Close基準）を新設`IsTickRangeBreak`（Bid/Ask＋ATRバッファ基準の純粋関数、継続確認は含まない）へ置換。`CRangeExitGraceTracker`のticket単位の状態を「`alert_start_bar_time`（確定足時刻）」から「`break_timer_start`（ブレイク確認タイマーの開始実時刻、0=停止中）」へ再設計し、`StartBreakTimer`/`ResetBreakTimer`を新設。`IsRangeStillValid`から確定足バー数カウント（`ElapsedGraceBars`、削除済み）を除去し、Tick監視＋実時間タイマーのロジックへ全面書き換え。決済理由コードは`RANGE_BREAK`から`TICK_BREAK_EXIT`へ変更（ユーザー提案の"TickBreakExit"に対応する命名、既存の`RANGE_EXIT`監査イベント・reason_codeへそのまま記録されるため、従来のSL・TP・BB_WIDTH_EXPANSION等と区別できる）。あわせて、決済理由を問わずポジション決済時に警戒状態を確実にクリアするという指示に対応するため、`CMeanReversionStrategy::ClearPositionState(ticket)`を新設し、`EAController::OnTradeTransaction`のDEAL_ENTRY_OUT検知箇所（レンジMagic Numberの場合のみ）から呼び出すよう変更した（RANGE_BREAK/BB_WIDTH_EXPANSION経由の決済は`IsRangeStillValid`内で既にクリア済みだが、SL/TP等ブローカー側自動決済はここでしかクリアの機会がないため）。複数ポジションはticket単位の`m_grace_tracker`により独立管理（変更前から維持）。EA再起動時は`m_grace_tracker`が空配列から始まるため、既存ポジションは自動的に「通常状態（未警戒）」から再開する（`CTimeStopTracker`と同じ、状態不整合の起きない安全側の再初期化設計、新規の永続化機構は追加していない）。Emergency Exitの新規追加は行わず、既存SLを最終安全装置として維持。
+
+  新規config: `mean_reversion_break_atr_multiplier`（既定0.25、`InpMeanReversionBreakAtrMultiplier`）・`mean_reversion_break_confirm_seconds`（既定30、`InpMeanReversionBreakConfirmSeconds`）。廃止: `mean_reversion_range_exit_grace_bars`（`InpMeanReversionRangeExitGraceBars`）。`mean_reversion_range_break_lookback`（RangeLow/RangeHigh参照本数）はそのまま流用。
+
+  変更ファイル: `mt5/Include/Strategy/MeanReversionStrategy.mqh`（上記）・`mt5/Include/Core/Config.mqh`（フィールド入替、バリデーション更新）・`mt5/Include/Core/EAController.mqh`（`IsRangeStillValid`呼び出しを4引数へ変更、`RANGE_ALERT`payloadから`elapsed_bars`削除、`OnTradeTransaction`へ`ClearPositionState`呼び出し追加）・`mt5/Experts/CoreEA.mq5`（input入替）・`mt5/Tests/TestTrendFollowingRules.mq5`（`IsRangeBreak`のアサーションを`IsTickRangeBreak`（7件、境界値・NaN・crossed market data含む）へ置換）・`docs/configuration.md`（あわせて、`python/analysis/trade_breakdown.py`の`RANGE_EXIT`結合が既に実装済みであるにもかかわらず「未実装」と誤記していた箇所を訂正した）。Range Filter判定・エントリー条件・TP・SL・リスク管理・Magic Number識別は一切変更していない。
+
+  **検証**: MQL5コンパイル（10ターゲット、0 errors/0 warnings）・MQL5 Script Test 9件全PASS（新規`IsTickRangeBreak`アサーション7件、ログで個別PASS確認済み）・`.\tools\release-gate.ps1 -Mode Development`全体PASS（Python 121件含む）。**未実施**: Strategy Tester実データ検証（`InpEnableMeanReversionStrategy`は既定値false据え置き）。状態機械（警戒状態・ブレイク確認タイマーの実時間経過）自体は、ticket単位の永続状態と実時刻の経過を要するため、`IsTrendStillValid`と同様に静的単体テストの対象外（複数ポジションでの状態干渉なし・EA再起動時の状態復元・TP/SL従来動作の各確認は、Strategy Tester実データ検証時に行う必要がある）。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する。
+
+* [x] **Tickベース実時間確認方式（TICK_BREAK_EXIT）を、Strategy Tester実データで初回検証する（ユーザー依頼、2026-08-29実施）。** 上記タスクで「未実施」としていたStrategy Tester実データ検証。`InpEnableMeanReversionStrategy=true`（他は既定値どおり、`InpMeanReversionMaxHoldingBars=10`・全セッション・Tokyo制限なし）でFold1 Train（2017-09〜2018-12）・Fold5 Train（2020-01〜2022-12）を実行し（`results/backtests/20260829-174535-USDJPY-H1/`・`results/backtests/20260829-174648-USDJPY-H1/`）、`python.analysis.trade_breakdown`で損失内訳を分析した。コード変更は行っていない（純粋な検証ラウンド）。
+
+  **結果（MRトレードのみ、旧設計（確定足ベース猶予期間・グレースバー版）の既知基準値との比較）**:
+
+  | Fold | 旧設計 純損益（件数） | 新設計 純損益（件数） | 差分 |
+  |---|---:|---:|---:|
+  | Fold1 Train | -20,915円（12件） | **-374円**（12件） | +20,541円（ほぼ収支均衡） |
+  | Fold5 Train | -43,532円（25件） | **-35,297円**（25件） | +8,235円（19%改善、なお赤字） |
+
+  トレード件数は両Foldとも変化なし（旧設計・新設計とも12件・25件で完全一致）。これはエントリー条件を一切変更しておらず、決済タイミングのみが変化したことと整合する。
+
+  **`TICK_BREAK_EXIT`の発火実績（旧`RANGE_BREAK`は本セッション全体で一度も発火しなかった、既報のとおり）**: Fold1で1件（`position_ticket=28`、-4,939円）、Fold5で5件（`position_ticket=48/80/132/144/208`、平均-7,558円）が実際に発火し、決済理由として記録された。これにより、旧設計で確認していた「確定足ベースの判定はTickレベルのSL約定に構造的に間に合わない」という問題は、少なくとも一部のケースでは解消されたことを実データで確認した。
+
+  **警戒状態（アラート）episode単位での機能性評価**（`RANGE_ALERT`のposition_ticket別イベント列と、対応する`TRADE_CLOSED`最終結果を突合。Fold1: 4件、Fold5: 14件のアラート発生ポジションを個別追跡。**訂正（2026-08-30、下記スイープ検証時に判明）**: 初回報告時、Fold5のアラート件数を15件、TP到達を6件と誤記していた。正しくはいずれもticket=32/94（Fold1）・ticket=2（Fold5）のように`MEAN_REVERSION_MAX_HOLDING_BARS`で決済された黒字トレードをTP到達と誤って合算していたための誤りで、実際の内訳は下表のとおりFold1: 4件、Fold5: 14件が正しい）:
+
+  | 最終結果 | Fold1 | Fold5 | 説明 |
+  |---|---:|---:|---|
+  | TP到達（アラート後に回復） | 1件 | 5件 | Range Filter再成立またはブレイク未確認のまま回復しTPで決済。**アラート機構は回復可能ポジションを誤って手放していない**。 |
+  | `TICK_BREAK_EXIT`で早期決済 | 1件 | 5件 | 実際にブレイクを実時間で確認し強制決済。Fold5の5件平均-7,558円は、同Foldの通常SL平均-10,149円（3件平均）より**約26%小さい損失**で決済できている。 |
+  | 通常SLまで到達（アラート検知したが間に合わず） | 0件 | 3件 | `position_ticket=40/82/152`。アラート状態には入ったが、`BreakConfirmSeconds`（既定30秒）の実時間確認が完了する前に価格がSLへ到達し、タイミング競合が依然として残存することを示す。 |
+  | `MEAN_REVERSION_MAX_HOLDING_BARS`で決済（黒字） | 2件 | 1件 | アラート状態のままブレイク未確認で保有上限に到達したが、決済時点で含み益だった（黒字）。TP到達ではないが、これもアラート機構が誤って損失確定させたわけではない例。 |
+
+  **損失原因分析（`reversal_from_profit_summary`）**: 新設計でも、MR損失トレードのうち一度含み益（MFE>0）に達してから反転して損失決済に至った割合はFold1 100%（3/3）・Fold5 90%（9/10）と、旧設計時と同水準（91〜100%）のまま変化していない。`loss_R_mean`はFold1 -0.826R・Fold5 -0.776R（旧設計時の-0.95〜-1.0Rから改善、`TICK_BREAK_EXIT`が平均損失幅を縮小させた効果と整合）。`win_R_mean`はFold1 +0.276R・Fold5 +0.294Rで旧設計時（+0.25〜0.45R）と同水準、変化なし。**「含み益から反転して負ける」という本セッション一貫の中心的課題は、決済タイミングの改善だけでは解消されず、依然未解決である**。
+
+  **総合評価**: `TICK_BREAK_EXIT`は設計どおり機能しており、(1) 回復可能なポジションを誤って手放さない、(2) 実際にブレイクしたポジションの損失を平均約26%圧縮する、という2つの効果が実データで確認できた。旧`RANGE_BREAK`（確定足ベース）が一度も発火しなかったのに対し明確な改善。ただしFold5では依然3/8の損失episodeが`BreakConfirmSeconds`の実時間確認に間に合わずSLへ到達しており、特に急変動時のタイミング競合は完全には解消していない。また、反転損失の発生率自体（90〜100%）は不変であり、決済側の改善だけでは根本的な収益性（特にFold5の残存赤字-35,297円）を解消するには不十分である。
+
+  **追加の調整の必要性**: (a) `BreakConfirmSeconds`（既定30秒）を短縮すれば、タイミング競合で取りこぼした3件（Fold5）の一部を追加で捕捉できる可能性があるが、確認時間を短縮しすぎるとノイズでの誤決済（回復可能ポジションを手放す）が増える可能性があり、トレードオフのスイープ検証が必要（未実施）。(b) 反転損失90〜100%という根本課題には、決済側ではなくエントリー側条件（現状のRange Filter閾値・Reentry条件）の見直しが必要な可能性がある（未検証）。(c) 既報のTokyoセッション限定は本ラウンドでは適用していない（全セッション・既定値のみで検証）。Tokyoセッション限定と本改善を併用した場合の効果は未検証。(d) 他Fold（Fold2〜4・6）での再現性は未確認（本ラウンドはFold1・Fold5のみ）。
+
+  **検証**: 上記コード変更ラウンドで確認済みのコンパイル・Script Test・release-gateから変更なし（本ラウンドはコード変更なし、Strategy Tester実データでの動作検証のみ）。使用した一時ini（`fold1-train-mr-verify.ini`・`fold5-train-mr-verify.ini`）は分析後に削除済み。`InpEnableMeanReversionStrategy`は既定値`false`のまま、全結果は未コミット。
+
+* [x] **`InpMeanReversionBreakConfirmSeconds`（既定30秒）を10/15/20/25秒でスイープする（ユーザー依頼、2026-08-30実施）。加えて、下限側の挙動確認のため5秒・0秒（即時確定＝ブレイク検知の次Tickで確定）を追加検証した。** Fold1 Train・Fold5 Trainそれぞれで7パターン（0/5/10/15/20/25/30秒、30秒は前タスクの既存結果を再利用）を実行し比較した。コード変更は行っていない（純粋な検証ラウンド）。
+
+  **結果（MR純損益、Fold1+Fold5合算）**:
+
+  | BreakConfirmSeconds | Fold1純損益（12件） | Fold5純損益（25件） | 合算 |
+  |---:|---:|---:|---:|
+  | 0秒 | -484円 | **-31,479円** | **-31,963円** |
+  | 5秒 | -374円 | -33,417円 | -33,791円 |
+  | 10秒 | -374円 | -34,155円 | -34,529円 |
+  | 15秒 | -374円 | -34,496円 | -34,870円 |
+  | 20秒 | -374円 | -34,731円 | -35,105円 |
+  | 25秒 | -374円 | -35,061円 | -35,435円 |
+  | 30秒（既定・基準） | -374円 | -35,297円 | -35,671円 |
+
+  **秒数を短縮するほど一貫して純損益が改善する、単調な傾向が確認できた**（Fold5で特に明瞭。Fold1は`TICK_BREAK_EXIT`の発火が1件のみのためサンプル不足で0秒のみ僅かに悪化しているが、これは単一トレードの決済Tickが異なることによる価格ノイズであり、`n_tick_break`自体は全設定で1件のまま変化がなく構造的な差ではない）。
+
+  **メカニズム**: Fold5では、`TICK_BREAK_EXIT`の発火件数は5秒〜30秒の範囲で5件のまま変わらず、`SL_REACHED`（アラート検知したが間に合わずSLへ到達）も3件のまま変わらない。短縮の効果は主に「同じ5件をより早いTickで確定させることで、決済ごとの平均損失を圧縮する」ことによる（`TICK_BREAK_EXIT`合計損失は30秒時-37,791円→5秒時-35,911円）。0秒（即時確定）でのみ、従来`SL_REACHED`だった1件が`TICK_BREAK_EXIT`（6件目）へ転換し、通常SL到達（約-10,150円平均）よりやや小さい損失（`TICK_BREAK_EXIT`6件平均-7,355円）で決済できた。
+
+  **回復可能ポジションへの影響**: 0秒を含む全設定で、アラート後にTPまたは黒字での`MEAN_REVERSION_MAX_HOLDING_BARS`決済に至った件数（Fold1: 3件、Fold5: 6件）は一切変化しなかった。**本検証サンプルの範囲では、最も短い0秒でも、回復可能なポジションを誤って手放す事例は確認されなかった**。
+
+  **総合評価**: 検証したFold1・Fold5の範囲では、`BreakConfirmSeconds`を短縮するほど（0秒まで含め）純損益が改善する、単調で一貫した傾向が確認できた。既定30秒は、本セッションのデータにおいては必要以上に長く、ブレイク確定を不必要に遅らせて損失を拡大させている可能性が高い。
+
+  **残存する留意点・追加検証の必要性**: (a) 0秒（即時確定）は「実時間で継続していることの確認」という当初の設計意図（ノイズ除去）を事実上放棄する設定であり、本検証のサンプル（Fold1: 4episode、Fold5: 14episode）では偶然ノイズ誤決済が発生しなかっただけの可能性があるため、他Fold（Fold2〜4・6）でも同じ傾向が再現するか未確認。(b) 5秒は0秒よりFold5でやや純損益が劣るが、実時間での最小限の継続確認という設計意図をある程度保ちながら大部分の改善効果（-35,297円→-33,417円、約53%の改善）を得られるバランス案として妥当と考えられるが、これも他Foldでの再現性は未確認。(c) 本スイープはTokyoセッション制限なし・全既定値の条件下でのみ実施しており、他パラメータとの組み合わせ効果は未検証。(d) 反転損失90〜100%という根本課題（前タスク参照）は本スイープでも一切改善しておらず、決済タイミングの調整だけでは解決しない。
+
+  **検証**: コード変更なし（設定値のみのスイープ、既存コンパイル・release-gate結果から変更なし）。使用した一時ini（`fold{1,5}-train-bcs{0,5,10,15,20,25}.ini`）は分析後に削除済み。`InpEnableMeanReversionStrategy`は既定値`false`のまま、全結果は未コミット。
+
 * [x] 監査ログ汚染バグの影響を受けていた可能性がある分析（Buy/Sell・時間帯・曜日・相場レジーム・ATR帯・ADX帯別の有意差分析）を再検証する（2026-08-22実施。`InpEntryUseStagedPipeline=false`（Buy/Sell等の分析時点の構成）へ一時的に戻し、修正済み`tools/run-strategy-tester.ps1`で同一IS期間を再実行（`results/backtests/20260822-195446-USDJPY-H1/`）。**検証手順**: (1) 純損益-48,223円・PF0.89・Sharpe-1.10・取引数209がベースラインと完全一致することを確認。(2) `InpEntryUseStagedPipeline=false`で実行したにもかかわらず`ENTRY_PIPELINE`イベント（staged pipeline有効時のみ記録されるはずの診断ログ）が0件であることを確認し、前回発見した汚染（他run由来の`ENTRY_PIPELINE`混入）が本runには存在しないことを確認。(3) `trade_breakdown`を再実行し、direction/session/weekday/market_regime_trend/market_regime_volatility/atr_band/adx_bandの全内訳が、既報の値（Buy/Sell・時間帯・曜日別分析および相場レジーム別分析の回でそれぞれ報告した数値）と完全一致することを確認。**結論: Buy/Sell・時間帯・曜日・相場レジーム（トレンド/ボラティリティ）・ATR帯・ADX帯別の分析結果はいずれも汚染の影響を受けておらず、既報の「統計的に有意な勝率差は確認できなかった」という結論は有効**。汚染が実際に混入していたのは`InpRegimeTrendAdxMin`スイープの40番run（`20260822-181739`）のみであり、これは前タスクで既に修正済みツールにより再実行・再評価済み（`20260822-183152`、結果は変化なし）。
 
   **副次的な重要発見（バグではなく仕様どおりの安全機構）**: 本re-verification中、監査ログの`TRADE_CLOSED`/`DEAL`/`ORDER_SUBMISSION`が2019-04-29で止まる一方、`CANDIDATE`/`RISK_DECISION`はIS期間全体（〜2020-12-30）にわたって記録され続けている現象を発見。調査したところ、2019-05-01以降の`RISK_DECISION`391件はすべて`REJECTED`/`reason_code=DD_LIMIT`（最大ドローダウン制限）であり、Risk Managerの安全機構が正しく発動し、以降の新規注文を意図どおり永続的に拒否し続けていたことが判明した（`InpMaxDrawdownPercent`既定10%、多くのrunのTester .htmレポートで`max_drawdown_pct=10%`と一致）。**これはバグではなく設計どおりの安全動作**だが、本セッションで報告してきたIS期間の各種指標（取引数・純損益等）の一部は、実際には2017-09〜2020-12の全期間ではなく、DD_LIMIT発動までの実質的なより短い期間（現行最良状態の場合は2017-09〜2019-04の約1.6年）における結果である可能性がある。ADX≥40のような高収益設定ではDD_LIMITが発動せず全期間（2017-09〜2020-12）にわたって取引が継続していることを別途確認済み（`results/backtests/20260822-183152-USDJPY-H1/`のTRADE_CLOSEDタイムスタンプ範囲）。この点はWalk Forward各Fold実行時・OOS検証時に留意する必要がある（DD_LIMIT発動の有無・時期をFoldごとに確認することを推奨）。
@@ -223,6 +1135,36 @@
   | `InpEnableEntryTimingAnalysis` | false | false | 分析専用機能のため本番相当設定では無効 |
 
   この状態でのIS実績（`20260822-183152-USDJPY-H1`他）: 純損益+15,511円、Profit Factor 1.09、Sharpe +0.80、取引数77、最大DD 3%。コスト感応度分析で理論上の利益の約59%がコストに失われる薄いエッジであること、`InpRegimeTrendAdxMin`が隣接水準（35/45）に対し非単調でIS期間固有の過学習リスクがあることを踏まえたうえで、ユーザー判断によりこの状態を凍結してOOSへ進む。次はOOS期間（2021-01〜2024-12）で本節と同一パラメータでのStrategy Tester初回実行を行う。未コミットの作業ツリー差分のため、凍結の証跡としてのcommitはユーザー指示があるまで保留する）
+* [x] **OOS期間（2021-01〜2024-12）で、凍結したIS最良パラメータセットの初回評価を実行する**（2026-08-22実施。パラメータ変更は一切行わず、`tools/run-strategy-tester.ps1`を`-FromDate 2021.01.01 -ToDate 2024.12.31`で実行。結果は`results/backtests/20260822-235947-USDJPY-H1/`: 純損益+5,294円、Profit Factor 1.02、Sharpe +0.20、取引数105、最大DD 4%。
+
+  | | IS（`20260822-183152`） | OOS（`20260822-235947`） |
+  |---|---:|---:|
+  | 純損益 | +15,511円 | +5,294円 |
+  | Profit Factor | 1.09 | **1.02** |
+  | Sharpe | +0.80 | **+0.20** |
+  | 取引数 | 77 | 105 |
+
+  **PF・Sharpeともに大きく低下しており、IS段階で既に指摘していた過学習リスク（`InpRegimeTrendAdxMin`の隣接水準に対する非単調な挙動、サンプル数の少なさ）と整合する結果**。コスト感応度分析（OOS）では、コスト除外時利益29,985円のうち82.3%（24,691円）がコスト（Spread中心）で失われており、ISの59.0%よりさらに深刻。コスト込みPFは1.02とほぼ収支均衡ラインで、未計測のSlippage（引き続きSlippage=0の楽観的仮定）を考慮すればマイナスへ転じる可能性が高い。direction別ではBUY（89件、PF1.12、純利益+23,295円）とSELL（16件、PF0.52、純損失-18,001円）で顕著な差があり、2021-2024の実勢USDJPYが大幅な円安トレンドだった期間特性と整合する（ISでのBuy/Sell有意差検定は「有意差なし」だった点との対比）。close_reason別ではTP平均利益(9,447円)・SL平均損失(-4,063円)はISとほぼ同水準で安定していたが、EXPERT（早期Exit）がISでは概ね収支均衡だったのに対しOOSでは明確なマイナス(-3,873円)だった。
+
+  **副次的発見（安全性への影響なし）**: OOS期間中の2022-02-25〜2022-04-11に監査ログの`SYSTEM_ERROR`（`POSITION_MANAGER`/`UNKNOWN_ERROR`）が162件記録された。同期間のDEAL/TRADE_CLOSEDイベントを確認したところポジションの開閉・SL/TP到達は正常に継続しており、保護SLが失われた形跡はない。`EAController::AuditSystemError()`が`PositionManager::Monitor()`のerror文字列を`reason_code`として記録する際、空文字列等で`SafeCorrelationId`検証に失敗すると`UNKNOWN_ERROR`へフォールバックし、実際の詳細理由が失われ原因調査ができない状態であることが判明（監査ログの観測性の問題であり、取引実行・ポジション保護への影響はない）。今回は分析専用ラウンドのためコード修正は行っていない。
+
+  **総合評価: DEC-024/025のIS/OOS分離方針に基づき、本結果を理由としたIS期間パラメータの再変更は行わない。** OOSでの明確な性能劣化（PF1.09→1.02、Sharpe0.80→0.20）と、コスト感応度のさらなる悪化（59%→82.3%）は、本パラメータセットが依然として本番投入の水準に達していないことを示している。次の一手候補: (a) Walk Forward各Fold（2021/2022/2023/2024の年次）で年ごとの安定性を確認する（本節既存タスク参照）、(b) `AuditSystemError`の詳細理由欠落を修正する（安全性には影響しないが、将来の障害調査のため）、(c) Demo口座でのSlippage実測（6節参照）を優先し、コスト面での実行可能性を先に見極める。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
+* [x] `AuditSystemError`の詳細理由欠落を修正する（2026-08-23実施、ユーザー依頼）。原因は`mt5/Include/Core/EAController.mqh`の`POSITION_MANAGER`向け呼び出し1箇所のみで、実際の詳細理由（`position_error`）を`AuditSystemError()`の第2引数（`reason_code`、`CTradeLogRules::SafeCorrelationId`検証を通過しないとフォールバック値`UNKNOWN_ERROR`へ置換される）へ渡し、第3引数（`reason`、検証なしの自由文字列）には固定の一般文言のみを渡していたため、フォールバック発生時に詳細情報が完全に失われていた。他3箇所の呼び出し（`RISK_MANAGER`・`SIGNAL_ENGINE`×2）は元から詳細を`reason`側に渡す設計になっており対象外。**修正**: `POSITION_MANAGER`呼び出しも他3箇所と同じパターン（`reason_code`は固定の安全な識別子`POSITION_MONITOR_ERROR`、詳細は`reason`側で運ぶ）へ統一。取引実行・ポジション保護判断には一切触れていない（監査ログ専用の変更）。コンパイル（10ターゲット）・9 Script Test全PASS確認済み。
+
+  **再検証**: 同一OOS期間（2021-01〜2024-12）で再実行し、純損益+5,294円・PF1.02・Sharpe+0.20・取引数105が修正前と完全一致（退行なし）を確認。修正後、当該162件の`SYSTEM_ERROR`の`reason_code`は安定して`POSITION_MONITOR_ERROR`となり（`UNKNOWN_ERROR`は解消）、`reason`に実際の詳細（`"Managed position monitoring failed: EMERGENCY_ORDER_CHECK_FAILED retcode=0 comment="`）が記録されるようになった。
+
+  **修正により判明した根本原因の詳細**: `PositionManager::EmergencyClose()`内の`OrderCheck()`呼び出しが`retcode=0`・空`comment`で失敗している（`OrderCheck()`自体が失敗、Broker側の具体的な拒否コードではない）。全162件が2022-02（99件）・2022-04（63件）の2つの期間にのみ集中しており、OOS全体（2021-2024）の他期間には一切出現しない局所的な事象であることを確認。ポジション保護（Broker側SL）自体は同期間中も継続しており実害はない。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
+* [x] **`EMERGENCY_ORDER_CHECK_FAILED retcode=0`が2022-02/04にのみ発生する根本原因を調査し、追加修正を実施する**（2026-08-23実施、ユーザー依頼）。
+
+  **調査手順**: (1) 該当ポジション（ticket=68、ticket=74）の`TRADE_CLOSED`を確認したところ、いずれも金曜〜月曜の週跨ぎ保有で、`exit_spread_points`が通常3〜6ptに対し80pt・147ptと異常に拡大しており週末ギャップでの決済と判明。(2) `HasValidProtectiveStop`と同じbid/ask健全性チェック（`CPositionProtectionRules::HasValidMarketData`新設）を`EmergencyClose`/`CloseOnSignalInvalidation`/`CloseOnTimeStop`のOrderCheck前へ追加し再実行したが、エラーは解消せず、bid/ask自体は不正値ではないことが判明（この健全性チェック自体は将来の異常値混入に対する妥当な防御であり残置）。(3) `GetLastError()`・`price`・`bid`・`ask`を診断メッセージへ追加し再実行した結果、`last_error=0`（真のエラーなし）かつbid/askとも正常値（例: bid=124.025 ask=124.085）であることを確認。(4) 既存の`COrderCheckRules::IsAccepted()`のコメント・単体テスト（`mt5/Tests/TestTradingRules.mq5`の`"OrderCheck bool success accepts documented retcode zero"`）から、**OrderCheckは成功時（bool戻り値true）でもretcode=0（TRADE_RETCODE_DONEではなく"Done"相当の0）を返すことがMQL5仕様上ある**ことを再確認。`EmergencyClose()`は`ModifyStopLoss`/`CloseOnSignalInvalidation`/`CloseOnTimeStop`の3箇所と異なり`COrderCheckRules::IsAccepted`を使わず`check.retcode!=TRADE_RETCODE_DONE`という独自の不完全な判定をしており、retcode=0の正当な成功ケースを常に失敗と誤判定していたことが真の原因と判明。
+
+  **修正**: `mt5/Include/Trading/PositionManager.mqh`の`EmergencyClose()`を、他3箇所と同じ`COrderCheckRules::IsAccepted(check_ok,check.retcode)`による判定へ統一。あわせて`CPositionProtectionRules::HasValidMarketData()`を新設し`HasValidProtectiveStop`と3つの決済メソッドで共通利用するようリファクタ、診断メッセージへ`last_error`/`price`/`bid`/`ask`を追加。`mt5/Tests/TestTradingRules.mq5`へ`HasValidMarketData`の単体テスト5件を追加。取引実行・ポジション保護判断のロジック自体には触れていない。コンパイル（10ターゲット）・9 Script Test全PASS確認済み。
+
+  **修正後の再検証で判明した真の根本原因**: 修正により`OrderCheck`が正しく通過するようになった結果、同一箇所は今度は`OrderSend()`が`retcode=10018 (TRADE_RETCODE_MARKET_CLOSED)`・`comment=Market closed`で失敗することが判明した。**これはコードのバグではなく、週末クローズ中の現実の市場制約である**: ポジションのSLが週末の価格ギャップで見かけ上無効化され（`HasValidProtectiveStop`がfalseと判定）、EAが安全網として`EmergencyClose`を試みるが、市場が閉場しているため実際に成行注文を送信できない。ポジション自体はBroker側の指値SL注文（市場閉場中でも有効なスタンディングオーダー）により保護され続けており、月曜の取引再開時に正常にSL決済されている（前段で確認した80pt/147ptの`exit_spread_points`はこのギャップによるもの）。
+
+  **再検証**: 同一OOS期間で再実行し、純損益+5,294円・PF1.02・Sharpe+0.20・取引数105が完全一致（退行なし）することを確認。修正後の162件の内訳は、160件が`EMERGENCY_CLOSE_ALREADY_ATTEMPTED`（初回試行でべき等性フラグが正しく設定されるようになり、以降のTickで無駄なOrderSend再試行をしなくなった）、残り2件が`EMERGENCY_CLOSE_FAILED retcode=10018 comment=Market closed`（正確な失敗理由）となり、以前の不透明な`EMERGENCY_ORDER_CHECK_FAILED retcode=0`から診断精度が大幅に改善した。
+
+  **安全性への意義**: 本バグは、`EmergencyClose`が呼び出される稀な条件（`HasValidProtectiveStop`がfalseと判定される状況）で`OrderCheck`がretcode=0を返した場合に常に失敗する、という潜在的な安全網の欠陥だった。過去のIS/OOS全期間で`EmergencyClose`が呼び出しを試みたのは本件（週末ギャップ）が初めてであり実害はなかったが、今後、取引時間中に何らかの理由で正規のポジション保護が失われた場合の安全網が機能しない可能性があったため、安全性に関わる重要な修正である。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
 * [ ] Final Holdout期間（2025-01〜2026-08）は、EA・MLモデル・閾値・SL/TP等を確定し他の全ゲートが完了するまで実行しない（一度だけの評価として温存する）
 * [x] 新結果を踏まえてHANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`を更新する（2026-08-16実施）
 
@@ -244,6 +1186,377 @@
 * [x] HANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`の「口座未指定で未開始」という記載を、実際の完走結果に合わせて更新する（2026-08-09実施）
 * [x] 2020-2025期間で開始できなかった原因（tick履歴不足、Symbol仕様、Broker側制約等）を確認し、正式な検証対象期間を決定する（2026-08-10確認: 過去の`account is not specified`失敗は、当時の実行スクリプトのReport出力パス形式に起因していたとみられ、現行の`tools/run-strategy-tester.ps1`では再現しない（2020.01.01-2021.12.31を指定した実行がexit=0で正常終了）。ただし本質的な制約が判明: Broker（XMTrading-MT5/Tradexfin Limited）はUSDJPYのreal tickデータを**2022年1月分以降しか保持していない**（`.../ticks/USDJPY/`に202201.tkc以降のみ存在。OHLC M1バーは2016年から存在するが、real tickはない）。2020-2021を指定して実行すると、MT5がOHLCから合成tickを自動生成し「ヒストリー品質0%リアルティック」で完走してしまう（`results/backtests/20260810-144215-USDJPY-H1/INVALID-0pct-real-ticks.md`に詳細記録、このディレクトリの結果は無効・参考専用）。**結論: 2020〜2021年を含むreal tickベースの検証は本Broker/口座では不可能。** この結論を受け、2026-08-10にOANDA証券MT5への切替とOANDA側での2015年以降real tick取得が決定した（本節冒頭を参照）。XMTrading側での期間拡大は行わない）
 * [ ] 今回の結果（総損益-95,024円、Profit Factor 0.59、最大DD10%到達、ロング勝率0%/6件、ショート勝率26.67%/60件）を踏まえ、Strategyパラメータの見直し・再実行・期間拡大のいずれで進めるかを判断する（ユーザー判断待ち。詳細は作業報告を参照）
+
+## 2.1.3 Exit戦略再検証（含み益からの反転→SL到達対策、2026-09-05実施）
+
+`docs/backtesting.md`記載のOOS/Walk Forward期間（Fold1〜5、検証年2020〜2024）を対象に、Fold1で実際に取引が発生した4銘柄（USDJPY_HIST/EURJPY_HIST/EURUSD_HIST/GBPJPY_HIST）でCross-Asset Validation基盤（`tools/run-strategy-tester.ps1 -CaseFile`）を用いた一連の検証を実施した。**注意: 本節が対象とするFold1〜5期間は`docs/backtesting.md`が正式なOOS/Walk Forward評価期間と定めている区間であり、本節の複数回のパラメータスイープ（Entry Timing待機本数、建値ストップトリガー、ATRトレーリング）はすべて同一のこの期間に対して実施した。単発の評価では問題にならないが、複数回にわたり同一OOS期間を見ながら「最良」パラメータを選び続けることは過学習リスクを高める（`CLAUDE.md`「OOS結果を見た後、同じOOS期間へ再最適化しない」）。本節のいずれの結論も、採用前にFinal Holdout（2025-01〜2026-08、一度しか評価しない）での確認が必須である。**
+
+* [x] Fold1〜5・4銘柄でトレード条件別分析（`python.analysis.trade_breakdown`）を実施し、負けトレードの共通パターンを特定した。負けトレードの90〜100%が一度含み益（MFE>0）に達してからSL到達しており（Giveback比率中央値98〜226%）、この傾向は勝敗・年・銘柄を問わず一貫していた。TP到達時は常に勝率100%・平均利益約9,000〜9,600円（RR比2.0どおり）である一方、SL到達時は勝率0〜18%・平均損失約3,200〜5,000円という非対称な構造が判明し、損益を左右する主因はTP/SL到達件数の比率（実質的な勝率）と結論した。
+* [x] Entry Timing比較分析（新規実装`CEntryTimingAnalyzer`、`InpEnableEntryTimingAnalysis`）でプルバックパターンの反転を検証した。IMMEDIATE→WAIT_TRIGGER（既定`InpEntryTimingMaxWaitBars=6`）で平均期待値が0.007R→0.049Rへ改善する傾向を確認したが、`InpEntryTimingMaxWaitBars`を3/4/5でスイープした結果、既定値6が最良でありそれ以上の短縮は推奨しないと結論した。ただしプルバックは全トレードの14.4%（74/514件）に過ぎず、大半（85.6%）を占めるブレイクアウトはSetup=Triggerが同一事象のためこの分析の対象外。
+* [x] Breakout Timing比較分析を新規実装（`CBreakoutTimingAnalyzer`、`InpEnableBreakoutTimingAnalysis`、`mt5/Include/Logging/BreakoutTimingAnalyzer.mqh`）し、ブレイクアウト成立直後の反転（ダマシ）がタイミングの問題か条件自体の問題かを検証した。ブレイクアウトの約30〜34%が成立から1〜3本以内に反転する一方、確認本数を待つほど平均期待値が悪化（IMMEDIATE 0.0588R→CONFIRM_3_BARS 0.0280R、勝率は全Variantで43〜44%と横並び）し、**待つことによる質的な改善は見られなかった**。プルバックとは逆の結果であり、ブレイクアウトの反転はタイミングではなくSetup/Trigger条件自体の精度に起因する可能性が高いと結論した。実装過程で`TradeLogger.mqh`の`SafeEventType`と`python/analysis/reports.py`の`SUPPORTED_AUDIT_EVENTS`に新規イベント種別の登録漏れ（監査ログ書き込みが全滅する不具合）を発見・修正し、双方に回帰テストを追加した。
+* [x] 建値ストップトリガー（`InpBreakevenTriggerR`）を0.3/0.5/0.75/1.5でスイープした（既定値1.0は既存のFold1-5結果を再利用）。
+
+  **結果未記載だったため2026-09-13、当時の生データ（`results/backtests/20260905-164917-cases`（0.3）・`20260905-171344-cases`（0.5）・`20260905-173735-cases`（0.75）・`20260905-180128-cases`（1.5）、各20ケース）から`python.analysis.trade_breakdown.build_trade_context`で再構成して補記する。** 当時の監査ログは`FILE_COMMON`移行（DEC-030、2026-09-07）前の日次ファイル形式（`audit-YYYYMMDD.jsonl`）のため、ケースごとに該当日次ファイルをまとめて読み込んだ後、ケース単位で結合した（`ACCOUNT_SNAPSHOT`タイムスタンプ衝突を避けるため、異なるケース間では結合前に個別処理）。
+
+  | TriggerR | トレード数 | 純利益 | Baseline(1.0)比 | PF | 勝率 | 改善区分数(20区分中) |
+  |---:|---:|---:|---:|---:|---:|---:|
+  | 0.3 | 602 | +4,696円 | -113,837円 | 1.007 | 21.3% | 8 |
+  | 0.5 | 553 | +58,301円 | -60,232円 | 1.072 | 27.3% | 9 |
+  | **0.75** | 517 | **+128,208円** | **+9,675円** | 1.133 | 34.2% | **13** |
+  | 1.0（既定、Baseline再利用） | 514 | +118,533円 | - | 1.108 | 36.6% | - |
+  | 1.5 | 511 | +76,018円 | -42,515円 | 1.059 | 38.2% | 9 |
+
+  ※Baseline（1.0）のPF/勝率は本補記時点の`python.analysis.trade_breakdown`で再計算した値（1.108/36.6%）であり、当時TASKS.md 2.1.3表（本ファイル該当箇所）に記載された1.145/29.4%とは異なる。トレード数・純利益は完全一致しており同一データセットであることは確認済みで、差異は集計ロジックのバージョン差によるものと考えられる（本補記内の比較は全て同一時点・同一ロジックで再計算した値同士のため内部的な整合性は保たれている）。
+
+  0.3〜0.5・1.5はいずれも既定値1.0に劣るが、**TriggerR=0.75のみ既定値をわずかに上回った**（+8.2%）。Fold×銘柄20区分中13区分で改善しており、EarlyAdverseExit・トレンド継続反転Exitで観測した「0.7〜0.75付近にピークを持つ」パターンと同じ形状である。ただし改善幅は8.2%とセッション内の他の改善（EarlyAdverseExit単独+29%等）と比べ小さく、**この時点では未採用のまま既定値1.0が維持されている**。TrendReversalExit・EarlyAdverseExitと同じくFold1-5への単発スイープであり、採用判断にはFinal Holdoutでの確認が必要（本補記では既定値の変更は行わない）。
+* [x] **ATRトレーリングストップを再実装し、トリガーR×ATR倍率の2次元グリッド（1.0/1.5 × 2.0/3.0/4.0、計6組・120ケース）でスイープした。** 2026-08-17に一度実装・検証（1.0Rトリガー・2.0×ATR幅、USDJPY単一銘柄のIS期間のみ）し「建値ストップ単体に明確に劣る」として撤回された機能だが、その時は1点のみの検証だったため、ユーザー指示によりFold1-5・4銘柄という大きいサンプルで2次元グリッドとして再検証した。`mt5/Include/Trading/PositionManager.mqh`へ`CAtrTrailingStopRules`（純粋関数、単体テスト14件追加）を新設し、開始判定にはGlobalVariableで固定保存した当初SL（`InitialStopLoss()`、建値ストップ等によるSL変更の影響を受けない）を使用、以降は現在Bid/AskからATR×`InpAtrTrailingAtrMultiple`だけ離れた位置へ保護方向にのみ追従させる設計とした（`InpEnableBreakevenStop=false`とし単体で評価、既存の比較方法を踏襲）。`mt5/Include/Core/Config.mqh`・`mt5/Experts/CoreEA.mq5`・`docs/configuration.md`を更新。MQL5コンパイル（12ターゲット）・全Script Test PASS確認済み。
+
+  | 設定 | 総取引数 | 純損益合計 | PF平均 | 勝率平均 | 期待値平均 | 含み益反転率 |
+  |---|---|---|---|---|---|---|
+  | 建値ストップ単体（基準） | 514 | 118,533円 | 1.145 | 29.4% | 194.7 | 94.6% |
+  | ATRトレーリング T1.0/A2.0 | 521 | 120,782円 | 1.158 | 49.2% | 234.8 | 94.0% |
+  | ATRトレーリング T1.0/A3.0 | 515 | 93,032円 | 1.125 | 40.9% | 196.5 | 94.9% |
+  | ATRトレーリング T1.0/A4.0 | 511 | 120,807円 | 1.131 | 37.7% | **265.7** | 95.0% |
+  | ATRトレーリング T1.5/A2.0 | 513 | 80,608円 | 1.123 | 43.1% | 174.8 | 94.7% |
+  | ATRトレーリング T1.5/A3.0 | 511 | 57,917円 | 1.097 | 40.5% | 130.0 | 94.9% |
+  | ATRトレーリング T1.5/A4.0 | 510 | 98,167円 | 1.122 | 39.1% | 228.5 | 94.9% |
+
+  **含み益からの反転率は94〜95%で全設定を通じてほぼ不変** であり、Exit側（建値ストップ・ATRトレーリングいずれも）のパラメータ調整では「反転が発生すること自体」は解消できないことが再確認された（Entry側の精度の問題）。ただし**反転が発生した後の損失の大きさ**には設定差が見られた。close_reason別再集計（基準 vs T1.0/A2.0 vs T1.0/A4.0）で比較すると、T1.0/A2.0（トリガー早め・幅タイト、過去に撤回された設定と同一）はSL到達件数が325→372件へ増えた一方、SL到達時の平均損失が-3,222.8円→-1,883.5円（-41.6%）へ縮小し、完全反転率（含み益から損益ゼロ以下まで戻る割合）も62.1%→49.3%へ低下した。T1.0/A4.0（幅を広げる）はTP到達件数が122→136件へ増え純損益・期待値は最良だが、SL到達時の平均損失は-3,222.8円→-3,981.0円へ悪化した。**トリガーR=1.5は2.0/3.0/4.0いずれのATR幅でもトリガーR=1.0に一貫して劣り、早期のトレーリング開始が望ましいという結果が得られた。** A=3.0のみ両トリガーで谷になる非単調な挙動があり、この規模のサンプルでも個々の格子点には無視できないノイズが残る点に注意が必要。
+
+  **総合評価**: 単一銘柄・単一IS期間で検証した2026-08-17時点の「ATRトレーリングは建値ストップに明確に劣る」という結論は、4銘柄・5年のOOSサンプルでは再現しなかった。T1.0/A2.0は損失の重篤度（平均損失・完全反転率）を下げる効果、T1.0/A4.0は総合的な期待値・純損益で最良という、異なる強みを持つ2つの候補が見つかったが、いずれも建値ストップ単体との差は本セッションで観測してきた通常のケース間ノイズの範囲に近く、決定的な優劣とは言えない。**Fold1-5への複数回のパラメータ適合を経ているため、この段階で採用を確定せず、Final Holdoutでの確認を経てから判断すべきである。**
+
+* [x] **戦略別個別検証モード（`InpStrategyMode=STRATEGY_MODE_MEAN_REVERSION_ONLY`）でレンジ相場（Mean Reversion）単体を検証（2026-09-06実施、ユーザー依頼）。** 別セッションが実装した`EStrategyMode`（`Config.mqh`の`CStrategyModeRules`、詳細は`docs/configuration.md`「戦略実行モード」節）を使用。従来のMR検証（TASKS.md 2.1.1等）は「トレンド候補が無い場合のみMRを評価する」COMBINED相当のフォールバック方式だったため純粋な単体評価ではなかったが、`STRATEGY_MODE_MEAN_REVERSION_ONLY`はトレンド候補の有無に関わらずMRのみを新規発注対象とする、初めて真に分離された検証となる。Fold1-5・4銘柄（USDJPY/EURJPY/EURUSD/GBPJPY_HIST、2020-2024年、20ケース）、Exit設定は建値ストップ単体（基準、`InpBreakevenTriggerR=1.0`）で他の検証と揃えた。テンプレート`mt5/test-config/StrategyTester-Generic-RangeOnly-H1.ini`・CaseFile`mt5/test-config/cases/rangeonly-fold1-5.json`を新規作成。1ケースでのデバッグ確認（`EA_INIT_OK`の`strategy_mode=STRATEGY_MODE_MEAN_REVERSION_ONLY`、CANDIDATEパターンが全て`MEAN_REVERSION`であることを確認）後、20ケース全て実行成功。
+
+  総取引数214件・純損益合計**-52,932円**（Trend戦略単体の基準+118,533円とは対照的に、MR戦略単体はOOS全体で赤字）。PF平均1.052（ほぼ収支均衡）、勝率平均**66.1%**（Trend戦略の29〜49%より大幅に高い）、期待値平均-63.9（ほぼゼロだが僅かにマイナス）。
+
+  close_reason別（`RANGE_EXIT`はさらに`reason_code`で細分）:
+
+  | 決済理由 | 件数 | 合計損益 | 平均損益 |
+  |---|---|---|---|
+  | TP（BB中央値等への回帰達成） | 133 | +242,840円 | **+1,825.9円** |
+  | SL到達 | 39 | -188,718円 | **-4,838.9円** |
+  | TICK_BREAK_EXIT（レンジブレイク強制決済） | 28 | -102,264円 | -3,652.3円 |
+  | BB_WIDTH_EXPANSION（BB幅急拡大強制決済） | 5 | -4,087円 | -817.4円 |
+  | MEAN_REVERSION_MAX_HOLDING_BARS（時間切れ決済） | 9 | -703円 | -78.1円（ほぼ収支均衡） |
+
+  **負けの原因はTrend戦略と根本的に異なる。** Trend戦略は「反転率94〜95%・TP/SL到達件数比（実質的な勝率）が損益を左右」という構造だったが、MR戦略は**勝率66.1%と高いにもかかわらず、TP到達時の平均利益(+1,825.9円)がSL到達時の平均損失(-4,838.9円)の約2.65分の1しかないというリスクリワードの構造的非対称性**が主因。これは過去のTASKS.md 2.1.1「MR戦略の損失は...リスクリワード設計の問題と整合する」という所見と一致するが、今回は分離された検証で、より大きいサンプル（4銘柄5年）・より高い勝率下でも同じ非対称性が再確認された。加えて**TICK_BREAK_EXIT（レンジブレイク強制決済）が2番目に大きい損失源**（28件、1件平均-3,652円）であり、レンジ前提が崩れた場面で通常のSLに到達する前に強制決済しているにもかかわらず、平均で大きな損失を出している。含み益からの反転率は86.6%（負けトレードのうち一度MFE>0に達した割合）とTrend戦略の94〜95%よりやや低いが、Giveback比率は平均462.2%・中央値13.6%と平均・中央値が大きく乖離しており、少数の極端な取りこぼしトレードが平均を押し上げている（分布の歪みが大きい）ことを示す。
+
+  **改善方向の示唆（未検証の仮説）**: (a) TP/SL幅の非対称性を是正する（`InpMeanReversionStopAtrMultiple`を縮小、または`InpMeanReversionTakeProfitMode`をより遠い目標へ変更）、(b) TICK_BREAK_EXITの判定・執行タイミングを早める（現状は警戒状態からブレイク確定までの猶予期間中にさらに逆行している可能性）。いずれも本タスクでは検証しておらず、次の一手候補として記録するに留める。
+
+* [x] **上記(a)のTP/SL幅非対称性是正案をスイープで検証（2026-09-06実施、ユーザー依頼）。結論: 改善しない。既定値（TP=BB_MIDDLE、SL=ATR×1.0）が検証範囲内で最良のままだった。** `InpMeanReversionTakeProfitMode`（0=BB_MIDDLE既定 / 1=OPPOSITE_BAND、反対側Bandをより遠いTP目標とする）と`InpMeanReversionStopAtrMultiple`（既定1.0を0.75/0.5へ縮小、SL幅を狭める）の2軸グリッド（2×3のうち既定[BB_MIDDLE, 1.0]は既存結果を再利用、残り5組×4銘柄×5年=100ケースを新規実行）でスイープした。テンプレート`mt5/test-config/StrategyTester-Generic-RangeOnly-TP{0,1}-S{1.0,0.75,0.5}-H1.ini`・CaseFile`mt5/test-config/cases/rangeonly-tp{0,1}-s{1.0,0.75,0.5}-fold1-5.json`を新規作成。1ケースの事前スモークテストでCANDIDATEイベントのSL/TP実距離を検証し、パラメータが意図どおり反映されること（RR比が0.37〜0.60から0.82〜1.40へ変化）を確認済み。既存コードの変更は不要（両パラメータとも既存機能の組み合わせ）。
+
+  | 設定（TP方式-SL倍率） | 総取引数 | 純損益合計 | PF | 勝率 | 期待値 | 平均利益 | 平均損失 | 実現RR比 | 含み益反転率 |
+  |---|---|---|---|---|---|---|---|---|---|
+  | **BB_MIDDLE-1.0（既定・基準）** | 214 | -52,932円 | 0.823 | 63.6% | -247.3 | +1,810.0 | -3,834.6 | 0.472 | 30.4% |
+  | BB_MIDDLE-0.75 | 214 | -70,564円 | 0.792 | 60.7% | -329.7 | +2,067.3 | -4,039.4 | 0.512 | 32.7% |
+  | BB_MIDDLE-0.5 | 215 | -71,931円 | 0.813 | 59.1% | -334.6 | +2,463.3 | -4,372.4 | 0.563 | 34.4% |
+  | OPPOSITE_BAND-1.0 | 232 | -65,780円 | 0.855 | 45.3% | -283.5 | +3,686.4 | -3,565.8 | 1.034 | 48.7% |
+  | OPPOSITE_BAND-0.75 | 232 | -71,493円 | 0.857 | 43.5% | -308.2 | +4,229.8 | -3,806.9 | 1.111 | 49.1% |
+  | OPPOSITE_BAND-0.5 | 233 | -80,215円 | 0.851 | 40.3% | -344.3 | +4,877.0 | -3,875.2 | 1.259 | 49.8% |
+
+  （全行、`python.analysis.trade_breakdown`のトレード単位を全ケース分プールして再集計した値。基準行は既存2026-09-06の20ケース結果を同じ集計方式で再計算したもので、上表の値は先の勝率66.1%/PF平均1.052等のケース単位平均値とは算出方法が異なる点に注意。）
+
+  **実現RR比は狙いどおり改善した（0.472→最大1.259）が、勝率がそれ以上に悪化し、全5組で期待値・純損益とも基準より悪化した。** OPPOSITE_BAND（TPを反対側Bandまで遠くする）は勝率が63.6%→40.3〜45.3%へ大きく低下し、EXPERT決済（強制決済）が42件→53〜89件へ急増した。内訳を見ると増加分の主因は`TICK_BREAK_EXIT`ではなく`MEAN_REVERSION_MAX_HOLDING_BARS`（保有期間上限、既定10本）で、しかもこの理由による決済は含み益を伴ったまま打ち切られるケースが多いため平均損益はプラス（+482.5〜+1,014.0円）だった。つまり**TPを遠くするほど、目標到達前に保有期間上限へ抵触して途中利確（機会損失）になる比率が増える**ことが勝率低下の主因の一つであり、`InpMeanReversionMaxHoldingBars`とTP幅の不整合が新たに判明した。一方SL幅の縮小（0.75/0.5）はどちらのTP方式でもSL到達件数を増やし（基準39件→56〜108件）、ノイズによる早期損切りが増えて勝率を下げた。`TICK_BREAK_EXIT`による1件平均損失（-3,653〜-4,031円）はいずれの設定でもほぼ一定で、TP/SL幅の調整では解消しないことも確認された。
+
+  **結論**: 単純なTP拡大・SL縮小によるRR比改善は、レンジ回帰戦略の性質（BB中央値への回帰は高確率だが反対側Bandまでの到達は低確率、かつ保有期間上限との相互作用）と噛み合わず、既定設定を上回る組み合わせは本グリッド内に存在しなかった。改善を狙うなら、TP幅単体ではなく`InpMeanReversionMaxHoldingBars`との同時調整、または(b)のTICK_BREAK_EXIT対策を優先すべきである。**本節はFold1-5への複数回のパラメータ適合を重ねており、いずれの数値も採用判断には使わず、Final Holdoutでの確認が必須である点は他の検証と同様。**
+
+* [x] **SL到達トレードのPeak（MFE）到達時刻・Peak後の最大逆行を新規計測し分析（2026-09-06実施、ユーザー依頼）。** 従来のMFE/MAEは決済時点での最終値のみで、Peakにいつ到達したか・Peak後どこまで逆行してSLに至ったかの時系列情報を持たなかった（`POSITION_SNAPSHOT`は日次1回のみでMR戦略の平均保有時間（2.5時間）に対して粒度が粗すぎ、再構成不可）。`CTradeAnalyticsTracker`（`mt5/Include/Logging/TradeAnalyticsTracker.mqh`）にPeak時刻(`mfe_time`)とPeak確定後の最小含み損益(`post_peak_mae`、新高値更新のたびに現在値へリセット)の追跡を追加し、更新ロジックを純粋関数`CTradeAnalyticsRules::UpdateExtreme`へ分離（ライブポジション状態に依存しないため単体テスト可能、新規`TestTradeAnalyticsTracker.mq5`で5ケース検証）。`TRADE_ANALYTICS`監査イベントのPayloadへ`mfe_time`・`post_peak_mae`を追加（`AuditPayloadBuilder.mqh`、`ClosedPositionProcessor.mqh`）。Python側は`python/analysis/trade_breakdown.py`の`_extract_analytics_context`/`_extract_candidate_context`で新フィールドと`candidate_risk_reward_ratio`（CANDIDATE.risk_reward_ratio）を取り込み、`time_to_peak_hours`・`peak_to_close_hours`・`post_peak_mae_r`・`reached_tp_equivalent_r`（MFE_RがそのトレードのTP相当R以上に達したかの近似指標）を新規算出する列として追加した（`test_trade_breakdown.py`に回帰テスト追加）。MQL5コンパイル（13ターゲット）・全Script Test PASS、Pythonテスト67件PASS確認済み。既存のTRADE_ANALYTICSペイロード（新フィールド無し）は後方互換（該当列がNaN/NaTになるのみ）。
+
+  検証には既定設定（レンジ単体、TP=BB_MIDDLE・SL=ATR×1.0）でFold1-5・4銘柄を計測し直した20ケースを使用（総取引数214件・close_reason内訳TP133/EXPERT42/SL39と、新計測追加前の既存結果に完全一致し、再現性を確認）。SL到達39件について:
+
+  | 指標 | 平均 | 中央値 | 最小 | 最大 |
+  |---|---|---|---|---|
+  | MFE_R | 0.190 | 0.111 | -0.046 | 1.010 |
+  | Peak到達までの時間 | 0.83時間 | 0.25時間 | 0.00時間 | 5.78時間 |
+  | Peak後の最大逆行（R） | -1.129 | -1.085 | -1.544 | -0.860 |
+  | Peak後SLまでの時間 | 1.71時間 | 1.07時間 | 0.21時間 | 8.64時間 |
+
+  MFEがTP相当R（`candidate_risk_reward_ratio`、トレードごとに変動）以上に達した件数は**0/39件（0%）**。これはMRの決済がブローカー側SL/TP自動決済であるため、価格が実際にTP水準へ到達していればSL到達ではなくTP決済になっているはずという構造上、想定どおりの結果（SL到達トレードは定義上いずれもTP水準未到達）であり、この指標は他クローズ理由との比較でのみ意味を持つ。
+
+  SL到達39件のうち、一度も含み益に転じなかった「直行型」（MFE_R≤0）が7件、一度は含み益に転じてから逆行した「反転型」（MFE_R>0）が32件（82.1%）。両者でPeak到達時間・Peak後逆行幅に明確な差がある。
+
+  | 区分 | 件数 | MFE_R中央値 | Peak到達時間中央値 | Peak後逆行R中央値 | Peak後SL到達時間中央値 |
+  |---|---|---|---|---|---|
+  | 反転型（MFE_R>0） | 32 | 0.177 | 0.58時間 | -1.111 | 1.22時間 |
+  | 直行型（MFE_R≤0） | 7 | -0.008 | 0.01時間（＝ほぼ即時） | -0.968 | 0.71時間 |
+
+  反転型は平均してエントリーから1時間弱でPeak（MFE_R中央値0.18）に到達した後、**Peakから1.1R分逆行してSLに到達するまで中央値1.2時間**を要しており、「早期に小さな含み益を作った後、1時間強かけてリスク幅の1倍以上を押し戻される」というパターンが典型であることが分かった。Peak後の逆行幅がMFE自体よりも常に大きい（Peak後逆行R中央値-1.111 vs MFE_R中央値0.177）ことから、**Peakでの利確（部分利確・建値ストップ等の早期化）がSL損失を防ぐ上でより有効な対策候補になりうる**（本タスクでは検証していない、次の一手候補）。
+
+* [x] **MR専用の建値ストップ・トリガーR（`InpBreakevenTriggerR`）スイープを検証（2026-09-09実施、ユーザー依頼）。** 上記のPeak分析で「Peakでの早期利確・建値ストップの早期化がSL損失回避に有効な候補」と示唆されたことを受け、`InpStrategyMode=STRATEGY_MODE_MEAN_REVERSION_ONLY`（レンジ単体）のRangeOnlyテンプレートで`InpBreakevenTriggerR`を0.3/0.5/0.75/1.5でスイープし、既定値1.0（既存のTASKS.md 2.1.3のベースライン、純利益-52,932円）と比較した。Fold1-5・4銘柄×4設定＝80ケース。
+
+  | トリガーR | 取引数 | 純利益 | PF | 勝率 | 平均利益 | 平均損失 | 期待値 |
+  |---|---|---|---|---|---|---|---|
+  | 0.3 | 214 | -74,034円 | 0.69 | 50.0% | +1,516.2 | -3,170.5 | -346.0 |
+  | 0.5 | 214 | -81,588円 | 0.72 | 58.0% | +1,666.0 | -3,514.3 | -381.3 |
+  | 0.75 | 214 | -54,353円 | 0.82 | 63.0% | +1,798.6 | -3,786.8 | -254.0 |
+  | 1.5 | 214 | -57,580円 | 0.81 | 64.0% | +1,810.0 | -3,944.7 | -269.1 |
+  | **既定（1.0、参考）** | 214 | **-52,932円** | **0.82〜1.05** | **63.6〜66.1%** | - | - | - |
+
+  取引数がどの設定でも214件で一致するのは、`InpBreakevenTriggerR`がSL移動タイミングのみに影響しExit条件・Entry条件には影響しないため妥当な結果である（決定論的なEntry列は不変）。close_reason内訳を見ると、トリガーRを下げる（0.3・0.5）ほどSL件数が増加し（76件・55件→43件・39件）、TP件数が減少する（108件・122件→132件・133件）。これは**トリガーRが低いほど、含み益がわずかに乗っただけで建値へSLが早期移動し、その後の小さな押し戻しでTPに届く前に建値決済（SL計上）されてしまう機会が増える**ためと考えられる。一方、トリガーRを上げる（0.75・1.5）ほどSL件数は減るが、建値保護が働く頻度が下がるため**SL到達時の平均損失額が悪化する**（-1,958円→-3,170円台→-3,787円→-3,945円）というトレードオフが明確に見られた。
+
+  EXPERT決済（強制決済）の内訳はどの設定でも`TICK_BREAK_EXIT`（レンジブレイクによる強制決済）が支配的で、1件平均損失も-3,600〜-3,800円台とトリガーR設定に依存せずほぼ一定だった。これは既存の分析（2.1.3節）で確認した「TICK_BREAK_EXITはTP/SL幅・建値トリガーいずれの調整でも解消しない」という結論を追認するものである。
+
+  **結論**: スイープした4設定のいずれも既定値（1.0）を上回らなかった。トリガーRを下げるとSL頻発（早すぎる建値決済）で悪化し、上げるとSL到達時の損失拡大で悪化するというトレードオフの谷が既定値1.0付近にあることが示唆される。Peak分析由来の「早期利確が有効では」という仮説は、単純な建値トリガーRの調整だけでは実証されなかった。**本節はFold1-5への複数回のパラメータ適合を重ねており、いずれの数値も採用判断には使わず、Final Holdoutでの確認が必須である点は他の検証と同様。**
+
+  **付記：検証実行基盤の不具合と修正（本タスクの過程で発見、別セッションと連携して対応）。** 本検証はHostモードの新機能「非表示実行」（画面表示・フォーカス奪取を避けてterminal64.exeを起動する仕組み）を経由して実施したが、以下の問題を実機検証で発見し都度修正した。
+  1. `CreateDesktop`による非表示デスクトップ方式は、デスクトップの使い回し修正後も再起動直後の初回実行からハングする根本的な相性問題があり放棄された。
+  2. 代替のタスクスケジューラ経由・非対話セッション方式に切り替えたところ、タイムアウト時に子プロセス（terminal64.exe）が別ログオンセッションで孤立し、呼び出し元セッションからはアクセス拒否で終了できず、後続ケースが連鎖的に失敗する不具合を発見した（80ケース中3ケースのみ成功）。ランナースクリプト（当時の`tools/lib/Mt5ScheduledTaskRunner.ps1`、後に`DECISIONS.md` DEC-031で削除）に協調的キャンセル機構（キャンセルファイルを自身が定期確認し、自セッション内で子プロセスをStop-Processする）を追加して修正した（`tools/lib/Mt5ExecutionBackend.psm1`）。修正後は80ケース中連鎖失敗は解消（起動中エラーは0件）。
+  3. 上記修正後も、原因不明の散発的な「reportが生成されない」失敗が約16〜27%（80件中13件、追加の再現テストでは15件中4件）残った。再実行で毎回別のケースが成功するため恒久的な欠陥ではなく一過性のものと判断し、失敗ケースのみ再実行（13→4→1→0件）して全80ケース分のデータを揃えた。
+
+  **原因調査（2026-09-09実施）。** 以下を切り分けたが、根本原因は特定できなかった。
+  - **同時実行の可能性**: 失敗を再現させた15ケースの実行中、`terminal64.exe`のプロセス数を1秒間隔・10分間（600サンプル）監視したが、2つ以上同時に起動した瞬間は一度もなかった。「タスク完了検知の誤判定により次ケースが早期に起動し、旧ケースのterminal64.exeと衝突する」という仮説は否定された。
+  - **一時プロファイルへのフォールバックの可能性**: S4Uログオンが（プロファイルロードの競合等により）一時プロファイルへフォールバックし、report/audit（`FILE_COMMON`は実ユーザーの`%APPDATA%`基準）が別パスへ書き込まれている可能性を疑ったが、このマシン上の既存の一時プロファイル痕跡（`C:\Users\hunda_vqs3lar`）は今回の失敗ケース実行時に更新されておらず、再現できなかった。
+  - **MT5 Tester Journal自体は完全に正常。** 失敗した各ケースも`final balance`・`EA_DEINIT`・`Test passed`・`log file "...\Agent-127.0.0.1-3000\logs\...json" written`・`automatic testing finished`まで、成功したケースと見分けがつかない形で正常に記録されていた。バックテスト計算自体は毎回正しく完了しており、エラー・警告の類も一切ログに残らない。
+  - **`log file written`→`automatic testing finished`間の所要時間との相関も無し。** 当初「この区間が長いケースで失敗するのでは」と疑ったが、実測（15ケース）では失敗ケースが0.09〜1.46秒、成功ケースが0.05〜5.10秒とばらつき、明確な相関は見られなかった。
+
+  以上より、**report/audit（.htm/.png/監査JSONL）の書き込みステップが、Journalに何の痕跡も残さずに一部の実行でのみ失敗している**ことまでは特定できたが、それ以上の原因（非対話セッション特有のGDI/ファイルシステムの一時的な問題等が疑わしいが未確認）はProcess Monitor等によるファイルI/O・API呼び出しレベルのトレースが必要であり、本調査の範囲では特定に至らなかった。**実用上の対策として、失敗ケースのみを再実行すれば確実に完了することは複数回確認済み**（80件中13件→4件→1件→0件、15件中4件は同日中に別バッチで再現）であり、今後同種のバッチ実行では失敗ケースの再実行を前提とする運用とする。
+
+  **追加対応（2026-09-09、別セッションで実施）。** 上記調査を引き継ぎ、コードを再確認したところ、`tools/run-strategy-tester.ps1`のreport検索が`Invoke-Mt5Execution`のリターン直後に`Get-ChildItem`で即座に1回だけ行われる実装だった点に着目した。ランナースクリプト（当時の`tools/lib/Mt5ScheduledTaskRunner.ps1`、後に`DECISIONS.md` DEC-031で削除）の`$process.HasExited`ポーリングは「terminal64.exeプロセスの終了コード確定」を検知するものであり、「report/監査JSONLが実際にディスクへ書き込まれ終わった瞬間」と厳密に同期している保証はない。Strategy Testerの実処理を担うTester Agentプロセス（`metatester64.exe`）による後処理が、親プロセスの終了検知より後にずれ込むと、Journal・プロセス監視のいずれからも見えない失敗として説明がつく。この仮説に基づき、report検索を即座に1回だけ試すのではなく最大10秒間・500ms間隔でリトライする実装へ変更した（現行の`tools/run-strategy-tester.ps1`にも残っている）。`-HostUseIsolatedSession $false`経路での単体実行では正常系（1回で成功）が壊れていないことを確認したが、既定経路（当時のタスクスケジューラ方式）での80ケースバッチスイープでの効果検証は当時未実施だった。
+
+  **根本原因の特定とHiddenDesktop方式への移行（2026-09-11〜12実施）。** 上記の「reportが生成されない」（タイプA）に加え、タスクスケジューラ方式では「後処理段階でのタイムアウト」（タイプB）も発見された。実機調査（P/Invokeでterminal64.exeのウィンドウステーション情報を直接取得）により、タスクスケジューラのS4Uログオンが常にSession 0（Windowsサービス専用の隔離セッション、Microsoftが公式にGUIアプリの実行に適さないと明言する環境）を使っており、タイプA・タイプBともこの構造的制約に起因すると判明した。対策として、対話セッション内にCreateDesktopEx（十分なヒープサイズを明示指定）で非表示デスクトップを作成する方式へ変更し、当時の`-HostIsolationMode HiddenDesktop -CaseFile mt5\test-config\cases\rangeonly-breakevenr-sweep-all.json`で80ケースバッチを実行したところ`succeeded=80 failed=0`で完走し、タイプA・タイプBとも再発しないことを確認した。これを受けてタスクスケジューラ方式のコードを削除し、HiddenDesktop（CreateDesktopEx）方式へ統一した（詳細な経緯は`DECISIONS.md` DEC-031を参照）。以降、`-HostIsolationMode`パラメータ自体が存在しない（常にHiddenDesktop相当の動作になる）。
+
+* [x] **トレンド継続反転Exit（`InpEnableTrendReversalExit`）を実装（2026-09-12実施、ユーザー依頼）。** 上記2026-09-06のPeak分析所見（「Peakでの早期利確・建値ストップの早期化がSL損失回避に有効な候補、本タスクでは検証していない」）を受け、トレンド戦略（`InpMagicNumber`）の保有ポジションについて、現在の市場レジームがTrendUp/TrendDownの間のみ有効な早期Exitを新規実装した。含み益ピーク（Tick単位で追跡）が`InpTrendReversalActivationR`（既定1.0R）に到達した後、Peakから`InpTrendReversalRetraceR`（既定0.5R）以上逆行したら「反転」を検知し、`InpTrendReversalConfirmationTicks`（既定5Tick）連続で継続確認できたら初期SLへ到達する前に市場成行で決済する（反転検知→継続確認→Exit）。既定値はOFF・安全側（既存のCTimeStopTracker・CMeanReversionStrategyのCRangeExitGraceTrackerと同じ設計思想で、独立した新規`CTrendReversalTracker`・`CTrendReversalExitRules`として実装し、既存のTime Stop・Signal Invalidation Exit・ATRトレーリング等とは独立して動作する）。変更ファイル: `mt5/Include/Core/Config.mqh`（設定4件追加・検証）、`mt5/Experts/CoreEA.mq5`（Input追加）、`mt5/Include/Strategy/TrendFollowingStrategy.mqh`（`CurrentMarketRegimeTrend()`追加）、`mt5/Include/Trading/PositionManager.mqh`（`CTrendReversalExitRules`・`CTrendReversalTracker`・`CloseOnTrendReversal()`追加）、`mt5/Include/Trading/PositionExitEvaluator.mqh`（`EvaluateTrendReversalExits()`追加）、`mt5/Include/Core/EAController.mqh`（OnTickへ呼び出し追加）、`mt5/Include/Logging/TradeLogger.mqh`・`python/analysis/reports.py`（新規イベント`TREND_REVERSAL_EXIT`を許可リストへ追加）、`python/analysis/trade_breakdown.py`（`trend_reversal_exit_summary()`・`reached_tp_equivalent_r`との組み合わせで「TP到達済みだった可能性のある早期Exit」を検出）、`contracts/trade-breakdown-report.schema.json`、単体テスト（`TestTradingRules.mq5`・`TestProductionSafetyRules.mq5`・`TestAuditRules.mq5`・`test_trade_breakdown.py`）。MQL5コンパイル（13ターゲット、0 errors/0 warnings）・全12 Script Test PASS、Pythonテスト70件PASS確認済み。**Strategy TesterでのBaseline（`InpEnableTrendReversalExit=false`）vs ON比較は本タスクでは未実施（NOT VERIFIED）。** 次の一手として、Fold1-5・4銘柄でBaseline/ON双方を実行し、`docs/backtesting.md`「トレンド継続反転Exit比較分析」の手順でPF/Net Profit/Expectancy/Max DD/Win Rate/Peak MFE/「TP到達済みだった可能性のある早期Exit」件数を比較すること。既存のExit戦略検証（建値ストップ・ATRトレーリング）と同じく、Fold1-5への複数回のパラメータ適合を避け、採用判断はFinal Holdoutでの確認後とする。
+
+* [x] **`InpTrendReversalConfirmationTicks`（継続確認期間）のスイープ検証（2026-09-12実施、ユーザー依頼）。** Activation R=1.0・Retrace R=0.5は既定値のまま固定し、ConfirmationTicksを1/3/5（既定）/10/20でスイープした（Fold1-5・4銘柄×5設定＝100ケース、Trend戦略の既定`STRATEGY_MODE_TREND_ONLY`）。比較のため、現行コードベースでBaseline（`InpEnableTrendReversalExit=false`）も同時点で再取得した（過去の記録は複数コミット前のものだったため）。
+
+  | 設定 | 取引数 | 純利益 | PF | 勝率 | 期待値 |
+  |---|---|---|---|---|---|
+  | **Baseline（OFF）** | 514 | +118,533円 | 1.11 | 37.0% | +230.6 |
+  | ticks=1 | 541 | +153,174円 | 1.13 | 49.0% | +283.1 |
+  | ticks=3 | 541 | +151,004円 | 1.13 | 49.0% | +279.1 |
+  | ticks=5（既定） | 541 | +148,476円 | 1.13 | 49.0% | +274.5 |
+  | ticks=10 | 541 | +145,719円 | 1.12 | 49.0% | +269.4 |
+  | ticks=20 | 540 | +150,718円 | 1.13 | 49.0% | +279.1 |
+
+  **ConfirmationTicksの値自体による差は小さい**（純利益で145,719〜153,174円の範囲、約5%の変動幅）。ticks=1が最良・ticks=10が最弱だが単調な傾向はなく、この範囲ではノイズ除去の効果は限定的である。一方、**機構をONにすること自体の効果は非常に大きい**。全設定で純利益がBaselineを+23%〜+29%上回った。
+
+  close_reason内訳（ticks=5、既定値で代表）をBaselineと比較すると、機構の作用機序が明確になる。
+
+  | 決済理由 | Baseline件数/合計 | ON(ticks=5)件数/合計 |
+  |---|---|---|
+  | TP | 122件 / +1,146,588円 | 70件 / +662,629円 |
+  | SL | 325件 / -1,047,398円 | 254件 / -1,130,148円（平均損失は-3,223円→-4,449円に悪化） |
+  | EXPERT | 67件 / +19,343円 | 217件 / +615,995円 |
+
+  ONではEXPERT決済が67→217件へ急増しており、これがTREND_REVERSAL_EXIT（全設定で約156件、勝率100%、純利益+605,171〜633,332円）を含む。TP到達件数は122→70件へ減少しているが、`trend_reversal_exit_summary()`の`trades_that_would_likely_have_reached_tp`（決済時点でMFE_Rが自身のTP相当R以上に達していたか）は**全設定で0件**であり、少なくともこの近似指標ではTREND_REVERSAL_EXITに巻き込まれたトレードの中にTP到達目前だったものは検出されなかった。ただし、ON時は取引数がBaselineの514件から541件へ増加している（早期決済によりポジション保有期間が短縮し、期間内に追加のエントリー機会が生まれるためと考えられる）ため、TP件数の減少を「機構が奪ったTP」と単純比較することはできない点に注意。
+
+  SL到達時の平均損失がONでやや悪化している（-3,223円→-4,449円）点は、反対に「本来TREND_REVERSAL_EXITで救われるはずだった一部のトレードが、ConfirmationTicks・Retrace Rの条件を満たさずSLまで到達した」可能性を示唆しており、Retrace R側のパラメータ調整で改善の余地があるかもしれない（本タスクでは未検証）。
+
+  **結論**: `InpEnableTrendReversalExit=true`はConfirmationTicksの具体的な値によらず、テストした全範囲でBaselineを上回った。ConfirmationTicks自体の最適値は本データからは明確に決定できない（差が小さくFold1-5内のノイズの可能性がある）ため、既定値5を変更する積極的な理由はない。**本節はFold1-5への複数回のパラメータ適合であり、Final Holdoutでの確認前に採用判断をしないこと。**
+
+* [x] **初期逆行Exit（`InpEnableEarlyAdverseExit`）の新設（2026-09-12実装、ユーザー依頼「SL到達やその原因となるエントリー自体を防ぐ方法の検討」を受けて）。**
+
+  上記ConfirmationTicksスイープのON（ticks=5）データ（`results/backtests/20260912-150203-cases`、TRT5設定、541トレード）に対し、SL決済254件を追加分析した。`trend_reversal_triggered`が0（TREND_REVERSAL_EXITでは決済されていない）254件のMFE_R分布は平均0.436・中央値0.361であり、**92.5%（235/254件）が`InpTrendReversalActivationR`（既定1.0R、反転監視の開始ライン）へ一度も到達していない**ことが判明した。トレンド継続反転Exitは含み益ピークの存在を前提とするため（`CTrendReversalExitRules::IsActivated`が先にtrueにならないと監視自体が始まらない）、この92.5%の損失パターンには構造的に対処できない。
+
+  この235件（Activation未到達SL）と勝ちトレードとの間で、エントリー時点の特徴量（`entry_adx`: 45.31 vs 44.94、`entry_atr`: 0.150 vs 0.159、`market_regime_volatility`分布、`session`分布、`direction`分布、CANDIDATEイベントの`pattern`＝BREAKOUT/PULLBACK比率）を比較したが、いずれも実質的な差は見られなかった。既存の記録済みエントリー特徴量からは、この損失パターンを事前に区別するシグナルは見つからなかった（この点は追加のエントリーフィルタでは対処しにくいことを示唆する）。
+
+  この所見を受け、含み益ピークを一切参照せず、建値からの逆行のみを基準にする新規Exit「初期逆行Exit」を実装した。判定は「建値からの逆行が`InpEarlyAdverseExitTriggerR`倍（既定0.5R）以上、`InpEarlyAdverseExitConfirmationTicks`回（既定5）連続で継続したら成行決済」のみで、含み益ピーク（Activation）の到達を問わない。継続確認（Tickノイズ除去）の判定ロジックは`CTrendReversalExitRules::HasConfirmedReversal`をそのまま再利用し、重複実装を避けた。実装箇所: `CEarlyAdverseExitRules`/`CEarlyAdverseExitTracker`/`CPositionManager::CloseOnEarlyAdverseExit`（`mt5/Include/Trading/PositionManager.mqh`）、`CPositionExitEvaluator::EvaluateEarlyAdverseExits`（`mt5/Include/Trading/PositionExitEvaluator.mqh`）、監査イベント`EARLY_ADVERSE_EXIT`（`CTradeLogRules::SafeEventType`、`python.analysis.reports.SUPPORTED_AUDIT_EVENTS`）、Python分析`early_adverse_exit_summary()`（`python/analysis/trade_breakdown.py`）。既定値は`InpEnableEarlyAdverseExit=false`（安全側、既存挙動を変えない）。
+
+  **検証状況**: コンパイル・MQL5単体テスト（`TestTradingRules.mq5`へ`CEarlyAdverseExitRules::IsTriggered`/`AdverseRMultiple`のアサーションを追加）・Python単体テスト（`test_trade_breakdown.py`へ`early_adverse_exit_summary`のテストを追加）はPASS。1ケースのデバッグ検証でEARLY_ADVERSE_EXITが意図通り発火することを確認済み。
+
+  **TriggerRスイープ結果（2026-09-12実施、Fold1-5×4銘柄、TriggerR=0.3/0.5/0.7、ConfirmationTicks=5固定、60ケース全成功）**: Baseline（OFF、同時点再取得、`results/backtests/20260912-164730-cases`）514トレード・純利益+118,533円に対し、
+
+  | TriggerR | トレード数 | 純利益 | Baseline比 | 発動件数（発動率） | SL到達件数（Baseline比） |
+  |---:|---:|---:|---:|---:|---:|
+  | Baseline (OFF) | 514 | +118,533円 | - | - | 325件 |
+  | 0.3 | 624 | +22,742円 | **-95,791円** | 447件（71.6%） | 87件 |
+  | 0.5（既定値） | 566 | -12,890円 | **-131,423円** | 344件（60.8%） | 105件 |
+  | 0.7 | 527 | +181,266円 | **+62,733円** | 259件（49.2%） | 112件 |
+
+  TriggerR=0.3/0.5では発動率が60〜72%と極めて高く、SLへ至らなかったはずの正常なトレード（一時的な逆行後に回復するトレード）まで大量に早期決済してしまい、純利益がBaselineを大きく下回った（0.5では黒字→赤字に転落）。TriggerR=0.7（1.0R SLに近い設定）でのみBaselineを上回った（Fold×銘柄の20区分中12区分で改善、`trades_that_would_likely_have_reached_tp`は全設定で0件だが、この指標は早期Exit時点までのMFEしか見ないため、含み益ピークへ一度も到達しない本Exitの性質上、構造的に0になりやすく取りこぼし検出には不向きと考えられる。詳細な取りこぼし確認には別の指標が必要）。
+
+  **結論**: 現在の既定値`InpEarlyAdverseExitTriggerR=0.5`はOOSデータ上明確に有害であり、**このまま有効化すべきではない**。SL到達間際（0.7R付近）でのみ介入する設定でBaselineを上回る結果が得られたが、3点のみのFold1-5スイープであり、0.6〜0.9の範囲でより細かく最適点を探ることは可能だが、それ自体がFold1-5への追加の過剰適合リスクを高める。**本節の数値はFold1-5への複数回のパラメータ適合であり、Final Holdoutでの確認前に採用判断をしないこと。** `InpEnableEarlyAdverseExit`は既定`false`のまま維持し、有効化する場合はTriggerRを0.5ではなく0.7以上から検討すること。詳細は`docs/backtesting.md`「初期逆行Exit比較分析」、`docs/configuration.md`「初期逆行Exit」を参照。
+
+* [x] **TriggerRの詳細スイープ（0.6/0.65/0.75/0.8/0.85/0.9）と損失原因の再分析（2026-09-13実施、ユーザー依頼）。**
+
+  上記3点スイープに続き、0.6〜0.9間を0.05刻みで追加検証した（Fold1-5×4銘柄×6設定＝120ケース全成功）。既存の0.3/0.5/0.7と合わせた全体像:
+
+  | TriggerR | トレード数 | 純利益 | Baseline比 | PF | 勝率 | 発動率 |
+  |---:|---:|---:|---:|---:|---:|---:|
+  | Baseline (OFF) | 514 | +118,533円 | - | 1.108 | 36.6% | - |
+  | 0.30 | 624 | +22,742円 | -95,791円 | 1.031 | 16.8% | 71.6% |
+  | 0.50（既定値） | 566 | -12,890円 | -131,423円 | 0.986 | 23.5% | 60.8% |
+  | 0.60 | 546 | +54,979円 | -63,554円 | 1.057 | 28.2% | 55.3% |
+  | 0.65 | 538 | +76,630円 | -41,903円 | 1.077 | 29.9% | 52.6% |
+  | **0.70** | 527 | **+181,266円** | **+62,733円** | **1.186** | 32.6% | 49.1% |
+  | 0.75 | 525 | +152,469円 | +33,936円 | 1.150 | 33.5% | 47.6% |
+  | 0.80 | 524 | +144,912円 | +26,379円 | 1.139 | 34.0% | 45.6% |
+  | 0.85 | 523 | +131,533円 | +13,000円 | 1.123 | 34.8% | 44.0% |
+  | 0.90 | 520 | +111,864円 | -6,669円 | 1.103 | 35.2% | 41.9% |
+
+  純利益はTriggerRの上昇に対して単調ではなく、0.3→0.65までBaseline未達（0.5は黒字→赤字）、**0.70で単峰性のピーク（+53%）**、0.75以降はBaselineへ向けて緩やかに収束する（1.0Rに近づくほど通常のSLとの差がなくなるため、効果が薄れるのは構造的に自然）。Fold×銘柄の20区分中、0.70で12区分・0.75で14区分・0.80で13区分が改善しており、特定の1銘柄・1年に依存した見かけ上の改善ではないことを確認した。勝率は発動率の低下とともに単調回復している（0.3:16.8%→0.9:35.2%、Baseline:36.6%）。発動率は最良設定（0.70）でも49.1%と全トレードの約半数に達しており、この機構は「一部の悪いトレードだけを狙い撃ちする」というより「損切りラインを全体的に手前へシフトする」ことで平均損失を圧縮するタイプの効果だと理解すべきである。
+
+  **損失原因の再分析（重要な訂正）**: 前回（2026-09-12）報告した「SL到達トレードの92.5%がActivation R未到達」は、**TrendReversalExitが先に一部トレードを横取りした後の残存SLトレード254件**に対する分析であり、選択バイアスを含んでいた（TrendReversalExitは「1.0R到達→反転」パターンを先にEXPERT決済として持ち去るため、残存SLは自然と「大きく伸びなかったもの」に偏る）。TrendReversalExitを一切使わない素のBaseline（325件のSLトレード）で改めてMFE_Rを分析すると、実態は3層構造だった。
+
+  | 層 | 件数 | 割合 | 中央値保有時間 |
+  |---|---:|---:|---:|
+  | ①即死型（MFE_R<=0.02、含み益ほぼゼロ） | 22件 | 6.8% | 1.17時間 |
+  | ②中間型（0.02R<MFE_R<=1.0R） | 203件 | 62.5% | 6.06時間 |
+  | ③本格型（MFE_R>1.0R） | 100件 | 30.8% | 13.33時間 |
+
+  SL損失の93.2%（②+③）は「一度は含み益を経験してから反転」しており、エントリー時点の特徴量（ADX・ATR・セッション・方向・パターン、前節参照）に有意差が見られなかったのは、失敗が事前予見可能な質の差ではなく事後の値動き反転だからだと整合する。③（30.8%、MFE_R>1.0R）はTrendReversalExit（既定Activation=1.0R）の守備範囲、②（62.5%）はEarlyAdverseExit（含み益ピーク不問）の守備範囲であり、**両者は競合ではなく補完関係にある**。現状はどちらも単独でしか検証していない。
+
+  **追加の調整案（優先順）**:
+
+  1. **TrendReversalExit（Activation=1.0/Retrace=0.5/Ticks=5）とEarlyAdverseExit（TriggerR=0.7/Ticks=5）の併用検証**（未実施、最優先）。上記の層構造から、両者は損失の異なる部分（③と②）を担当するため、併用によりBaseline比の改善幅が単独より拡大する可能性がある。次に検証すべき最有力候補。
+  2. **EarlyAdverseExitのConfirmationTicks調整**（未実施、優先度中）。TriggerRのみをスイープしTicks=5固定のままだった。TrendReversalExit側のTicksスイープでは効果が小さかった（±5%程度）ため、大きな改善は期待しにくいが、TriggerRとの交互作用は未確認。
+  3. **銘柄別・方向別のTriggerR個別最適化**（非推奨）。EURUSD_HISTの2023年は全TriggerR設定で一貫して悪化しており銘柄依存の余地はあるが、Fold1区分あたり1年分のデータしかなく、個別最適化はFold1-5への過剰適合リスクが非常に高い。
+
+  **重要な注意**: 本タスクとConfirmationTicksスイープ（前節）で、Fold1-5に対して既に2種類のExit機構×複数パラメータを繰り返し最適化している。上記1.を追加検証すること自体は妥当だが、**これ以上Fold1-5上でのパラメータ探索を重ねる前に、一度EA・全パラメータを固定してFinal Holdout（2025-01〜2026-08、開発中は一切使用しない一度きりの検証期間）で最終確認する計画を立てるべき**。`InpEnableEarlyAdverseExit`・`InpEnableTrendReversalExit`とも既定`false`を維持する。
+
+* [x] **TrendReversalExit＋EarlyAdverseExitの併用検証（2026-09-13実施、ユーザー依頼、上記提案1.の実施）。**
+
+  `InpEnableTrendReversalExit=true`（Activation=1.0/Retrace=0.5/Ticks=5）と`InpEnableEarlyAdverseExit=true`（TriggerR=0.7/Ticks=5）を同時に有効化し、Fold1-5×4銘柄（20ケース全成功）で検証した。両者は独立した`CPositionExitEvaluator`メソッド・独立したTracker（`m_trend_reversal_tracker`/`m_early_adverse_tracker`）・独立した監査イベント（`TREND_REVERSAL_EXIT`/`EARLY_ADVERSE_EXIT`）を持つため、実装上の競合はない（デバッグ1ケースで両イベントが異なるポジションticketに対して正しく発火することを確認済み）。
+
+  | 設定 | トレード数 | 純利益 | PF | 勝率 | SL到達件数 |
+  |---|---:|---:|---:|---:|---:|
+  | Baseline（両方OFF） | 514 | +118,533円 | 1.108 | 36.6% | 325件 |
+  | TrendReversalExit単独（ticks=5） | 541 | +148,476円 | 1.125 | 48.6% | 254件 |
+  | EarlyAdverseExit単独（TriggerR=0.7） | 527 | +181,266円 | 1.186 | 32.6% | 112件 |
+  | **併用** | 554 | **+193,747円** | 1.186 | 43.9% | **27件** |
+
+  併用はBaseline比+75,214円（+63.5%）、EarlyAdverseExit単独比でも+12,481円の上乗せとなり、**単独設定より併用の方が良い結果**だった。SL到達件数は325→27件（91.7%減）まで縮小し、325件の負けトレードの大半がいずれかの早期Exitで処理されるようになった。ただしFold×銘柄20区分中、改善したのは**10区分のみ**（EarlyAdverseExit単独0.70の12区分・0.75の14区分より少ない）で、一部の区分で大きく勝ち・大きく負けが偏在しており、単独設定よりばらつき（分散）が大きい。集計値だけでなく頑健性の面では単独設定の方が安定している点に注意。
+
+  **メカニズムの分解**: `TrendReversalExit`が発動した149件は前回確認済みのとおり**勝率100%・平均+4,034円**（Retrace R=0.5でActivation R=1.0の半分しか戻さないため、Peakからの反転を検知しても常にプラス圏で決済される構造）。`EarlyAdverseExit`が発動した280件は**勝率0%・平均-3,453円**（定義上、逆行方向でのみ発動するため常にマイナス）。残存SL27件のうち、実質的に意味のある損失（-1,000円超）は約10件のみで、残り約17件は**建値ストップ（`InpBreakevenTriggerR=1.0`）が既にSLを建値近辺へ移動済みだった**ため、`close_reason=SL`表記でも実際の損益はほぼゼロ（-552円〜+162円）だった。
+
+  **残存SL約10件の内訳**: (a) 保有0〜14時間の即時失敗型（MFE_R 0〜0.47、EarlyAdverseExitのTriggerR=0.7に届く前にSL到達、確認Tick分の猶予も足りない）と、(b) 保有49〜56時間ながらMFE_Rが0.02〜0.92にとどまり結局反転した緩慢な失敗型が混在していた。(b)は`InpTimeStopRequireMinMfe=true`・`InpTimeStopMinMfeR=0.5`によりTime Stop（20バー＝約20時間で強制決済）が「MFE 0.5R以上到達済み」と判定してスキップされ続けた結果、20時間を大幅に超えて保有され続けたケースであり、Time Stopの「一定のMFEに達していれば時間切れを免除する」前提が、TrendReversalExit/EarlyAdverseExit導入後は必ずしも安全側ではなくなっている可能性を示唆する。
+
+  **追加の調整案**:
+
+  1. **Time StopのMFE免除条件の見直し**（未検証、新規）。上記(b)のように、MFE 0.5R到達済みでもTrendReversalExit（Activation 1.0R）にもEarlyAdverseExit（TriggerR 0.7R、ただし逆行方向なので該当せず）にも引っかからないまま長時間保有され続けるケースが存在する。`InpTimeStopMinMfeR`を0.5から引き上げる、またはTrendReversalExit/EarlyAdverseExit有効時はTime Stopの免除条件自体を無効化する、といった相互作用の見直しが考えられる。
+  2. **頑健性を優先するなら単独設定という選択肢**。集計値は併用が最良だが、Fold×銘柄の改善区分数は単独設定（EarlyAdverseExit 0.75など）の方が多い。過剰適合を避け安定性を重視するなら、併用よりシンプルな単独設定を優先する判断もあり得る。
+  3. 引き続き**EarlyAdverseExitのConfirmationTicks調整**・**銘柄別個別最適化**は前節の評価（優先度中・非推奨）のまま変わらない。
+
+  **重要な注意**: これでFold1-5に対する開発中の最適化が3ラウンド目（ConfirmationTicksスイープ→TriggerR9点スイープ→併用検証）に達した。**これ以上のパラメータ探索は行わず、次のアクションはFinal Holdout（2025-01〜2026-08）による一度きりの最終確認の計画立案とすべき**。`InpEnableTrendReversalExit`は既定`false`のまま（下記のとおり`InpEnableEarlyAdverseExit`は既定`true`へ変更した）。
+
+* [x] **EarlyAdverseExitを既定`true`（TriggerR=0.75）へ採用（2026-09-13、ユーザー明示指示）。**
+
+  上記スイープ結果を受け、ユーザーの明示的な指示により`InpEnableEarlyAdverseExit`の既定値を`false`→`true`、`InpEarlyAdverseExitTriggerR`を`0.5`→`0.75`へ変更した（`InpEarlyAdverseExitConfirmationTicks`は既定`5`のまま変更なし）。変更箇所は`mt5/Include/Core/Config.mqh`の`SetDefaultConfig()`と`mt5/Experts/CoreEA.mq5`の`input`宣言の両方（既存の完全に採用済み機能、例: `InpEnableBreakevenStop`/`InpEnableTimeStop`と同じく両ファイルを一致させる方針）。コンパイル・`run-mql5-tests.ps1`は全PASS。
+
+  **重要な留意点（本採用の位置づけ）**: この採用はFold1-5への複数回のパラメータ適合（9点スイープ＋併用検証）の結果に基づくユーザー判断であり、**Final Holdout（2025-01〜2026-08）での確認は未実施**。また、この変更により`mt5/test-config/StrategyTester-Generic-H1.ini`等、`InpEnableEarlyAdverseExit`を明示指定していない既存の全テンプレートは、今後デフォルトで本Exitが有効な状態で実行されることになる点に注意（従来「Baseline (OFF)」として使ってきたテンプレートも同様）。今後、本当に無効化した状態と比較したい場合は、明示的に`InpEnableEarlyAdverseExit=false`を指定した専用テンプレートを別途用意すること（本セッションで実施した`trendreversal-baseline-off-fold1-5.json`と同じ方式）。`InpEnableTrendReversalExit`は本採用の対象外で既定`false`のまま。
+
+* [x] **Time StopのMFE免除条件の検証（2026-09-13実施、ユーザー依頼、前々節の提案1.の検証）。**
+
+  前節で指摘した「MFE 0.5R到達済みと判定されてTime Stopが免除され続け、49〜56時間保有の末に結局反転してSLへ至った」ケース（2件）を踏まえ、新しい既定設定（EarlyAdverseExit ON・TriggerR=0.75）を土台に、Time Stopの免除条件を(a)完全無効化・(b)閾値引き上げ（0.5→1.0R）の2方向で検証した（Fold1-5×4銘柄×2設定＝40ケース全成功）。
+
+  | 設定 | トレード数 | 純利益 | Baseline比 | PF | 勝率 | TimeStop発動件数 | TimeStop純損益 |
+  |---|---:|---:|---:|---:|---:|---:|---:|
+  | 現行既定（`InpTimeStopMinMfeR=0.5`） | 525 | +152,469円 | - | 1.150 | 33.5% | 6件 | +3,850円 |
+  | 免除無効化（`InpTimeStopRequireMinMfe=false`） | 534 | +129,727円 | **-22,742円** | 1.129 | 34.6% | 80件 | +289,622円 |
+  | 免除閾値引き上げ（`InpTimeStopMinMfeR=1.0`） | 526 | +147,438円 | **-5,031円** | 1.148 | 34.0% | 34件 | +39,086円 |
+
+  **結論: どちらの調整も逆効果だった。** 免除を無効化すると、20バーの時点でまだ保有中の80トレードが強制決済されたが、その**91.2%（73件）は決済時点で既にプラス**（平均+3,620円）だった。つまり、免除条件を緩めても「グズグズと保有され続ける負けトレード」を追加で捕捉できるわけではなく、単に「まだ伸びている途中の良いトレード」を早期に打ち切って利益機会を奪う副作用の方がはるかに大きかった。Fold×銘柄20区分中、改善したのはどちらの設定も8区分のみ（悪化が優勢）。閾値引き上げ（1.0R）は無効化ほど極端ではないが同じ傾向で、依然としてBaselineに劣る。
+
+  現行の`InpTimeStopMinMfeR=0.5`のもとでは、EarlyAdverseExit（TriggerR=0.75）・TrendReversalExit（未有効化）・SignalInvalidationExit等が既に大半の負けトレードを20バー以前に処理してしまうため、Time Stop自体の発動は現状わずか6件しかない。前節で見つけた「免除条件をすり抜けて緩慢に失敗する」ケースは実在するが極めて少数（2件程度）であり、これを追加で捕捉しようとする調整は、はるかに多い「免除により正しく延命されている良いトレード」を巻き込んでしまうため、**割に合わない**。既定の`InpTimeStopMinMfeR=0.5`・`InpTimeStopRequireMinMfe=true`は変更しない。
+
+  **追加の調整案**:
+
+  1. **Time Stop関連のパラメータ調整は打ち切り**（本検証により、免除条件の緩和・強化のいずれも逆効果と判明したため）。
+  2. **前々節で指摘した緩慢な失敗型（49〜56時間、2件）は個別対応しない**。件数が少なすぎて専用の対策を作ってもFold1-5への過剰適合になりやすく、Time Stop側の調整では副作用の方が大きいことも判明したため、現状は許容する。
+  3. 残る候補は前々節で挙げた**EarlyAdverseExitのConfirmationTicks調整**（優先度中、交互作用未確認）のみ。ただしこれもFold1-5上でのさらなる探索となる。
+
+  **重要な注意**: 本検証を含め、Fold1-5に対する開発中の最適化が4ラウンド目に達した（ConfirmationTicksスイープ→TriggerR9点スイープ→併用検証→Time Stop免除条件検証）。有効な追加調整の余地はほぼ探索し尽くしており、**これ以上Fold1-5上でのパラメータ探索を続けるのではなく、現状の設定（EarlyAdverseExit ON・TriggerR=0.75、TrendReversalExit OFF）を一旦固定し、Final Holdout（2025-01〜2026-08）による一度きりの最終確認へ進むことを強く推奨する**。
+
+* [x] **EarlyAdverseExitのConfirmationTicksスイープ（2026-09-13実施、ユーザー依頼、5ラウンド目）。**
+
+  現行既定（TriggerR=0.75、Ticks=5）を基準に、Ticks=1/3/10/20をFold1-5×4銘柄で検証した（80ケース全成功）。
+
+  | Ticks | トレード数 | 純利益 | 現行既定(Ticks=5)比 | PF | 勝率 | 改善区分数(vs Ticks=5) |
+  |---:|---:|---:|---:|---:|---:|---:|
+  | 1 | 525 | +160,051円 | +7,582円 | 1.159 | 33.3% | **18/20** |
+  | 3 | 525 | +154,803円 | +2,334円 | 1.153 | 33.3% | **18/20** |
+  | 5（現行既定） | 525 | +152,469円 | - | 1.150 | 33.5% | - |
+  | 10 | 525 | +165,327円 | +12,858円 | 1.164 | 33.7% | 5/20 |
+  | 20 | 524 | +146,827円 | -5,642円 | 1.144 | 33.4% | 5/20 |
+
+  純利益はTicks=10が最大（+8.4%）だが、改善区分数はFold×銘柄20区分中**わずか5区分**（一部の区分での大きな偏りに依存）。対照的にTicks=1/3は改善幅こそ小さい（+1.5%〜+5.0%）が、**18/20区分**で一貫して現行既定を上回っており、単純な突出値ではない。全体として差は現行既定比で最大でも±8%程度に収まり、以前のTrendReversalExit側のTicksスイープ（差±5%程度）と同様、**パラメータの寄与自体は小さい**。
+
+  **損失原因の再確認**: 現行既定（Ticks=5）でのSL到達115件のうち、102件（88.7%）は建値ストップが既にSLを建値近辺へ移動済みで実質無傷、実質的な損失は13件（合計-70,127円、平均-5,394円）のみ。内訳は併用検証時と同じ2群（保有0〜14時間の即時失敗型、保有49〜56時間の緩慢な失敗型）で、新しい原因は見つからなかった。EarlyAdverseExit発動250件は勝率0%・平均-3,697円（設計どおり常に損失側）。
+
+  **追加の調整案**:
+
+  1. **Ticksの既定値は5のまま変更しない（非推奨）**。Ticks=1が数値上は最も頑健な改善を示すが、`InpEarlyAdverseExitConfirmationTicks`は本来「一時的なTickノイズによる誤Exitを防ぐ」ための継続確認回数であり、Ticks=1（1Tickで即決済）は事実上この確認機能を無効化することを意味する。Fold1-5の過去Tickデータでは良好でも、実運用のTickノイズ特性（スプレッド変動・瞬間的な価格の跳ね等）はヒストリカルデータと同一とは限らず、ノイズ耐性を捨てるリスクの方が、Fold1-5上の+5%の改善より重いと判断する。
+  2. **これ以上のパラメータ探索は行わない**。本タスクでFold1-5に対する開発中の最適化が5ラウンド目に達した。TriggerR・ConfirmationTicks・Time Stop免除条件のいずれも一通り検証済みであり、**現状の設定（EarlyAdverseExit ON・TriggerR=0.75・ConfirmationTicks=5、TrendReversalExit OFF）を最終候補として固定し、Final Holdout（2025-01〜2026-08）による一度きりの最終確認へ進むことを強く推奨する**。
+
+* [x] **過去スイープ結果と現在の既定値の網羅監査、および3件の既定値更新（2026-09-13実施、ユーザー依頼）。**
+
+  プロジェクト全期間のスイープ履歴（Trend戦略のエントリーフィルタ・SL/TP・リスク管理・Exit機構・Entry/Breakout Timing、Mean Reversion戦略のエントリーフィルタ・Exit機構、計6グループ）を並列調査エージェントで監査し、各スイープの結論が`Config.mqh`の`SetDefaultConfig()`・`CoreEA.mq5`の`input`宣言へ実際に反映されているかを突き合わせた。詳細な監査結果（各グループの一致/不一致一覧）はセッションログを参照。主な発見:
+
+  - **`InpRegimeTrendAdxMin`**: 2026-08-22のスイープ以降、40.0が一貫してIS最良パラメータ・Fold1 Train再検証最良値として扱われ、全テストテンプレートにも反映されていたが、コード既定値は20.0のまま据え置かれていた（テンプレート経由でしか反映されていなかった）。
+  - **`InpMeanReversionBreakConfirmSeconds`**: 2026-08-30のスイープで0秒に近いほど単調に改善する結果（30秒-35,671円→0秒-31,963円）が出ていたが、他Foldでの再現性未確認を理由に新しい値が正式採用されないまま既定30秒が維持されていた。
+  - Trend`InpBreakevenTriggerR`のFold1-5再スイープ（2026-09-05、上記参照）は結果が記録されないままだった（今回補記済み）。
+  - その他（`InpMinimumAdx`・`InpMaximumAdx`・`InpStopAtrMultiple`・`InpRiskRewardRatio`・`InpEnableAtrTrailingStop`・`InpEntryTimingMaxWaitBars`・MR戦略の`InpMeanReversionChoppinessMin`/`InpMeanReversionMaxHoldingBars`/`InpMeanReversionTakeProfitMode`等）は、いずれも既存の結論どおり既定値が維持されているか、意図的に「Final Holdoutまで採用しない」と明記された状態であることを確認し、対応不要と判断した。
+
+  **対応内容（ユーザー指示により実施）**:
+
+  1. `InpRegimeTrendAdxMin`を20.0→**40.0**へ更新（`Config.mqh`・`CoreEA.mq5`）。**重要な注意**: 本フィールドは`CTrendFollowingStrategy::Evaluate()`のStage 1（`stage_market_regime_passed`計算）でのみ参照され、この判定が実際のEntry拒否ゲートとして機能するのは`InpEntryUseStagedPipeline=true`の場合のみ（既定`false`のままではログ記録専用で売買判断に一切影響しない、`TrendFollowingStrategy.mqh`のコメント参照）。`InpEntryUseStagedPipeline`自体も既定`false`のままであり、全テストテンプレートのみが`true`を明示指定している状態のため、**今回の変更単独では現状のコード既定構成（Staged Pipeline無効）に実質的な効果はない**。`InpEntryUseStagedPipeline`側も既定`true`へ変更するかどうかは、より大きな挙動変更（Stage 1市場レジームゲート・HTFバイアス等の段階的判定全体が有効化される）を伴うため、本タスクでは変更せず、別途ユーザー判断を仰ぐ。
+  2. `InpMeanReversionBreakConfirmSeconds`を30→**5**へ更新（`Config.mqh`・`CoreEA.mq5`）。改善幅の約53%を確保しつつ「実時間で確認する」という設計意図を維持する値として採用。MR戦略自体は`InpStrategyMode=STRATEGY_MODE_TREND_ONLY`（既定）のため現状は無効値。
+  3. Trend`InpBreakevenTriggerR`Fold1-5再スイープの結果を、当時の生データ（`results/backtests/20260905-164917-cases`等4ディレクトリ、`FILE_COMMON`移行前の日次監査ログ形式）から再構成し、上記セクションへ補記した（コード変更なし、ドキュメントのみ）。TriggerR=0.75がBaseline(1.0)をわずかに上回る（+8.2%、20区分中13区分で改善）ことが判明したが、改善幅が小さくFold1-5単発スイープのため未採用のまま既定値1.0を維持している。
+
+  **検証**: コンパイル（13ターゲット）・`run-mql5-tests.ps1`（全12テストPASS）確認済み。Strategy Testerでの再検証は実施していない（`InpRegimeTrendAdxMin`の変更は上記のとおり現状効果がなく、`InpMeanReversionBreakConfirmSeconds`はMR戦略無効のため実害なし、いずれも既存のスイープ結果をそのままコードへ反映しただけのため新規のOOS検証は不要と判断）。
+
+  **残存リスク・未確認事項**: `InpEntryUseStagedPipeline`を`true`へ変更するかどうかの判断が残っている（変更する場合、Stage 1市場レジームゲート・HTFバイアス等が新たに有効化されるため、既定構成の大きな変更となり、別途Fold1-5での動作確認が必要）。
+
+* [x] **`InpEntryUseStagedPipeline`を既定`true`へ更新し、Fold1-5で検証（2026-09-13実施、ユーザー依頼）。**
+
+  `InpRegimeTrendAdxMin=40.0`を実際にEntry判定へ反映させるため、`InpEntryUseStagedPipeline`を既定`false`→**`true`**へ変更した（`Config.mqh`・`CoreEA.mq5`）。コンパイル・`run-mql5-tests.ps1`は全PASS。
+
+  現行既定（EarlyAdverseExit ON・TriggerR=0.75）を土台に、StagedPipeline有効（新既定、Stage1市場レジームゲートでADX<40の確定足を追加棄却）と無効（旧既定、`InpMinimumAdx=20`のみでゲートなし）をFold1-5×4銘柄で比較した。
+
+  | 設定 | トレード数 | 純利益 | PF | 期待値/トレード | 簡易最大DD※ | 改善区分数(20区分中) |
+  |---|---:|---:|---:|---:|---:|---:|
+  | StagedPipeline=false（旧既定） | 2,642 | +252,693円 | 1.054 | 95.6円 | 171,984円 | - |
+  | **StagedPipeline=true（新既定）** | 525 | +152,469円 | **1.150** | **290.4円** | **77,100円** | 10 |
+
+  ※簡易最大DD＝トレード順の累積損益からの最大下落幅（証拠金・複利効果は考慮しない粗い指標）。
+
+  **無効化時のトレード数が5倍（525→2,642件）に急増する**ことが判明した。原因はentry_adx分布で確認済み: 有効時は`entry_adx`が40.01〜72.93（Stage1ゲートどおり40以上のみ）に収まるのに対し、無効時は20.01〜75.22（`InpMinimumAdx=20`のみ）まで許容されるため。
+
+  **結論**: 無効化（旧既定）の方が純利益の絶対額は大きい（+65.7%）が、これは**大量の低品質トレードによる薄利多売**によるものであり、1トレードあたりの期待値は現行既定（有効）の290.4円に対し95.6円と約3分の1にとどまる。簡易最大DDも現行既定の約2.2倍（171,984円 vs 77,100円）に悪化し、Fold×銘柄20区分中10区分でしか無効化が有効化を上回らず（GBPJPY 2020: -103,336円、EURUSD 2021: -62,774円等、区分間のばらつきが非常に大きい）、質・リスクの両面で現行既定（有効）が明確に優れている。**`InpEntryUseStagedPipeline=true`（新既定）を維持することを推奨する。純利益の絶対額のみで判断し無効化へ戻すべきではない。**
+
+  本検証を含め、Fold1-5への複数回のパラメータ適合が続いているため、既定の採用判断（本項目含む）は引き続きFinal Holdout（2025-01〜2026-08）での最終確認前提とする。
+
+* [x] **`InpPullbackTriggerAtrBuffer=0.10`の4銘柄Fold1-5検証（2026-09-13実施、ユーザー依頼）。**
+
+  2026-08-23、単一銘柄（USDJPY）Train区間で0.00/0.05/0.10/0.15/0.20をスイープし0.10が採用され、以降のFold単位Walk-Forward検証（Fold2等）でも「現行の設定」として使われ続けていたが、`Config.mqh`/`CoreEA.mq5`の既定値は`0.0`（無効）のまま据え置かれ、かつ本セッションで使用してきた4銘柄用`StrategyTester-Generic-*`系テンプレートには一度も含まれていなかった（前回監査で発覚した反映漏れ）。現行既定（EarlyAdverseExit ON・TriggerR=0.75、StagedPipeline ON・ADX=40）に`InpPullbackTriggerAtrBuffer=0.10`を追加してFold1-5×4銘柄（20ケース全成功）で検証した。
+
+  | 設定 | トレード数 | 純利益 | PF | 勝率 | 期待値/トレード |
+  |---|---:|---:|---:|---:|---:|
+  | Buffer=0.10 | 520 | +157,169円 | 1.156 | 33.8% | 302.2円 |
+  | Buffer=0（現行既定） | 525 | +152,469円 | 1.150 | 33.5% | 290.4円 |
+
+  差分は+4,700円（+3.1%）と小さい。Fold×銘柄20区分中、**16区分は完全にゼロ差**（バッファ条件が一度も発火しなかった）で、発火したのは残り7区分のみ、うち改善が4区分・悪化が3区分（EURJPY 2024: -4,386円等）。これは2026-08-23の単一銘柄検証で確認された「発火頻度が低い」という性質（Test=2019区間では一度も発火しなかった）と整合する結果である。
+
+  **結論**: 効果の方向性はプラスだが、発火頻度が低く（20区分中7区分のみ）、影響を受ける区分の符号も混在するため、頑健な改善とは言い切れない。ただし新たなリスクを持ち込む変更ではなく（既存のPullback Trigger条件を狭めるだけで、無効時＝既存挙動と完全一致する既存機構）、`Config.mqh`/`CoreEA.mq5`の既定値と2026-08-23時点で実際に「採用」されていた値との間の食い違いを解消する意味もあるため、**小幅ながら採用を推奨する**。バッファ値自体（0.10）をこれ以上細かく調整する意義は乏しい（発火頻度が低く、0.00〜0.20の範囲内での単一銘柄スイープでも差は僅少だった）。
+
+  **採用（2026-09-13、ユーザー指示）**: `InpPullbackTriggerAtrBuffer`の既定値を`0.0`→`0.10`へ更新した（`Config.mqh`・`CoreEA.mq5`）。コンパイル・`run-mql5-tests.ps1`全PASS確認済み。
+
+* [x] **`InpStopAtrMultiple`/`InpRiskRewardRatio`の4銘柄Fold1-5検証（2026-09-13〜14実施、ユーザー依頼）。**
+
+  現行既定（EarlyAdverseExit ON・TriggerR=0.75、StagedPipeline ON・ADX=40、PullbackTriggerAtrBuffer=0.10）を土台に、単一銘柄Fold1 Trainスイープ（2026-08-23、TASKS.md 2.1.1参照）と同じ一軸ずつの方式で、`InpStopAtrMultiple`（1.5/1.75/2.25/2.5、既定2.0固定側はRR）・`InpRiskRewardRatio`（1.5/1.75、既定2.0固定側はStopATR）を4銘柄Fold1-5で検証した（120ケース全成功）。
+
+  | 設定 | トレード数 | 純利益 | Baseline比 | PF | 期待値/トレード | 改善区分数(20区分中) |
+  |---|---:|---:|---:|---:|---:|---:|
+  | StopATR=1.5 | 573 | +63,636円 | -93,533円 | 1.052 | 111.1円 | 9 |
+  | StopATR=1.75 | 538 | **+185,534円** | **+28,365円** | **1.174** | **344.9円** | 9 |
+  | StopATR=2.0（既定、Baseline） | 520 | +157,169円 | - | 1.156 | 302.2円 | - |
+  | StopATR=2.25 | 509 | +156,162円 | -1,007円 | 1.161 | 306.8円 | 8 |
+  | StopATR=2.5 | 499 | +91,319円 | -65,850円 | 1.100 | 183.0円 | 8 |
+  | RR=1.5 | 551 | +109,568円 | -47,601円 | 1.101 | 198.9円 | 8 |
+  | RR=1.75 | 528 | +164,629円 | +7,460円 | 1.160 | 311.8円 | 8 |
+  | RR=2.0（既定、Baseline） | 520 | +157,169円 | - | 1.156 | 302.2円 | - |
+
+  **StopATR=1.75が全設定中最良の集計値**（純利益+18.0%、PF・期待値とも最良）を示した。ただしFold×銘柄20区分中の改善区分数は**9区分**で、明確に悪化しているStopATR=1.5（同じく9区分）と同数であり、集計値の優位ほど頑健ではない。実際の内訳（`symbol×year`別diff）を見ると、EURJPY 2021（+49,741円）・USDJPY 2022（+46,831円）の大幅な改善が、GBPJPY 2024（-34,062円）・EURUSD 2023（-22,598円）・USDJPY 2020（-16,656円）等の大幅な悪化と相殺し合う形で、ごく少数の区分の大きな振れが純利益合計を押し上げている構造であり、広範囲で一貫した改善ではない。
+
+  **単一銘柄Fold1-Train（2026-08-23）との比較で興味深い逆転が見られる**: 当時はStopATR=1.5が「魅力的だが既知の非単調パターンによる過学習の疑いが強い」として明示的に不採用とされ、StopATR=1.75はPF1.03程度の平凡な値だった。ところが4銘柄Fold1-5では**1.5が明確に悪化・1.75が最良**という、当時とは逆の結果になっている。これはStopAtrMultipleというレバー自体が、検証範囲・サンプルを変えるたびに結論が入れ替わる、構造的に不安定なパラメータである可能性を示している（単一銘柄Fold1-Train・複数の検証段階を通じて繰り返し非単調パターンが観測されている）。
+
+  RR=1.75も現行既定をわずかに上回った（+4.7%）が、改善区分数は8/20とこちらも半数未満。RR=1.5は明確に悪化した。
+
+  **結論**: StopATR=1.75・RR=1.75ともに集計値はプラスだが、いずれも改善区分数が半数以下（8〜9/20）であり、少数の大きな振れに支えられた結果である。StopAtrMultipleは特に、検証段階が変わるたびに「良い値」が入れ替わってきた経緯があり、このパラメータへの信頼度は他のパラメータ（EarlyAdverseExit・StagedPipeline等、10区分以上で一貫して改善）より明確に低い。**`InpStopAtrMultiple=2.0`・`InpRiskRewardRatio=2.0`は変更しないことを推奨する。** 単一銘柄Train区間で下した「変更の根拠なし」という従来の結論は、より大きな4銘柄Fold1-5サンプルでも覆らなかった（頑健性の観点では、むしろ逆に「このレバーは触るべきではない」という確信が強まった）。
+
+  StopATR=1.75とRR=1.75を組み合わせた場合にどうなるか（今回は一軸ずつのみ検証）は未検証だが、上記の不安定さを踏まえると追加検証の優先度は低いと判断する。
+
+  **重要な注意**: 本タスクを含め、既に多数のパラメータ・組み合わせをFold1-5上で検証してきた。**これ以上の探索は行わず、次はFinal Holdout（2025-01〜2026-08）による現行設定一式の一度きりの最終確認へ進むことを推奨する。**
 
 ## 2.2 `TestDecisionApiRules` の終了コード
 
@@ -543,6 +1856,24 @@ InpEnableTradeMutations = false
 * [ ] 緊急停止と手動決済を演習する
 * [ ] Model Rollbackを演習する
 * [ ] CDK Rollbackを演習する
+
+## 8.1 MT5実行VM（2026-09-06追加、2026-09-06 vmrun優先へ変更、2026-09-06 VM暗号化パスワード対応追加、2026-09-06 実機検証完了）
+
+Strategy Tester・MQL5単体テスト実行中にホストの対話デスクトップがMT5 GUIへフォーカスを奪われる問題への対応として、`tools/lib/Mt5ExecutionBackend.psm1`にHost/VM切り替え可能な共通実行バックエンドを実装した（`-ExecutionMode Host|VM`、既定Host。VM接続は`connectionType`で選択、既定・優先は`Vmrun`＝VMware Workstation/Player付属vmrun、`WinRm`＝汎用WinRM/PSRemotingも選択可能。詳細は`DECISIONS.md` DEC-029）。
+
+**2026-09-06、実VM（`D:\VMware\MT5-Tester\MT5-Tester.vmx`、Windows 11、VM暗号化有効）へOANDA証券MT5をインストールし、フル動作確認まで完了した。** 実機検証で合計7件の不具合を発見・修正している（cmd.exe経由実行の失敗、`..`相対パス解決失敗、if/パイプ構文の不備、`$process.ExitCode`取得不安定、`ProcessStartInfo.ArgumentList`が.NET Frameworkに存在しない、単一要素配列のスカラーアンラップ、TerminalData全体同期のタイムアウト。詳細は`DECISIONS.md` DEC-029参照）。VM側の電源設定（スリープ・画面タイムアウト）も無効化が必要だった。`tools/config/mt5-vm.settings.json`は作成済み（`.gitignore`対象）。
+
+* [x] VMware WorkstationのGUIから、対象VMの暗号化パスワードを自分で管理できる値へ変更する
+* [x] `tools/config/mt5-vm.settings.json`を作成する（`connectionType: "Vmrun"`、`vmxPath`、`vmEncrypted: true`、ゲストOS認証情報を設定、環境変数経由）
+* [x] VM側にVMware Toolsがインストール済みであることを確認する（`listProcessesInGuest`で疎通確認済み）
+* [x] 共通実行バックエンド（起動・ExitCode取得・タイムアウト・ディレクトリ同期・ログ行数取得）の実機動作を、汎用コマンド（cmd.exe/ping.exe等）で確認する
+* [x] VM内にMT5（OANDA証券MT5）をインストールし、`vmTerminalData`を実際のTerminal ID（`EE0304F13905552AE0B5EAEFB04866EB`）へ更新する
+* [x] VM内へリポジトリの`mt5`ソースを転送し、`link-mt5.ps1`相当のジャンクション作成・`compile-mql5.ps1`相当のEA/テストスクリプトコンパイルをvmrun経由で実施する
+* [x] `-ExecutionMode VM`で実際のMT5起動・終了コード取得・report/ログのVM→ホスト同期が成功することを実機確認する（`run-mql5-tests.ps1`: 全12テストPASS、`run-strategy-tester.ps1`: `exit=0`でreport/png回収成功）
+* [ ] `-ExecutionMode VM`でのCaseFileによる複数ケース実行の実機確認（単体実行のみ確認済み）
+* [x] audit JSONL（`InpAuditFileEnabled`）を有効にした状態でのVM実行時audit回収の実機確認（2026-09-07、監査JSONLの保存先をFILE_COMMONへ変更しStrategy Tester Agentサンドボックスcleanupの影響を受けないよう修正した＝DECISIONS.md DEC-030。実VM（vmrun）でHost/VM両方の`STRATEGY_TESTER_AUDIT_COPIED`・python分析への受け渡しを実機確認済み。付随してVMゲストのPowerShell実行ポリシーがRestrictedの場合`.ps1`スクリプトファイル実行が`-File`/`&`/dot-source問わずサイレント失敗する制約を発見した＝`docs/mt5-development.md`参照）
+* [ ] `connectionType: "WinRm"`側（汎用WinRM/PSRemoting）も、使う場合は同様に実機確認する
+* [x] 確認結果を`docs/mt5-development.md`へ反映する
 
 ---
 

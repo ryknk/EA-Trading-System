@@ -1,0 +1,145 @@
+{
+  "description": "InpBreakevenTriggerR=1.5でFold1-5(2020-2024年)を4銘柄で実行し、建値ストップトリガー閾値の期待値・含み益反転パターンへの影響を検証する。",
+  "cases": [
+    {
+      "case_name": "USDJPY-BreakevenR1.5-2020",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-BreakevenR1.5-2021",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-BreakevenR1.5-2022",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-BreakevenR1.5-2023",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-BreakevenR1.5-2024",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-BreakevenR1.5-2020",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-BreakevenR1.5-2021",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-BreakevenR1.5-2022",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-BreakevenR1.5-2023",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-BreakevenR1.5-2024",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-BreakevenR1.5-2020",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-BreakevenR1.5-2021",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-BreakevenR1.5-2022",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-BreakevenR1.5-2023",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-BreakevenR1.5-2024",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-BreakevenR1.5-2020",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-BreakevenR1.5-2021",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-BreakevenR1.5-2022",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-BreakevenR1.5-2023",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-BreakevenR1.5-2024",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-BreakevenR1.5-H1.ini"
+    }
+  ]
+}

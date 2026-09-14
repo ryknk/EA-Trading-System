@@ -60,7 +60,7 @@ Phase 11ではSNS Alert Topicを作成します。`-c alarm_email=<通知先>` �
 
 `InpEnableTradeMutations` と `InpDecisionApiEnabled` の初期値はfalseです。新規注文には検証済み外部ALLOWと最新Risk承認の両方が必要です。ただし同じマジックナンバーの既存ポジションに保護SLがない場合、取引変更が有効かつ`InpCloseUnprotectedPositions=true`ではPosition Managerが外部APIに依存せず緊急決済を試行します。
 
-監査ファイルは既定で有効で、端末の `MQL5\Files\EaTradingSystem\Audit\audit-YYYYMMDD.jsonl` に追記します。`InpTelemetryEnabled` は既定でfalseです。有効化時はCDK出力のTelemetry API URLを `InpTelemetryApiUrl` とMT5のWebRequest許可リストへ設定します。テレメトリ障害は記録だけ行い、既存ポジション管理や売買判断を変更しません。
+監査ファイルは既定で有効で、端末の `Common\Files\EaTradingSystem\Audit\audit-YYYYMMDD.jsonl`（`FILE_COMMON`、2026-09-07変更、旧: `MQL5\Files`配下）に追記します。Strategy Tester実行時は`InpAuditRunId`が実行単位の識別子へ設定され、ファイル名は`audit-<run_id>.jsonl`になります（詳細は`docs/configuration.md`・`docs/backtesting.md`参照）。`InpTelemetryEnabled` は既定でfalseです。有効化時はCDK出力のTelemetry API URLを `InpTelemetryApiUrl` とMT5のWebRequest許可リストへ設定します。テレメトリ障害は記録だけ行い、既存ポジション管理や売買判断を変更しません。
 
 全入力値、初期値、変更時の注意点は [設定](docs/configuration.md) を参照してください。
 

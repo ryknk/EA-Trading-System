@@ -14,7 +14,35 @@
 .\tools\run-strategy-tester.ps1 -TimeoutSeconds 900
 ```
 
-結果は `results/backtests/<run-id>-USDJPY-H1/` へ保存する。メタデータは `results/backtests/run-metadata.template.json` を複製し、EA・Strategy・Config版と全入力値を記録する。
+結果は `results/backtests/<run-id>-<Symbol>-<Period>/` へ保存する（`<Symbol>`・`<Period>`はTemplateの`[Tester]`セクションから読み取る。`-Symbol`未指定時は`StrategyTester-USDJPY-H1.ini`の`Symbol=USDJPY_HIST`がそのまま使われるため、`<run-id>-USDJPY_HIST-H1/`となる）。メタデータは `results/backtests/run-metadata.template.json` を複製し、EA・Strategy・Config版と全入力値を記録する。
+
+## 複数ケース実行（Cross-Asset Validation、OOS、Walk Forward、Stress Test等の共通基盤）
+
+`tools/run-strategy-tester.ps1`は`-CaseFile`を指定すると、複数銘柄・複数期間のケースを同じ1ケース実行処理で順番に実行する汎用Runnerとして動作する（`-CaseFile`未指定時は従来どおりの単体実行）。用途別の専用Runnerは追加せず、Cross-Asset Validation・OOS・Walk Forward・Final Holdout・Stress Testいずれもこの基盤を使う。
+
+CaseFileはJSON配列（または`cases`キーを持つオブジェクト）で、各ケースへ最低限`case_name`・`symbol`・`from_date`・`to_date`・`template`を指定する。`template`は同一の入力パラメータ（`[TesterInputs]`）を複数ケースで共有する汎用Template（例: `mt5/test-config/StrategyTester-Generic-H1.ini`）を指すことができ、`symbol`・`from_date`・`to_date`はケースごとに実行時へ上書きされる（Templateが宣言する`Symbol`/`InpSymbol`を`-CaseFile`経由・`-Symbol`明示指定時のみ上書きする。単体実行をデフォルト引数のまま呼び出した場合はTemplateの値をそのまま使う＝既存の単体実行との後方互換性を維持）。
+
+```powershell
+.\tools\run-strategy-tester.ps1 -CaseFile mt5\test-config\cases\cross-symbol-2020-2024.json
+```
+
+結果は `results/backtests/<run-id>-cases/` 配下へ保存する。
+
+* `manifest.json`: Run ID、InstallPath/TerminalData/TimeoutSeconds、CaseFileパスとSHA-256、ケースごとのSymbol/期間/Template/Template SHA-256/Expert/Deposit/実行結果（Succeeded/Failed）・失敗理由・監査ログ格納先・分析結果パスを記録する（再現用の識別情報）。
+* 各ケースの結果は `<CaseName>-<Symbol>-<FromDateCompact>_<ToDateCompact>/` の専用フォルダへ保存し、ケース間の結果混同を防ぐ（監査JSONLの混入防止処理は既存どおりケースごとに実行する）。
+* 全ケース終了後、監査JSONLが取得できたケースは既存の`python.analysis.reports`を再利用してケース単位の`performance-summary.json`等を生成し、`summary.csv`・`summary.md`へCaseName・Symbol・FromDate・ToDate・Net Profit・CAGR・Max Drawdown・Profit Factor・Sharpe Ratio・Win Rate・Average Win/Loss・Expectancy・Max Consecutive Losses・Trades・Status・ResultPathを集計する。
+* 1ケースが失敗（Terminal未検出、Timeout、レポート未生成等）しても後続ケースは継続し、失敗理由は`manifest.json`と`summary.csv`/`summary.md`へ記録される。
+
+**進捗ログ（2026-09-13追加）。** 複数ケース実行中はターミナルへ次の進捗ログを出力する（`manifest.json`等の実行結果ファイルには記録しない、ログ専用の概算値）。
+
+```text
+STRATEGY_TESTER_BATCH_START total=<ケース総数> case_file=<CaseFileパス>
+STRATEGY_TESTER_CASE_START case=<CaseName> index=<現在の件数>/<総数> symbol=... from=... to=...
+STRATEGY_TESTER_CASE_END case=<CaseName> index=<現在の件数>/<総数> status=Succeeded|Failed elapsed_seconds=<当該ケースの所要秒数> remaining=<残り件数> eta_seconds=<残り件数×平均所要秒数の概算値>
+STRATEGY_TESTER_BATCH_COMPLETED total=... succeeded=... failed=... manifest=... summary=...
+```
+
+`eta_seconds`はそれまでに完了したケースの平均所要時間から算出する概算値であり、ケースごとの期間長・銘柄・Timeout設定の違いは考慮しない。
 
 Phase 13の自動試行は初回`account is not specified`で開始できなかったが、2026-07-21にXMTrading-MT5（USDJPY/H1/2025年、100%リアルティック）で完走した（`results/backtests/20260721-231302-USDJPY-H1/`、総損益-95,024円・Profit Factor 0.59）。ただし2026-08-10、XMTrading-MT5はUSDJPYのreal tickデータを2022年1月分以降しか保持していないことを確認した（2020-2021指定時は「ヒストリー品質0%リアルティック」の合成データにフォールバックする）。このためブローカーをOANDA証券MT5（東京サーバー）へ切り替えたが、OANDA-Japan MT5 Demoサーバーのライブtickキャッシュも直近約1年分しか保持しておらず、同様に「ヒストリー品質2%リアルティック」となることが判明した（`results/backtests/20260816-113850-USDJPY-H1/INVALID-2pct-real-ticks.md`）。
 
@@ -100,16 +128,58 @@ python -m python.analysis.overfitting `
 
 **段階的Entry判定パイプライン（2026-08-22実装）。** 市場レジーム判定は当初分析専用（Entry判定に不使用）だったが、`InpEntryUseStagedPipeline`（既定値`false`）を`true`にすると、`CTrendFollowingStrategy::Evaluate()`をMarket Regime→HTF Bias（D1/H4トレンド一致）→Setup（押し目/戻り成立）→Entry Trigger（再加速/レンジ突破）→Entryという4段階として明示的に評価し、Market RegimeがRange/Unknownの確定足を追加で棄却できるようになった（`InpEntryRequireMarketRegimeTrend`、既定値`true`）。`InpEntryUseStagedPipeline=false`では判定式・発注挙動とも既存方式と完全に同一である（Strategy Tester再実行による実証は`DECISIONS.md` DEC-027参照）。`InpEntryUseStagedPipeline=true`の場合のみ、毎確定足の評価結果（成立・否決を問わず）を新規イベント`ENTRY_PIPELINE`（`stage_market_regime`・`stage_htf_bias`・`stage_breakout_setup_passed`・`stage_breakout_trigger_passed`・`stage_pullback_setup_passed`・`stage_pullback_trigger_passed`・`final_status`・`reason_code`）へ記録する。`python.analysis.trade_breakdown.entry_pipeline_funnel_summary()`がこのログから、各段階（`market_regime`・`htf_bias`・`trend_strength_or_momentum_filter`・`setup_or_trigger`）でどれだけ棄却されたかを集計し、`write_report(..., input_paths=...)`経由でレポートJSON（`entry_pipeline_funnel`キー、任意項目）・Markdownへ出力する。詳細な設定項目は`docs/configuration.md`「段階的Entry判定パイプライン」を参照。
 
-`InpAuditFileEnabled=true`（既定値）でStrategy Testerを実行すると、`EaTradingSystem\Audit\audit-YYYYMMDD.jsonl` にCANDIDATE（エントリー時ATR・ADX・Spread・時刻を含む）、RISK_DECISION（承認リスク額）、TRADE_CLOSED、TRADE_ANALYTICS（MFE・MAE）が記録される。`tools/run-strategy-tester.ps1` は実行後にこれらのJSONLを検出できた場合、自動的に `results/backtests/<run-id>-USDJPY-H1/audit/` へ複製する（見つからない場合はベストエフォートで警告を出すのみで、Strategy Tester自体の成功判定には影響しない）。
+`InpAuditFileEnabled=true`（既定値）でStrategy Testerを実行すると、`Terminal\Common\Files\EaTradingSystem\Audit\audit-<run-id>.jsonl`（`FILE_COMMON`、2026-09-07変更、旧: `MQL5\Files`配下の`audit-YYYYMMDD.jsonl`）にCANDIDATE（エントリー時ATR・ADX・Spread・時刻を含む）、RISK_DECISION（承認リスク額）、TRADE_CLOSED、TRADE_ANALYTICS（MFE・MAE、`mfe_time`・`post_peak_mae`）が記録される。`tools/run-strategy-tester.ps1` はStrategy Tester実行のたびに`InpAuditRunId`へReport名と同一の値を設定するため、run-idはReport名（例: `ets-20200101-000000-USDJPY-H1`）と一致する。実行後にこの`audit-<run-id>.jsonl`を検出できた場合、自動的に `results/backtests/<run-id>-USDJPY-H1/audit/` へ複製する（見つからない場合はベストエフォートで警告を出すのみで、Strategy Tester自体の成功判定には影響しない）。`FILE_COMMON`はStrategy Tester Agentのサンドボックスの外に保存されるため、VM実行でMT5終了後にサンドボックスがcleanupされても監査JSONLは消失しない（詳細はDECISIONS.md DEC-030を参照）。
+
+**Peak到達時刻・Peak後の最大逆行の追跡（2026-09-06追加）。** 従来のTRADE_ANALYTICSはMFE/MAEの最終値のみを記録し、いつPeakに到達したか・Peak後どこまで逆行したかは分からなかった（`POSITION_SNAPSHOT`は日次1回のみで再構成不可）。`CTradeAnalyticsTracker`（`mt5/Include/Logging/TradeAnalyticsTracker.mqh`）へ`mfe_time`（MFEが最後に更新された時刻＝Peak到達時刻）と`post_peak_mae`（Peak確定後に観測された含み損益の最小値、新高値更新のたびに現在値へリセット）の追跡を追加し、`TRADE_ANALYTICS`のPayloadへ含めた。更新ロジックは純粋関数`CTradeAnalyticsRules::UpdateExtreme`へ分離し、`TestTradeAnalyticsTracker.mq5`で単体テストする。`python.analysis.trade_breakdown.build_trade_context()`はこれらから`time_to_peak_hours`（Entry→Peak）・`peak_to_close_hours`（Peak→Close）・`post_peak_mae_r`（Peak確定後の最大逆行、R換算）・`reached_tp_equivalent_r`（MFE_RがそのトレードのTP相当R（CANDIDATE.risk_reward_ratio）以上に達したかの近似指標）を算出する。2026-09-06以前の監査ログ（新フィールド無し）は該当列がNaN/NaTになるのみで後方互換。
 
 ```powershell
 $env:PYTHONPATH='.'
 python -m python.analysis.trade_breakdown `
-  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-20200101.jsonl `
+  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-<run-id>.jsonl `
   --output build/trade-breakdown-report
 ```
 
 出力は `trade-breakdown-report.json`（JSON契約は `contracts/trade-breakdown-report.schema.json` を正とする）、`trade-breakdown-report.md`、および条件別列（`entry_atr`・`entry_adx`・`entry_spread_points`・`risk_budget`・`mfe`・`mae`・`r_multiple`・`hold_time_hours`・`weekday`・`session`・`atr_band`・`adx_band`・`hold_time_band`・`mfe_band`・`mae_band`・`market_regime_trend`・`market_regime_volatility`・`close_reason`・`close_weekday`・`close_session`・`giveback_ratio`・`giveback_band`）を付加した `trades-with-context.csv` である。ATR帯・ADX帯・保有時間帯・MFE帯・MAE帯・Giveback帯は実データの分位点（三分位）から算出し、固定のしきい値をハードコードしない。Session区分（Tokyo/London/London_NewYork_Overlap/NewYork）はUTC時刻に基づく概算区分であり、DSTは考慮しない簡略化である。R換算損益（`r_multiple`）は該当候補が承認された `RISK_DECISION` の `risk_budget`（発注時点のリスク許容額）に対する比率で、EA側での追加ロジックなしにPython側で算出する。`market_regime_trend`・`market_regime_volatility`はEA側の判定結果をそのまま再構成した値であり、Python側は判定ロジックを持たない。`close_reason`はMT5の`DEAL_REASON`をそのまま文字列化した値であり、EA側で決済理由を推定・分類するロジックは持たない。CLIから実行した場合（`--input`で指定した監査JSONLに`ENTRY_PIPELINE`イベントが含まれる場合のみ）、レポートJSON・Markdownへ`entry_pipeline_funnel`（段階的Entry判定パイプラインのStage別棄却件数）が追加される。
+
+### トレンド継続反転Exit比較分析（2026-09-12実装）
+
+条件別分析（`reversal_from_profit`・`giveback_from_peak_profit`）で確認された「トレンド相場の負けトレードの多くが含み益ピーク→反転→初期SL到達というパターンを辿っている」という所見を受け、トレンド継続反転Exit（`InpEnableTrendReversalExit`、既定値`false`、詳細は`docs/configuration.md`「トレンド継続反転Exit」参照）を追加した。目的はIn-SampleのProfit Factor最大化ではなく、OOSで観測された「利益からSLへの反転損失」の抑制であるため、特定パラメータをIS上で最適化して固定するのではなく、**Baseline（`InpEnableTrendReversalExit=false`）とON（`true`）のバックテスト結果を同一期間・同一パラメータで比較する**運用を前提とする。
+
+発動したトレードはEA側`CPositionExitEvaluator::EvaluateTrendReversalExits`が送出する`TREND_REVERSAL_EXIT`イベント（`reason_code`固定値`TrendReversalConfirmed`、`trend_direction`、`peak_price`、`peak_mfe_r_multiple`、`retracement_r_multiple`、`confirmation_count`）で識別する。TIME_STOP_EXIT/RANGE_EXITと同じ理由（MT5の`DEAL_REASON`はEA発注による決済をすべて`EXPERT`に一括りにする）で、`close_reason`だけでは区別できない。
+
+```powershell
+$env:PYTHONPATH='.'
+# Baseline
+python -m python.analysis.trade_breakdown --input results/backtests/<baseline-run-id>-USDJPY-H1/audit/audit-<baseline-run-id>.jsonl --output build/trend-reversal-baseline
+# ON
+python -m python.analysis.trade_breakdown --input results/backtests/<on-run-id>-USDJPY-H1/audit/audit-<on-run-id>.jsonl --output build/trend-reversal-on
+```
+
+`trade-breakdown-report.json`の`trend_reversal_exit`セクション（`trades_closed_by_trend_reversal_exit`・`net_profit`・`profit_factor`・`win_rate`・`expectancy`・`average_peak_mfe_r_multiple`・`average_retracement_r_multiple`・`by_trend_direction`）に加え、レポート全体のPF・Net Profit・Expectancy・Max DD・Win Rate・平均利益/平均損失・Trade数（`aggregate_trade_group`が既存のPerformance Report集計と共通）をBaseline/ON間で比較する。Exit理由別件数は`breakdowns`の`close_reason`列（TIME_STOP_EXIT/RANGE_EXITと同様、実際にはEXPERTへ統合されるため`trend_reversal_exit_triggered`フラグと併用する）、Peak MFEは`mfe_band`・`trend_reversal_peak_mfe_r_multiple`列を参照する。
+
+**「最終的にTPへ到達していた勝ちトレードを早期Exitしていないか」の確認**: `trend_reversal_exit.trades_that_would_likely_have_reached_tp`（および`net_pnl_of_trades_that_would_likely_have_reached_tp`）は、反転Exitで決済されたトレードのうち、既存の汎用指標`reached_tp_equivalent_r`（MFE_RがそのトレードのTP相当R以上に達したか）がTrueだったものの件数・純損益合計を示す。この件数が多い、または純損益合計がプラスに大きい場合、反転Exitが「本来TPへ到達していたはずの利益」を早期に打ち切ってしまっている可能性を示す。`InpTrendReversalActivationR`・`InpTrendReversalRetraceR`・`InpTrendReversalConfirmationTicks`はこの指標とOOS全体のPF/Net Profitの両方を見ながら判断し、IS単体の指標最大化だけを理由に固定しない。
+
+### 初期逆行Exit比較分析（2026-09-12実装・検証）
+
+トレンド継続反転ExitのConfirmationTicksスイープ（Fold1-5×4銘柄、`results/backtests/20260912-150203-cases`、ticks=5設定）で決済されたSLトレード254件を分析したところ、**92.5%（235件）が`InpTrendReversalActivationR`（含み益ピークによる反転監視の開始ライン、既定1.0R）へ一度も到達していない**ことが判明した。トレンド継続反転Exitは含み益ピークの存在を前提とするため、この92.5%の損失パターンには構造的に対処できない。初期逆行Exit（`InpEnableEarlyAdverseExit`、既定値`false`、詳細は`docs/configuration.md`「初期逆行Exit」参照）は、含み益ピークを一切参照せず、建値からの逆行のみを基準にすることで、この損失パターンへの対処を狙う新規Exitである。
+
+**検証結果（2026-09-12〜13実施、Fold1-5×4銘柄、`InpEarlyAdverseExitTriggerR`=0.3/0.5/0.6/0.65/0.7/0.75/0.8/0.85/0.9、ConfirmationTicks=5固定、180ケース）**: Baseline（OFF、`results/backtests/20260912-164730-cases`、514トレード・純利益+118,533円、PF1.108、勝率36.6%）に対し、純利益はTriggerRに対して単調ではなく**TriggerR=0.70で単峰性のピーク（純利益+181,266円、Baseline比+62,733円、PF1.186）**を示した。0.3〜0.65はいずれもBaseline未達（0.5は黒字→赤字に転落）、0.75以降はBaselineへ緩やかに収束する（1.0Rに近づくほど通常のSLとの差がなくなるため構造的に自然）。Fold×銘柄20区分中、0.70で12区分・0.75で14区分・0.80で13区分が改善しており、特定の1銘柄・1年に依存した見かけ上の改善ではない。最良設定（0.70）でも発動率は49.1%（全トレードの約半数）に達しており、この機構は「損切りラインを全体的に手前へシフトして平均損失を圧縮する」タイプの効果であって、悪いトレードだけを狙い撃ちする精密フィルタではない。詳細な数値と追加の調整案（TrendReversalExitとの併用検証等）は`TASKS.md`セクション2.1.3を参照。
+
+**併用検証結果（2026-09-13実施）**: `InpEnableTrendReversalExit=true`（Activation=1.0/Retrace=0.5/Ticks=5）と`InpEnableEarlyAdverseExit=true`（TriggerR=0.7/Ticks=5）を同時に有効化すると、Baseline比+75,214円（+63.5%）、EarlyAdverseExit単独比でも+12,481円の上乗せとなり、単独設定より併用の方が良い結果だった（SL到達件数325→27件）。ただしFold×銘柄20区分中の改善区分数は10区分で、EarlyAdverseExit単独設定（12〜14区分）より頑健性は低い。詳細は`TASKS.md`セクション2.1.3を参照。
+
+**現時点の判断**: `InpEnableEarlyAdverseExit`は既定`false`のまま維持する。既定の`InpEarlyAdverseExitTriggerR=0.5`はOOSデータ上明確に有害と判明したため、**このままの既定値で有効化しないこと**。TriggerR=0.70〜0.85の範囲でBaselineを上回り、TrendReversalExitとの併用でさらに上乗せが確認されたが、これはFold1-5への複数回のパラメータ適合（9点スイープ＋併用検証）の結果である。**本節の数値はFold1-5への複数回のパラメータ適合であり、Final Holdout（2025-01〜2026-08）での確認前に採用判断をしないこと。** これ以上Fold1-5上での探索は重ねず、全パラメータを固定してFinal Holdoutで一度きりの最終確認を行う計画を優先すべきである。
+
+発動したトレードはEA側`CPositionExitEvaluator::EvaluateEarlyAdverseExits`が送出する`EARLY_ADVERSE_EXIT`イベント（`reason_code`固定値`EarlyAdverseConfirmed`、`adverse_r_multiple`、`confirmation_count`）で識別する。
+
+```powershell
+$env:PYTHONPATH='.'
+# Baseline
+python -m python.analysis.trade_breakdown --input results/backtests/<baseline-run-id>-USDJPY-H1/audit/audit-<baseline-run-id>.jsonl --output build/early-adverse-baseline
+# ON
+python -m python.analysis.trade_breakdown --input results/backtests/<on-run-id>-USDJPY-H1/audit/audit-<on-run-id>.jsonl --output build/early-adverse-on
+```
+
+`trade-breakdown-report.json`の`early_adverse_exit`セクション（`trades_closed_by_early_adverse_exit`・`net_profit`・`profit_factor`・`win_rate`・`expectancy`・`average_adverse_r_multiple`・`by_direction`）に加え、レポート全体のPF・Net Profit・Expectancy・Max DD・Win Rate・平均利益/平均損失・Trade数をBaseline/ON間で比較する。「最終的にTPへ到達していた勝ちトレードを早期Exitしていないか」の確認は、トレンド継続反転Exitと同じ指標（`early_adverse_exit.trades_that_would_likely_have_reached_tp`・`net_pnl_of_trades_that_would_likely_have_reached_tp`）で行う。
 
 ## Entry Timing比較分析（2026-08-22実装）
 
@@ -133,11 +203,39 @@ Shadow TradeのSL/TP判定はtick粒度（Strategy Testerの"Every tick"モー�
 ```powershell
 $env:PYTHONPATH='.'
 python -m python.analysis.entry_timing `
-  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-20200101.jsonl `
+  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-<run-id>.jsonl `
   --output build/entry-timing-report
 ```
 
 出力は `entry-timing-report.json`（JSON契約は `contracts/entry-timing-report.schema.json` を正とする）、`entry-timing-report.md`、`entry-timing-setups.csv`、`entry-timing-trades.csv`である。レポートの`variants`はVariant別（IMMEDIATE/WAIT_1_BAR/WAIT_2_BARS/WAIT_TRIGGER）にTrades・Win Rate・Profit Factor・Expectancy・Net Profit・Max Drawdown（すべてR倍数）・平均MFE/MAE・価格推移チェックポイント平均を集計する。Max Drawdownは基準値100R（アカウント資金とは無関係な相対指標）からの累積R下落幅であり、Variant間の相対比較専用。`pre_entry_excursion`はSetup成立からEntryまでの逆行・順行の平均・中央値とTrigger成立率を要約する。`InpEnableEntryTimingAnalysis=false`のバックテストでは対象イベントが存在せず、`setups_observed=0`・全Variant`trades=0`として返る。
+
+## Breakout Timing比較分析（2026-09-05実装）
+
+Entry Timing比較分析はプルバックパターンのみを対象とし、ブレイクアウトパターンは「SetupとTriggerが同一の価格事象（レンジ突破）であり、両者の間に待機できる中間状態が存在しない」ため対象外としていた。しかし実トレードの大半（Fold1〜5・4銘柄の実績で85.6%）はブレイクアウトが占めており、ブレイクアウト成立直後の反転（ダマシ）による損失がタイミングの問題か、Setup/Trigger条件自体の精度の問題かを切り分けるため、ブレイクアウト専用の比較分析を別途実装した。
+
+`InpEnableBreakoutTimingAnalysis`（既定値`false`）を`true`にすると、EA側`CBreakoutTimingAnalyzer`（`mt5/Include/Logging/BreakoutTimingAnalyzer.mqh`）が、同一のブレイクアウトSetupについて次の4方式を**実注文なしのShadow Trade**として並行シミュレートする。
+
+```text
+IMMEDIATE      : ブレイクアウト成立bar自身の終値で即Entry（現行ライブロジックと同一）
+CONFIRM_1_BAR  : 1本後の終値時点でもブレイクアウトレベル（Setup成立時点で固定）を維持できていた場合のみEntry
+CONFIRM_2_BARS : 2本後について同様
+CONFIRM_3_BARS : 3本後について同様（維持できていなければ当Variantのトレードは生成しない）
+```
+
+「Trigger成立を待つ」というEntry Timing比較分析の概念はブレイクアウトには適用できないため、代わりに「ブレイクアウトが直後に反転せず維持されたか」を検証する設計とした。維持判定（`CBreakoutTimingRules::HoldsBreakout`）は`CTrendFollowingRules::IsBreakout`と同一の数式だが、レンジ高安値をSetup成立時点の値へ固定して再評価する点が異なる。Setup検出（HTF Bias・ATR/ADX/RSIゲート・ブレイクアウトレンジ）・SL/TP幾何は、`CEntryTimingAnalyzer`と同じ設計方針で`CTrendFollowingStrategy`とは独立に自己完結モジュールとして再評価し、実際の`RiskManager`・`OrderManager`・`PositionManager`には一切参照されず、実注文・実ポジションを一切発生させない。`InpEnableBreakoutTimingAnalysis=false`（既定値）ではIndicatorハンドルすら作成せず、既存の売買判断・監査ログ量に影響しない。
+
+Shadow TradeのSL/TP判定・R換算・チェックポイント記録は`CEntryTimingRules`（Entry Timing比較分析と共通の汎用ロジック）をそのまま再利用する。**過去データに最も適合する確認本数を自動採用する処理は実装していない。**
+
+`InpAuditFileEnabled=true`かつ`InpEnableBreakoutTimingAnalysis=true`でStrategy Testerを実行すると、監査JSONLへ`BREAKOUT_TIMING_SETUP`（Setup単位、`breakout_level_high`・`breakout_level_low`・`pre_entry_mfe_r`・`pre_entry_mae_r`・`confirm_1_bar_held`・`confirm_2_bars_held`・`confirm_3_bars_held`）と`BREAKOUT_TIMING_TRADE`（Variant単位、`variant`・`entry_price`・`wait_bars`・`bars_held`・`mfe_r`・`mae_r`・`exit_reason`・`pnl_r`・`checkpoint_r`）が記録される。
+
+```powershell
+$env:PYTHONPATH='.'
+python -m python.analysis.breakout_timing `
+  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-<run-id>.jsonl `
+  --output build/breakout-timing-report
+```
+
+出力は `breakout-timing-report.json`（JSON契約は `contracts/breakout-timing-report.schema.json` を正とする）、`breakout-timing-report.md`、`breakout-timing-setups.csv`、`breakout-timing-trades.csv`である。レポートの`variants`はVariant別（IMMEDIATE/CONFIRM_1_BAR/CONFIRM_2_BARS/CONFIRM_3_BARS）にTrades・Win Rate・Profit Factor・Expectancy・Net Profit・Max Drawdown（すべてR倍数）・平均MFE/MAE・価格推移チェックポイント平均を集計する。`confirmation_hold`はSetup数と、1/2/3本後にブレイクアウトレベルを維持できていた（ダマシに遭っていない）割合、およびSetup成立からの逆行・順行の平均・中央値を要約する。`InpEnableBreakoutTimingAnalysis=false`のバックテストでは対象イベントが存在せず、`setups_observed=0`・全Variant`trades=0`として返る。
 
 ## コスト感応度分析（2026-08-22実装）
 
@@ -165,7 +263,7 @@ python -m python.analysis.entry_timing `
 ```powershell
 $env:PYTHONPATH='.'
 python -m python.analysis.cost_sensitivity `
-  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-20200101.jsonl `
+  --input results/backtests/<run-id>-USDJPY-H1/audit/audit-<run-id>.jsonl `
   --initial-balance 1000000 `
   --output build/cost-sensitivity-report
 ```

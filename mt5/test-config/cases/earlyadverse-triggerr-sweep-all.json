@@ -1,0 +1,425 @@
+{
+  "description": "初期逆行Exit（InpEnableEarlyAdverseExit=true）のTriggerRスイープ（0.3/0.5/0.7）全体。Fold1-5×4銘柄×3設定。",
+  "cases": [
+    {
+      "case_name": "USDJPY-EAT03-2020",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT03-2021",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT03-2022",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT03-2023",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT03-2024",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT03-2020",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT03-2021",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT03-2022",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT03-2023",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT03-2024",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT03-2020",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT03-2021",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT03-2022",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT03-2023",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT03-2024",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT03-2020",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT03-2021",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT03-2022",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT03-2023",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT03-2024",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.3-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT05-2020",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT05-2021",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT05-2022",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT05-2023",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT05-2024",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT05-2020",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT05-2021",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT05-2022",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT05-2023",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT05-2024",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT05-2020",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT05-2021",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT05-2022",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT05-2023",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT05-2024",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT05-2020",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT05-2021",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT05-2022",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT05-2023",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT05-2024",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.5-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT07-2020",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT07-2021",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT07-2022",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT07-2023",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-EAT07-2024",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT07-2020",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT07-2021",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT07-2022",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT07-2023",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-EAT07-2024",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT07-2020",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT07-2021",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT07-2022",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT07-2023",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-EAT07-2024",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT07-2020",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT07-2021",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT07-2022",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT07-2023",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-EAT07-2024",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseTriggerR0.7-H1.ini"
+    }
+  ]
+}

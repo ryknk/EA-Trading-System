@@ -12,6 +12,11 @@ void AssertTrue(const bool condition,const string name)
    else { PrintFormat("FAIL %s",name); g_failures++; }
   }
 
+void AssertNearDouble(const double actual,const double expected,const string name)
+  {
+   AssertTrue(MathAbs(actual-expected)<=1e-9,StringFormat("%s (actual=%.6f expected=%.6f)",name,actual,expected));
+  }
+
 void OnStart(void)
   {
    AssertTrue(COrderCheckRules::IsAccepted(true,0),"OrderCheck bool success accepts documented retcode zero");
@@ -56,6 +61,22 @@ void OnStart(void)
    AssertTrue(CPositionProtectionRules::IsManagedPosition(26072001,26072001),"matching magic managed");
    AssertTrue(!CPositionProtectionRules::IsManagedPosition(0,26072001),"manual position not managed");
 
+   // 複数戦略Magic Number対応（レンジ戦略追加、2026-08-24）。
+   AssertTrue(CPositionProtectionRules::IsManagedPosition(26072001,26072001,26072002),
+              "primary magic managed under secondary-aware overload");
+   AssertTrue(CPositionProtectionRules::IsManagedPosition(26072002,26072001,26072002),
+              "secondary (range) magic managed under secondary-aware overload");
+   AssertTrue(!CPositionProtectionRules::IsManagedPosition(0,26072001,26072002),
+              "manual position not managed under secondary-aware overload");
+   AssertTrue(!CPositionProtectionRules::IsManagedPosition(26072002,26072001,0),
+              "secondary magic not managed when secondary is disabled (zero)");
+
+   AssertTrue(CPositionProtectionRules::HasValidMarketData(150.00,150.02),"normal bid/ask accepted");
+   AssertTrue(!CPositionProtectionRules::HasValidMarketData(0.0,150.02),"zero bid rejected");
+   AssertTrue(!CPositionProtectionRules::HasValidMarketData(150.00,0.0),"zero ask rejected");
+   AssertTrue(!CPositionProtectionRules::HasValidMarketData(150.02,150.00),"crossed bid/ask rejected");
+   AssertTrue(CPositionProtectionRules::HasValidMarketData(150.00,150.00),"equal bid/ask (zero spread) accepted");
+
    AssertTrue(CBreakevenStopRules::ShouldMoveToBreakeven(POSITION_TYPE_BUY,150.00,149.00,151.00,151.02,1.0),
               "buy triggers at exactly 1R profit");
    AssertTrue(!CBreakevenStopRules::ShouldMoveToBreakeven(POSITION_TYPE_BUY,150.00,149.00,150.99,151.01,1.0),
@@ -74,6 +95,43 @@ void OnStart(void)
               "zero trigger multiple never fires");
    AssertTrue(!CBreakevenStopRules::ShouldMoveToBreakeven(POSITION_TYPE_BUY,150.00,0.0,151.00,151.02,1.0),
               "missing stop loss never fires");
+
+   AssertTrue(CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_BUY,150.00,149.00,151.00,151.02,1.0),
+              "buy trailing triggers at exactly 1R profit against initial sl");
+   AssertTrue(!CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_BUY,150.00,149.00,150.99,151.01,1.0),
+              "buy trailing below 1R profit does not trigger");
+   AssertTrue(CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_SELL,150.00,151.00,148.98,149.00,1.0),
+              "sell trailing triggers at exactly 1R profit against initial sl");
+   AssertTrue(!CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_SELL,150.00,151.00,148.99,149.01,1.0),
+              "sell trailing below 1R profit does not trigger");
+   AssertTrue(CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_BUY,150.00,149.00,152.00,152.02,1.0),
+              "buy trailing still triggers using initial sl even after current sl already moved to breakeven");
+   AssertTrue(!CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_BUY,150.00,149.00,151.00,151.02,0.0),
+              "zero trigger multiple never fires for trailing");
+   AssertTrue(!CAtrTrailingStopRules::ShouldTrail(POSITION_TYPE_BUY,150.00,0.0,151.00,151.02,1.0),
+              "missing initial stop loss never fires for trailing");
+
+   AssertNearDouble(CAtrTrailingStopRules::ComputeTrailingStopLoss(POSITION_TYPE_BUY,151.00,151.02,0.50,2.0),150.00,
+                    "buy trailing sl is bid minus atr times multiple");
+   AssertNearDouble(CAtrTrailingStopRules::ComputeTrailingStopLoss(POSITION_TYPE_SELL,148.98,149.00,0.50,2.0),150.00,
+                    "sell trailing sl is ask plus atr times multiple");
+   AssertTrue(CAtrTrailingStopRules::ComputeTrailingStopLoss(POSITION_TYPE_BUY,151.00,151.02,0.0,2.0)==0.0,
+              "zero atr yields zero trailing sl");
+   AssertTrue(CAtrTrailingStopRules::ComputeTrailingStopLoss(POSITION_TYPE_BUY,151.00,151.02,0.50,0.0)==0.0,
+              "zero atr multiple yields zero trailing sl");
+
+   AssertTrue(CAtrTrailingStopRules::IsMoreProtective(POSITION_TYPE_BUY,150.10,150.00),
+              "buy candidate above current sl is more protective");
+   AssertTrue(!CAtrTrailingStopRules::IsMoreProtective(POSITION_TYPE_BUY,149.90,150.00),
+              "buy candidate below current sl is not more protective (never loosens)");
+   AssertTrue(CAtrTrailingStopRules::IsMoreProtective(POSITION_TYPE_SELL,150.90,151.00),
+              "sell candidate below current sl is more protective");
+   AssertTrue(!CAtrTrailingStopRules::IsMoreProtective(POSITION_TYPE_SELL,151.10,151.00),
+              "sell candidate above current sl is not more protective (never loosens)");
+   AssertTrue(!CAtrTrailingStopRules::IsMoreProtective(POSITION_TYPE_BUY,0.0,150.00),
+              "zero candidate sl is never more protective");
+   AssertTrue(CAtrTrailingStopRules::IsMoreProtective(POSITION_TYPE_BUY,150.00,0.0),
+              "any valid candidate is more protective than a missing current sl");
 
    AssertTrue(CTimeStopRules::HasExceededMaxHoldingBars(20,20),"time stop fires at exactly max holding bars");
    AssertTrue(CTimeStopRules::HasExceededMaxHoldingBars(21,20),"time stop fires beyond max holding bars");
@@ -95,6 +153,68 @@ void OnStart(void)
               "missing initial stop loss never reaches threshold");
    AssertTrue(!CTimeStopRules::HasReachedMinMfeR(POSITION_TYPE_BUY,150.00,150.00,150.50,0.5),
               "zero risk distance never reaches threshold");
+
+   AssertTrue(CTrendReversalExitRules::IsActivated(POSITION_TYPE_BUY,150.00,149.00,151.00,1.0),
+              "buy activation reaches exactly 1R peak favorable excursion");
+   AssertTrue(!CTrendReversalExitRules::IsActivated(POSITION_TYPE_BUY,150.00,149.00,150.99,1.0),
+              "buy activation below 1R peak favorable excursion does not activate");
+   AssertTrue(CTrendReversalExitRules::IsActivated(POSITION_TYPE_SELL,150.00,151.00,149.00,1.0),
+              "sell activation reaches exactly 1R peak favorable excursion");
+   AssertTrue(!CTrendReversalExitRules::IsActivated(POSITION_TYPE_SELL,150.00,151.00,149.01,1.0),
+              "sell activation below 1R peak favorable excursion does not activate");
+
+   AssertTrue(CTrendReversalExitRules::IsRetraced(POSITION_TYPE_BUY,150.00,149.00,151.00,150.50,0.5),
+              "buy retraces exactly 0.5R from peak");
+   AssertTrue(!CTrendReversalExitRules::IsRetraced(POSITION_TYPE_BUY,150.00,149.00,151.00,150.51,0.5),
+              "buy retracement below 0.5R does not trigger");
+   AssertTrue(!CTrendReversalExitRules::IsRetraced(POSITION_TYPE_BUY,150.00,149.00,151.00,151.00,0.5),
+              "buy at peak (no retracement) does not trigger");
+   AssertTrue(CTrendReversalExitRules::IsRetraced(POSITION_TYPE_SELL,150.00,151.00,149.00,149.50,0.5),
+              "sell retraces exactly 0.5R from peak");
+   AssertTrue(!CTrendReversalExitRules::IsRetraced(POSITION_TYPE_SELL,150.00,151.00,149.00,149.49,0.5),
+              "sell retracement below 0.5R does not trigger");
+   AssertTrue(!CTrendReversalExitRules::IsRetraced(POSITION_TYPE_BUY,150.00,149.00,151.00,150.50,0.0),
+              "zero retrace r multiple never triggers");
+   AssertTrue(!CTrendReversalExitRules::IsRetraced(POSITION_TYPE_BUY,150.00,0.0,151.00,150.50,0.5),
+              "missing initial stop loss never triggers retracement");
+   AssertTrue(!CTrendReversalExitRules::IsRetraced(POSITION_TYPE_BUY,150.00,150.00,151.00,150.50,0.5),
+              "zero risk distance never triggers retracement");
+
+   AssertTrue(CTrendReversalExitRules::HasConfirmedReversal(5,5),"reversal confirmed at exactly required ticks");
+   AssertTrue(CTrendReversalExitRules::HasConfirmedReversal(6,5),"reversal confirmed beyond required ticks");
+   AssertTrue(!CTrendReversalExitRules::HasConfirmedReversal(4,5),"reversal not confirmed before required ticks");
+   AssertTrue(!CTrendReversalExitRules::HasConfirmedReversal(5,0),"zero required ticks never confirms");
+
+   AssertNearDouble(CTrendReversalExitRules::RetracementRMultiple(POSITION_TYPE_BUY,150.00,149.00,151.00,150.50),0.5,
+                    "buy retracement r multiple is peak-to-current over risk distance");
+   AssertNearDouble(CTrendReversalExitRules::RetracementRMultiple(POSITION_TYPE_SELL,150.00,151.00,149.00,149.50),0.5,
+                    "sell retracement r multiple is current-to-peak over risk distance");
+   AssertTrue(CTrendReversalExitRules::RetracementRMultiple(POSITION_TYPE_BUY,150.00,150.00,151.00,150.50)==0.0,
+              "zero risk distance yields zero retracement r multiple");
+
+   AssertTrue(CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_BUY,150.00,149.00,149.50,0.5),
+              "buy adverse move reaches exactly 0.5R from open");
+   AssertTrue(!CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_BUY,150.00,149.00,149.51,0.5),
+              "buy adverse move below 0.5R from open does not trigger");
+   AssertTrue(CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_SELL,150.00,151.00,150.50,0.5),
+              "sell adverse move reaches exactly 0.5R from open");
+   AssertTrue(!CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_SELL,150.00,151.00,150.49,0.5),
+              "sell adverse move below 0.5R from open does not trigger");
+   AssertTrue(!CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_BUY,150.00,149.00,149.50,0.0),
+              "zero trigger r multiple never triggers");
+   AssertTrue(!CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_BUY,150.00,0.0,149.50,0.5),
+              "missing initial stop loss never triggers early adverse exit");
+   AssertTrue(!CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_BUY,150.00,150.00,149.50,0.5),
+              "zero risk distance never triggers early adverse exit");
+   AssertTrue(!CEarlyAdverseExitRules::IsTriggered(POSITION_TYPE_BUY,150.00,149.00,150.50,0.5),
+              "favorable price movement never triggers early adverse exit");
+
+   AssertNearDouble(CEarlyAdverseExitRules::AdverseRMultiple(POSITION_TYPE_BUY,150.00,149.00,149.50),0.5,
+                    "buy adverse r multiple is open-to-current over risk distance");
+   AssertNearDouble(CEarlyAdverseExitRules::AdverseRMultiple(POSITION_TYPE_SELL,150.00,151.00,150.50),0.5,
+                    "sell adverse r multiple is current-to-open over risk distance");
+   AssertTrue(CEarlyAdverseExitRules::AdverseRMultiple(POSITION_TYPE_BUY,150.00,150.00,149.50)==0.0,
+              "zero risk distance yields zero adverse r multiple");
 
    if(g_failures==0) Print("TEST_SUITE_PASS TestTradingRules");
    else PrintFormat("TEST_SUITE_FAIL TestTradingRules failures=%d",g_failures);

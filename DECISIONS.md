@@ -624,3 +624,179 @@ Market Regimeの方向性（Up/Down）とHTF Biasの方向性が食い違う場�
 * `InpEnableEntryTimingAnalysis=true`にした場合の実際の分析結果（どのVariantが優れているか）はユーザーの仮説検証に委ねる。本Decisionでは待機方式の推奨・自動選択は一切行わない
 * 実装の妥当性はサンプル期間（2018-01〜2018-06）の実データで検証済みだが、正式なIS期間（2017-09〜2020-12）・OOS期間での分析はまだ実施していない
 * **2026-08-22、正式なIS期間（2017-09〜2020-12）で初めて実行し、`python/analysis/entry_timing.py`の`DRAWDOWN_BASELINE_R`（当時100R）を起点に累積損益（`pnl_r`の累計）がマイナスへ落ちるとequityが0以下になり`drawdown.build_drawdown_curve`が例外を送出する不具合を発見・修正した**。Shadow TradeはMaxOpenPositions等の並行数制限を受けないためSetup数が多く（本IS期間で1,101件）、IMMEDIATE/WAIT_1_BAR/WAIT_2_BARSの累積損失がそれぞれ-99R〜-118Rに達し100Rを超過していた。相対指標という設計意図は変えず、基準値を10,000Rへ引き上げて修正した（`python/tests/test_entry_timing.py`は基準値を直接検証しておらず、修正後も7件全PASS）。この修正を経て、正式なIS期間でのVariant比較を実施した。詳細な分析結果はTASKS.md参照
+
+---
+
+# DEC-029: MT5実行バックエンドはHost/VM共通の薄い抽象化とし、VM接続はVMware Workstation/Player付属vmrunを既定・優先とする（WinRM/PSRemotingも選択可能）
+
+**状態:** 採用
+
+## 背景
+
+Strategy Tester・MQL5単体テスト実行はいずれもホストWindows上で`terminal64.exe`を直接`Start-Process`しており、実行中にMT5 GUIがホストの対話デスクトップへ一瞬でも表示され、ユーザーの他の作業・ゲームのフォーカスを奪う問題があった。恒久対策として、MT5を隔離VM内で実行できる方式を追加する依頼があった。当初はHypervisor非依存の汎用WinRM/PSRemotingのみを想定していたが、ユーザーが実際に使用するのはローカルPC上のVMware Workstation Pro/Playerであるため、その付属CLIである`vmrun`を優先する方針へ変更した。
+
+## 判断
+
+`tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`のどちらからも使う共通モジュール`tools/lib/Mt5ExecutionBackend.psm1`を新設し、「MT5起動・待機・タイムアウト検出・終了コード取得・VM実行時の結果ファイル同期」だけをこのモジュールへ委譲する。Report/Audit検索、CaseFile処理、PASSマーカー判定など各スクリプト固有の業務ロジックは変更しない。
+
+`-ExecutionMode Host|VM`（既定`Host`）で切り替える。VM実行時の接続方式はVM設定ファイルの`connectionType`でさらに選択する：
+
+* `Vmrun`（既定）— VMware Workstation/Player付属の`vmrun`コマンドラインツールを使い、VMware Tools経由でゲストOS内のプログラムを直接実行する。IPアドレスやゲスト側WinRM設定は不要で、`.vmx`パスとゲストOSのユーザー名・パスワードのみで動作する。
+* `WinRm`— 汎用WinRM/PSRemoting（`New-PSSession -ComputerName`）。Hypervisor製品を問わないが、ゲスト側で事前にWinRMを有効化する必要がある。
+
+VM接続設定は`tools/config/mt5-vm.settings.json`（`.gitignore`対象、テンプレートは`tools/config/mt5-vm.settings.example.json`）で保持し、パスワード等の秘密情報は設定ファイルへ書かず、対話入力（`Get-Credential`）または環境変数経由のみ許可する。`-ExecutionMode VM`指定時にVM設定が不足・不正な場合（`connectionType`に応じた必須フィールド不足を含む）はHostへ暗黙フォールバックせず、明確な例外で終了する。
+
+Vmrun方式では、vmrunが`runProgramInGuest`経由でゲスト内プログラムの終了コードを直接返さないため、ゲスト内で`<exe> <args> & echo %ERRORLEVEL%><ファイル>`を実行させ、そのファイルを`copyFileFromGuestToHost`でホストへ回収する方式でExitCodeを取得する。vmrunにディレクトリ再帰コピー機能が無いため、TerminalData/InstallPath等のディレクトリ同期はゲスト内で`Compress-Archive`により圧縮したうえで単一ファイルとしてホストへ回収し展開する。タイムアウト時は`listProcessesInGuest`/`killProcessInGuest`でゲスト内プロセスを明示的に強制終了する。WinRm方式は既存どおり`Copy-Item -ToSession`/`-FromSession`でファイル転送する。
+
+VMware VM暗号化（Encryption）が有効な場合、ゲストOSログインパスワード（`-gu`/`-gp`）とは別に、VM自体を復号するための暗号化パスワード（vmrunの`-vp`）が必要になる。この2つは全く別のパスワードであるため、VM設定ファイルへ`vmEncrypted`（既定`false`）と、それが`true`の場合の`encryptionCredentialSource`（`Prompt`/`EnvironmentVariable`、ゲスト認証の`credentialSource`と同じ考え方だがユーザー名の概念はない）を独立して追加した。`vmEncrypted=true`かつ`encryptionCredentialSource`が不足・不正な場合も、他の必須項目と同様に明確な例外で終了する。
+
+いずれの方式でも、既存のreport/audit検索ロジック（`$searchRoots`）は変更せず、VM実行時のみステージングディレクトリを検索対象へ追加する形で対応する。
+
+## 理由
+
+* ユーザーが実際に使用する環境がローカルPC上のVMware Workstation Pro/Playerであるため、そのVM専用のゲスト内直接実行手段である`vmrun`を既定・優先とした。IPアドレス割当やゲスト側WinRM設定が不要になり、個人利用のローカルVM構成に適する
+* 一方で「VM製品をコードへ強く固定しない」という当初要求も維持するため、`connectionType`で接続方式を選べる設計とし、WinRM/PSRemoting実装は削除せず残した。将来的に別の隔離実行方式（別Hypervisor、コンテナ等）を追加する場合も、共通モジュールへ新しい接続実装を追加し`connectionType`の選択肢を増やすだけで済む
+* Strategy Tester/MQL5単体テストのどちらも「起動・待機・タイムアウト・終了コード取得」というMT5起動処理自体は同一であり、これを共通化することで重複実装を避けつつ、各スクリプト固有の業務ロジック（report/audit検索、CaseFile、PASSマーカー判定）には触れない設計とした
+* VM設定不備時にHostへ自動フォールバックさせると、ユーザーが意図せずホストGUIで実行してしまう（今回解決したい問題が再発する）ため、明確なエラーで停止する設計とした
+* 秘密情報をリポジトリ・設定ファイルへ保存しないというCLAUDE.md/DECISIONS.mdの既存方針を維持するため、資格情報は対話入力または環境変数経由のみとした。ただしvmrunの`-gp`（ゲストパスワード）・`-vp`（VM暗号化パスワード）オプションはコマンドライン引数として渡す必要があり、実行中は同一ホスト上の他プロセスから一時的にプロセスの起動コマンドラインとして見える可能性がある。これはvmrun自体の仕様上の制約であり、ログ・例外メッセージへの出力はマスキングして防いでいるが、完全な排除はできないためユーザーへ明示する
+* VM暗号化パスワードをWindows資格情報マネージャーから直接読み出すコードは実装しなかった。ユーザー自身の環境であっても、資格情報ストアから認証情報を復号・抽出する処理は認証情報窃取ツールと外形的に区別しづらく、安全側に倒して見送った。ユーザーには代わりにVMware Workstation自身のGUI機能（暗号化パスワードの変更）で、自分が管理できる値へ設定し直すことを案内した
+
+## 影響
+
+* 新規`tools/lib/Mt5ExecutionBackend.psm1`・`tools/config/mt5-vm.settings.example.json`・`tools/test-mt5-execution-backend.ps1`を追加した
+* `tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`・`.gitignore`・`docs/mt5-development.md`・`TASKS.md`を変更した
+* `-ExecutionMode`省略時（既定`Host`）は既存呼び出しと完全互換に動作することを、Hostモードでの単体実行・CaseFile複数ケース実行・MQL5単体テスト実行で確認済み
+* **2026-09-06、実VMware VM（VMware Workstation Pro、Windows 11ゲスト）で実機検証を行い、Vmrun方式の実装に3件の不具合を発見・修正した：**
+  1. `runProgramInGuest`で`cmd.exe`を**引数付きで**実行すると、ゲストプログラム自身は正常終了しているにもかかわらずvmrunが一律`exit code 1`を報告する既知の問題を確認した（`cmd.exe /c dir`単体でも再現、引数なしの`cmd.exe`単体や`ipconfig.exe`等の直接実行は成功する）。回避策として、MT5起動・ExitCode取得ロジックをcmd.exe経由から`powershell.exe -NoProfile -Command`経由（`Start-Process -PassThru` + `WaitForExit`でタイムアウト制御し、ExitCodeまたは`"TIMEOUT"`をファイルへ書き出す方式）へ全面的に置き換えた
+  2. `copyFileFromGuestToHost`が`..`を含む相対パス要素を解決できず失敗することを確認した（Compress-Archive自体は成功していたが、その結果ファイルの回収が失敗していた）。同期対象ディレクトリの親パスを`Split-Path -Parent`で事前に正規化してから使うよう修正した
+  3. ゲスト内で実行するPowerShellコマンド文字列で`if (...) { A } else { B } | Set-Content ...`という構文を使うと、パイプがif式全体ではなく最後の分岐にのみ適用され機能しないことを確認した（`Get-Mt5VmRemoteLineCount`）。`$(if (...) {...} else {...}) | Set-Content ...`とサブ式化して修正した
+* 上記修正後、実VM上で以下を実機確認済み: VM暗号化パスワード付きVM起動、ゲスト認証（vmrun `-gu`/`-gp`/`-vp`）、`Invoke-Mt5Execution`のVM実行によるExitCode取得（0・非0いずれも）、タイムアウト時のゲストプロセス強制終了、`Compress-Archive`方式によるディレクトリ同期、リモートファイルの行数取得
+* 実機検証はMT5未インストールのVM上で、`vmExecutablePath`を`cmd.exe`等の汎用コマンドに差し替えて実施した（共通実行バックエンドの起動・待機・ExitCode取得・タイムアウト・同期ロジックの検証が目的）
+* **2026-09-06、VM内にOANDA証券MT5をインストール後、実際のMT5（MQL5単体テスト・Strategy Tester）でのフル動作確認を実施し、さらに4件の不具合を発見・修正した：**
+  1. `Start-Process -RedirectStandardOutput/-RedirectStandardError`経由で`$process.ExitCode`を読み取ると、引数が長い・複雑なvmrun呼び出しで不定に空文字列/nullになる不具合を確認した（Windows PowerShell 5.1、.NET Frameworkでの既知の癖）。`System.Diagnostics.Process`を直接使い、`BeginOutputReadLine`/`BeginErrorReadLine`による非同期イベント読み取り（.NET推奨パターン）へ`Invoke-VmrunCommand`を全面書き換えた
+  2. その書き換えで`ProcessStartInfo.ArgumentList`を使ったところ、実際の運用環境（Windows PowerShell 5.1、.NET Framework）には同プロパティが存在しない（.NET Core専用）ことが判明した（このセッションの対話環境がPowerShell 7/.NET Coreだったため当初のテストでは検出できなかった）。Win32の`CommandLineToArgvW`互換エスケープを自前実装し、Framework/Core双方で確実に動く`Arguments`（単一文字列）方式に統一した
+  3. `Copy-Mt5VmrunPathsToStaging`が要素数1の配列を`return`する際、PowerShellがスカラーへ自動アンラップし、呼び出し側の`$stagingRoots[0]`が文字列の先頭1文字になる不具合を確認した。`return , $stagingRoots`と`,`演算子で配列化を強制して修正した
+  4. VM内のTerminalDataフォルダ全体（実測761MB、うち`bases`＝tickヒストリカルデータが709MB）を無条件に同期しようとして`Compress-Archive`/`copyFileFromGuestToHost`がタイムアウトする問題を確認した。Strategy Testerのreport/audit生成物はTerminalData直下やTester配下に留まりヒストリカルデータは不要なため、同期時に除外するトップレベル名（VM設定`vmSyncExcludeNames`、既定`@("bases")`）とタイムアウト秒数（`vmSyncTimeoutSeconds`、既定300秒）を設定可能にした
+* また、VM側の電源設定（ディスプレイ・スタンバイのタイムアウト）を無効化する必要があることが分かった。有効なままだと実行中にVMがスリープし、vmrunコマンドが原因不明のエラーで間欠的に失敗する（`docs/mt5-development.md`に事前準備手順として追記）
+* 上記修正後、VM内にコンパイル済みEA・テストスクリプトを配置した状態で、`run-mql5-tests.ps1 -ExecutionMode VM`（全12テストPASS、Hostモードと同一結果）・`run-strategy-tester.ps1 -ExecutionMode VM`（`exit=0`、report/pngが正しくホスト側へ回収される）の両方が実機で成功することを確認した。Hostモードの回帰（単体実行・MQL5単体テスト）も再確認済み
+* WinRm方式は今回未検証のまま（ユーザー環境がVMware Workstationのため）
+
+---
+
+# DEC-030: 監査JSONLはFILE_COMMON・Run ID単位のファイル名で保存する（Strategy Tester Agentサンドボックスのcleanupに影響されないようにする）
+
+**状態:** 採用
+
+## 背景
+
+DEC-029でVM/vmrun実行のフル動作確認を行った際、`InpAuditFileEnabled`を有効にした監査JSONL回収は未検証のまま残っていた（TASKS.md 8.1節）。検証にあたり原因を調査したところ、次の設計上の問題が判明した。
+
+* `CTradeLogger`（`mt5/Include/Logging/TradeLogger.mqh`）は通常の`FileOpen()`（`FILE_COMMON`なし）を使っており、監査JSONLはサンドボックス化された`<data folder>\MQL5\Files\EaTradingSystem\Audit`（Strategy Tester実行時はTester Agent固有のサンドボックス配下）に保存される。
+* `tools/run-strategy-tester.ps1`のVM実行モードは、MT5終了後にTerminalData等をディレクトリごとzip化してホストへ回収する設計（DEC-029）だが、Tester Agentのサンドボックスは（ローカルAgentの実装上）MT5終了後にcleanupされるため、回収時点では既に監査JSONLが消えている。HTM reportはTerminalData直下（サンドボックスの外）に生成されるため正常に回収できており、この非対称性がHostモードでは表面化しにくく気づかれていなかった。
+* 加えて、従来のファイル名は日付単位（`audit-YYYYMMDD.jsonl`）で複数実行が同一ファイルへ追記される設計だったため、`run-strategy-tester.ps1`は各実行前に既存の`audit-*.jsonl`を削除する事前クリーンアップを行っていた（2026-08-22追加）。この削除ロジックは日付単位の共有ファイルを前提にしており、後述のFILE_COMMON化で複数ターミナル・複数実行がCommonフォルダを共有するようになると、他の実行のログを誤って削除するリスクが生じる。
+
+## 判断
+
+1. **監査JSONLの保存先を`FILE_COMMON`へ変更する。** `TradeLogger.mqh`の`FileOpen()`・`FolderCreate()`へ`FILE_COMMON`フラグを追加し、`Terminal\Common\Files\<InpAuditLogDirectory>`（Strategy Tester Agentのサンドボックスの外）へ保存する。Host/VM/Strategy Tester/MQL5単体テストいずれで実行しても同じ実装を使う。
+2. **ファイル名をRun ID単位にする。** `SEaConfig`・EA input（`InpAuditRunId`、既定空文字）を追加し、`CTradeLogger::FileName()`は`audit_run_id`が非空なら`audit-<run_id>.jsonl`、空（既定値、通常運用）なら従来どおり`audit-YYYYMMDD.jsonl`にフォールバックする。Run IDには新しいID生成基盤を追加せず、`tools/run-strategy-tester.ps1`が既に生成している実行単位の識別子（単体実行・CaseFileいずれもReport名`$ReportName`と同一の値）をそのまま`InpAuditRunId`として渡す。ファイル名がWindowsのファイル名として安全な文字集合（英数字・`.`・`_`・`-`）であることを`ValidateConfig`で検証し、`:`（ドライブ区切りとの混同を避ける）や`/`\`\`は許可しない。
+3. **VM実行時、Common配下のAuditディレクトリだけを追加で同期する。** `tools/lib/Mt5ExecutionBackend.psm1`へ`Get-Mt5VmCommonAuditPath`を追加し、VM設定`vmCommonDataPath`（省略時は`vmTerminalData`の兄弟フォルダ`Terminal\Common`を自動導出）から同期元パスを算出する。既存の汎用ディレクトリ同期関数（`Copy-Mt5VmrunPathsToStaging`/`Copy-Mt5VmPathsToStaging`、vmrun/WinRm共通）へ同期元パスとして追加するだけで、vmrun/WinRmいずれでも動作する。Commonフォルダ全体ではなくAuditディレクトリのみを同期対象にする（Commonフォルダは他の用途のデータも置かれ得るため）。
+4. **実行前の`audit-*.jsonl`削除処理は廃止する。** ファイル名がRun ID単位で一意になったため、日付単位の共有ファイルを前提にした事前削除は不要になった。むしろFILE_COMMON化後に残すと、Commonフォルダを共有する他の実行・他ターミナルのログを誤って削除するリスクがあるため、廃止した。
+5. **監査JSONLの検索をワイルドカードから完全一致へ変更する。** `tools/run-strategy-tester.ps1`は、report検索と同様に`audit-*.jsonl`＋パス部分一致でファイルを探していたが、ファイル名がRun ID単位で一意になったことを利用し、`audit-<ReportName>.jsonl`という完全一致（拡張子込み、ワイルドカードなし）で検索するよう変更した。VM同期後のステージングフォルダ名はソースパスをスラッシュ置換した名前になり元のディレクトリ構造（`\EaTradingSystem\Audit\`）を保持しないため、パス部分一致方式のままではVM同期後のファイルを発見できない問題も同時に解消した。
+6. **既存のベストエフォート仕様は維持する。** 監査JSONLが見つからない場合でもStrategy Tester自体の成功判定には影響させない（従来どおり）。ただしVM実行時は`STRATEGY_TESTER_AUDIT_COPIED`/`STRATEGY_TESTER_AUDIT_NOT_FOUND`ログへ`mode=VM`を含めて明示する。
+
+## 理由
+
+* FILE_COMMONはMQL5標準機能であり、Tester Agentのサンドボックスという「MT5終了時にcleanupされ得る一時領域」の外にあるため、根本原因（サンドボックスの外へ出す）を修正できる。回避策（VM終了前に非同期でファイルを吸い出す等）は複雑さの割に確実性が低いため採用しなかった
+* Run ID単位のファイル名は、既存のreport命名（`ReportName`）をそのまま再利用でき、新しいID生成基盤を追加する必要がない。Report名は既に実行・ケースごとに一意であることが保証されている（`run-strategy-tester.ps1`が生成時に重複チェック済み）
+* ファイル名を実行単位で一意にすることで、「実行前に削除」という前提の脆いクリーンアップ処理が不要になり、FILE_COMMON化で顕在化する「他の実行のログを誤って削除するリスク」も同時に解消できる
+* 監査JSONL検索を完全一致にすることで、VM同期後のステージングディレクトリ名がパス構造を保持しない問題を、新たな特殊ケース分岐を追加せずに解消できる
+* Common領域は同一Windowsユーザーの全MT5ターミナルで共有されるため、複数ブローカーのターミナルを併用する環境では監査ディレクトリが混在し得るが、ファイル名がRun ID単位で一意なため実害はない
+* 通常運用（Live/Demo、`InpAuditRunId`未設定）ではファイル名を従来どおり日付単位のままとし、既存の運用・分析手順（日別JSONLの複数ファイル読み込み）に影響を与えない設計とした
+
+## 影響
+
+* 変更: `mt5/Include/Core/Config.mqh`（`audit_run_id`フィールド追加・検証）、`mt5/Experts/CoreEA.mq5`（`InpAuditRunId`追加）、`mt5/Include/Logging/TradeLogger.mqh`（`FILE_COMMON`・Run ID単位ファイル名）、`mt5/Tests/TestProductionSafetyRules.mq5`（`audit_run_id`検証のテスト追加）、`tools/lib/Mt5ExecutionBackend.psm1`（`Get-Mt5VmCommonAuditPath`追加）、`tools/run-strategy-tester.ps1`（`InpAuditRunId`設定、Common Audit同期、検索を完全一致へ変更、事前削除処理の廃止）、`tools/config/mt5-vm.settings.example.json`（`vmCommonDataPath`追加）、`tools/test-mt5-execution-backend.ps1`（`Get-Mt5VmCommonAuditPath`のユニットテスト追加）
+* `run-mql5-tests.ps1`は監査ログを扱わないため変更なし
+* **2026-09-07、Hostモードで実機確認した。** `.\tools\compile-mql5.ps1`（全対象0 errors, 0 warnings）、`.\tools\run-mql5-tests.ps1`（全12テストPASS、`TestProductionSafetyRules`の新規`audit_run_id`検証を含む）、`.\tools\run-strategy-tester.ps1`（1ヶ月分の短期間実行、`exit=0`、`STRATEGY_TESTER_AUDIT_COPIED`で`Terminal\Common\Files\EaTradingSystem\Audit\audit-<ReportName>.jsonl`が`results/backtests/<run>/audit/`へ正しく複製されることを確認）、複製したJSONLを`python.analysis.reports`へ渡して正常に分析できることを確認した
+* **2026-09-07、実VM（`D:\VMware\MT5-Tester\MT5-Tester.vmx`、vmrun経由）でVM/vmrun側も実機確認した。** VM側の`mt5`ソースコピーが本セッションの変更前のままだったため、変更した4ファイルを`copyFileFromHostToGuest`で転送し全13ターゲットを再コンパイル（0 errors, 0 warnings）した上で、`run-mql5-tests.ps1 -ExecutionMode VM`（全12テストPASS）・`run-strategy-tester.ps1 -ExecutionMode VM`（`exit=0`、`STRATEGY_TESTER_AUDIT_COPIED mode=VM`）を実行し、`Get-Mt5VmCommonAuditPath`が導出した同期先から監査JSONLが正しく回収され`results/backtests/<run>/audit/`へ複製されること、`python.analysis.reports`で正常に分析できることを確認した。TASKS.md 8.1節の該当項目は完了とした。`connectionType: "WinRm"`側は今回も未検証のまま
+* **上記VM実機確認の過程で新たな制約を発見した。** VMゲストのPowerShell実行ポリシーが`Restricted`の場合、`runProgramInGuest`経由での`.ps1`スクリプトファイル実行（`-File`・`&`によるスクリプト呼び出し・`.`によるdot-source）はいずれもサイレントに失敗し、vmrunは具体的な原因を示さない汎用的な`exit=1`のみを返す（原因特定に切り分けの手間を要した）。一方、`-Command`のインラインcmdlet呼び出しや`Start-Process`によるプロセス起動（本モジュールの既存実装が使っている方式）は制約を受けない。この制約は今回の一時的な検証用スクリプト実行（VMへのソース転送・再コンパイル）でのみ踏んだものであり、`tools/lib/Mt5ExecutionBackend.psm1`の既存実装（`Invoke-Mt5ExecutionVmrun`等）は元々`-Command`＋`Start-Process`方式のみを使っているため影響を受けない。今後ゲスト側で`.ps1`ファイルを直接実行する処理を追加する場合は`-ExecutionPolicy Bypass`が必要になる点を`docs/mt5-development.md`に記録した
+* 通常運用（Live/Demo）の監査ログ保存先が`MQL5\Files`から`Common\Files`へ変わる。Demo/実口座運用時にAudit JSONLを手動で確認する際は保存先の変更に注意が必要（`docs/configuration.md`参照）
+
+---
+
+
+# DEC-031: Host実行はterminal64.exeを非表示デスクトップ（CreateDesktopEx）経由で起動し、画面表示・フォーカス奪取を防止する
+
+**状態:** 採用（旧DEC-031〜041を統合・置き換え）
+
+## 背景
+
+`-WindowStyle Hidden`はterminal64.exe（GUIサブシステムアプリ）には効かず、Host実行時に画面表示・フォーカス奪取が発生する（`STARTUPINFO.wShowWindow`は表示状態の「ヒント」に過ぎず、アプリ側が独自の表示ロジックで無視できるため）。対策として次の3方式を段階的に試行した。
+
+1. **CreateDesktop（標準API）による非表示デスクトップ経由起動。** 実行のたびにデスクトップを作り捨てる実装では、80ケースバッチの4ケース目からterminal64.exeがGUI初期化の初期段階でハングした。デスクトップの使い回し（プロセス生存期間中1つを再利用）で緩和を試みたが、Windows再起動直後（デスクトップヒープが確実にリセットされた状態）の1回目の実行から同じ症状が再現し、蓄積型のリソース枯渇ではなく構造的な相性問題があると判断してこの方式は放棄した。
+2. **タスクスケジューラ（S4Uログオン）経由の非対話セッション実行。** CreateDesktop方式の代替として、terminal64.exeを非対話セッションで起動する方式へ切り替えた。タスクの新規登録には管理者権限が必要だが既存タスクの起動は通常権限で可能という非対称性を利用し、固定タスクを事前登録して日常実行から管理者権限を排除した。実機の80ケースバッチで運用したところ、次の問題が段階的に見つかった。
+   - タイムアウト時、別ログオンセッションで起動された子プロセスを直接終了できず、後続ケースが「起動中のMetaTrader 5を終了してください」で連鎖的に失敗する（ランナー自身に協調的に子プロセスを終了させるキャンセルファイル方式で対処）
+   - `ShutdownTerminal=1`のまま実行するとreport（.htm/.png）・監査JSONLの生成処理が完了する前にterminal64.exeの自動終了処理が先に完了してしまうレースコンディションがあり、reportが生成されない失敗が散発する（ShutdownTerminalを無効化し、ランナーがreport出現を検知してから能動的に終了させる方式で対処）
+   - 上記対処後も、後処理段階（"cannot open tester chart"エラーを伴う）でハングし900秒タイムアウトする別の失敗が80件中13件（16.25%）残った
+
+   P/Invoke（`GetProcessWindowStation`・`GetUserObjectInformation`）でterminal64.exeのウィンドウステーション情報を直接取得したところ、S4Uログオンは常にSession 0（Windowsサービス専用の隔離セッション、Microsoftが公式にGUIアプリの実行には適さないと明言する環境）で動作しており、上記いずれの失敗もこの構造的制約に起因すると判明した。
+3. **CreateDesktopEx（ヒープサイズ明示指定）による再評価。** 対話セッション（Session 1、WinSta0）内で動作するCreateDesktop方式はSession 0の制約を受けないはずだが、実機のレジストリ確認（`HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems\Windows`の`SharedSection`パラメータ、実機値`1024,20480,768`）で、標準の`CreateDesktop` APIが対話的なウィンドウステーション内であっても既定では非対話用の小さいデスクトップヒープサイズ（768KB、対話デスクトップ用20480KB=20MBの約1/27）しか割り当てないというWindowsの既知の仕様が判明した。これはterminal64.exeのような大規模GUIアプリには明らかに容量不足であり、1.の「再起動直後の初回実行から一貫して失敗する」という観察と正確に整合する。拡張版の`CreateDesktopEx`（`ulHeapSize`パラメータでヒープサイズを明示指定できる）へ置き換え、対話デスクトップと同等以上の32768KB(32MB)を指定したところ、単体実行・連続実行（9回）・80ケースバッチスイープ（`succeeded=80 failed=0`）のいずれも安定して完走することを実機確認した。
+
+## 判断
+
+Host実行（`Invoke-Mt5ExecutionHost`、既定`UseIsolatedSession=true`）は、対話セッション（Session 1）内にCreateDesktopEx（`ulHeapSize=32768`KB）で非表示デスクトップを作成し、その上でCreateProcessする方式に統一する。
+
+1. `tools/lib/Mt5ExecutionBackend.psm1`にP/Invokeラッパー（`Mt5ExecutionBackend.HiddenDesktopLauncher`、`CreateDesktopEx`/`CloseDesktop`/`CreateProcess`/`WaitForSingleObject`/`GetExitCodeProcess`/`TerminateProcess`）を実装した。コマンドライン文字列の構築には既存の`ConvertTo-Mt5Win32CommandLine`（Vmrun経路で使用していたWin32互換エスケープ関数）を再利用する。
+2. 非表示デスクトップはモジュールインポート時から1つを使い回し（実行のたびに作り捨てない）、`Get-Mt5HiddenDesktopName`でキャッシュする。同一セッション内実行のため、タイムアウト時は別セッション協調機構を必要とせず、直接`TerminateProcess`で終了できる。
+3. `UseIsolatedSession=false`を指定した場合のみ、非表示デスクトップを使わず従来の`-WindowStyle Hidden`方式にフォールバックできる（画面表示は発生するが動作実績のある退避手段として維持する）。
+4. タスクスケジューラ経由の非対話セッション実行（試行2.の実装一式：`Invoke-Mt5ExecutionHostViaScheduledTask`、`tools/lib/Mt5ScheduledTaskRunner.ps1`、`tools/setup-mt5-scheduled-task.ps1`、関連する方式選択パラメータ`HostIsolationMode`等）は、Session 0というGUIアプリに構造的に不適な環境で動作しており、発見した2種類の不具合（report未生成のレースコンディション、後処理段階のハング）の根本原因だったため、コードごと削除した。選択肢が実質CreateDesktopEx方式のみになった時点で、方式選択用のパラメータを残す理由もないため併せて削除した。
+5. `ShutdownTerminal`の動的無効化（試行2.でのみ必要だったレースコンディション対策）は不要になったため削除し、テンプレートの設定値（`ShutdownTerminal=1`）のまま実行する。
+
+## 理由
+
+* 対話セッション内での実行はSession 0の構造的制約を受けないため、タスクスケジューラ方式で発見した2種類の不具合（report未生成・後処理ハング）をヒープサイズの問題さえ解消すれば回避できる
+* 同一セッション内実行により、別セッションのプロセスを直接終了できないための複雑な協調機構（キャンセルファイル方式）が不要になり、実装がシンプルになる
+* 管理者権限や事前セットアップ（タスク登録）が不要になり、運用上の手間が減る
+* ネイティブハンドルに対して直接`WaitForSingleObject`/`GetExitCodeProcess`を使うことで、.NET`Process.GetProcessById`のPID再利用によるレースコンディションを避けられる
+* 選択肢が実質1つになった時点で方式選択用のパラメータ・不要になった対策コードを残す理由がなく、削除する方がコードの見通しが良い
+
+## 影響
+
+* 追加: `tools/lib/Mt5ExecutionBackend.psm1`（`HiddenDesktopLauncher`のC#実装、`Get-Mt5HiddenDesktopName`、`Invoke-Mt5ExecutionHostViaHiddenDesktop`）
+* 削除: `tools/lib/Mt5ScheduledTaskRunner.ps1`、`tools/setup-mt5-scheduled-task.ps1`、タスクスケジューラ経由実行の関連コード一式（`Invoke-Mt5ExecutionHostViaScheduledTask`と付随する`$script:`変数・ヘルパー関数）
+* 変更: `Invoke-Mt5ExecutionHost`・`Invoke-Mt5Execution`（方式選択パラメータを削除し常にCreateDesktopEx方式を使用）、`tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`（`-HostIsolationMode`パラメータ削除、ShutdownTerminal動的無効化ロジック削除）、`tools/test-mt5-execution-backend.ps1`（タスク登録確認によるスキップ分岐を削除し常時実行するテストへ変更）、`docs/mt5-development.md`（初回セットアップ手順の削除）
+* 実機検証: 単体実行・連続実行（9回）・80ケースバッチスイープ（`STRATEGY_TESTER_BATCH_COMPLETED total=80 succeeded=80 failed=0`、エラー・例外ログ0件）のいずれも、画面表示・フォーカス奪取・タイムアウト・report未生成のいずれも発生せず完走することを確認した（2026-09-08〜12）
+* `HostUseIsolatedSession=$false`（従来の`-WindowStyle Hidden`方式へのフォールバック）は変更せず維持している
+* 既存のタスクスケジューラ上に登録済みの固定タスク`Mt5HostIsolatedRunner`はコードから参照されなくなったが、削除は本対応の範囲外とした（不要になったタスクの削除はユーザー判断で行う）
+
+---
+
+# DEC-032: トレンド継続反転Exitは既存Exitと独立した状態・判断ロジックを持つ加算的なオプトイン層とする
+
+**状態:** 採用
+
+## 背景
+
+OOS分析（`python.analysis.trade_breakdown`、TASKS.md 2.1.3節）で、トレンド戦略の負けトレードの90〜100%が一度含み益（MFE>0）に達してからSLへ到達しており、Peak後の逆行幅（中央値-1.1R）がPeak到達時の含み益（中央値0.18R）自体より常に大きいことが判明した。既存のExit機構（建値ストップ・ATRトレーリングストップ）はいずれもSLを「動かす」方式であり、Fold1-5・4銘柄の再検証でも反転発生率自体（94〜95%）はパラメータを変えても解消できないことが確認済みだった（TASKS.md 2.1.3節）。2026-09-06時点で「Peakでの早期利確・建値ストップの早期化が有効な対策候補」と示唆されていたが未検証のまま残っていた。
+
+## 判断
+
+1. **既存のCTimeStopTracker・CRangeExitGraceTrackerを拡張・流用せず、独立した`CTrendReversalTracker`・`CTrendReversalExitRules`を新設する**（`mt5/Include/Trading/PositionManager.mqh`）。CTimeStopTrackerは`enable_time_stop`のライフサイクルに結び付いており、Trend Reversal Exitを独立した`enable_trend_reversal_exit`で有効・無効化する設計（既存Exitと組み合わせを自由に選べる）とは相容れない。CMeanReversionStrategyが独自の`CRangeExitGraceTracker`を持つのと同じ理由（目的も判定基準も異なる状態を、既存トラッカーへの追記ではなく別クラスとして分離する）を踏襲した。
+2. **反転検知の継続確認はTick数（`InpTrendReversalConfirmationTicks`）とし、実時間秒数（レンジ戦略の`InpMeanReversionBreakConfirmSeconds`と同じ方式）は採用しない。** 建値ストップ・ATRトレーリング・Time Stop（MFEピーク追跡）がいずれも「価格ベースのPeak追跡」を採用しており、Tick数はこれらと同じ粒度で統一でき、実装・テストの両面でシンプルになる。反転検知自体は「Peakから何R逆行したか」という価格ベースの条件であり、継続確認だけを秒数にする理由はないと判断した。
+3. **Activation判定（`IsActivated`）はCTimeStopRules::HasReachedMinMfeRをそのまま再利用する。** 「建値〜当初SL距離＝初期リスク」をR単位の基準とする計算はTime Stopの最低MFE判定と完全に同一の数式であり、重複実装を避けた。
+4. **トレンド判定は`CMarketRegimeClassifier`の現在値をライブに問い合わせる新規メソッド`CTrendFollowingStrategy::CurrentMarketRegimeTrend()`を追加し、既存の`CANDIDATE`イベント記録用の判定（Evaluate()内、Entry時点固定）とは別に評価する。** 保有中ポジションの継続監視には毎Tickでの最新レジーム判定が必要であり、Entry時点で固定されるCANDIDATEの`market_regime_trend`を使い回すことはできない。既存のH1 ADX/EMA(Fast)ハンドルとregime_*設定をそのまま再利用し、新規Indicatorは追加しない。
+5. **SLは動かさず、市場成行での早期決済のみとする。** 既存のSL/TP・Risk Manager・Position Managerとの責務境界を変えず、`CloseOnTrendReversal`を`CloseOnTimeStop`/`CloseOnSignalInvalidation`と同じ冪等性パターン（専用GlobalVariableキー接頭辞）で独立したメカニズムとして追加した。
+6. **既定値はOFF（`InpEnableTrendReversalExit=false`）とし、Activation/Retrace/Confirmationのいずれも「最適値」を決め打ちしない。** Baseline（false）とON（true）のバックテスト結果を比較する運用を前提とし、Strategy Testerによる比較検証は本Decisionの実装範囲に含めない（TASKS.md 2.1.3節に次の一手として記録）。
+
+## 理由
+
+* 独立したトラッカーにすることで、既存Exit（Time Stop・建値ストップ・ATRトレーリング・シグナル失効Exit）のON/OFF状態に関わらず、Trend Reversal Exit単体の効果をBaseline比較で切り分けられる。
+* Tick単位の継続確認は、既存のPeak追跡（CTimeStopTracker、TradeAnalyticsTracker）と同じ「毎Tick更新」の粒度に統一され、実装・単体テストの一貫性を保てる。
+* ライブなレジーム再問い合わせにより、レジームがRange/Unknownへ変わった保有ポジションでは自動的に監視状態を破棄でき（false-safe）、Range相場でのトレンド戦略ポジション（信号失効Exit等の既存機構が対応する既存ケース）への誤発動を避けられる。
+* SLを動かさない設計により、Risk Manager・既存のSL/TP契約・Position Managerの責務境界を一切変更せずに済み、レビュー・ロールバックの範囲を最小化できる。
+
+## 影響
+
+* 追加: `mt5/Include/Trading/PositionManager.mqh`（`CTrendReversalExitRules`・`CTrendReversalTracker`・`CloseOnTrendReversal`）、`mt5/Include/Trading/PositionExitEvaluator.mqh`（`EvaluateTrendReversalExits`）、`mt5/Include/Strategy/TrendFollowingStrategy.mqh`（`CurrentMarketRegimeTrend`）
+* 変更: `mt5/Include/Core/Config.mqh`・`mt5/Experts/CoreEA.mq5`（設定4件）、`mt5/Include/Core/EAController.mqh`（OnTick呼び出し追加）、`mt5/Include/Logging/TradeLogger.mqh`・`python/analysis/reports.py`（新規イベント`TREND_REVERSAL_EXIT`許可リスト追加）、`python/analysis/trade_breakdown.py`（`trend_reversal_exit_summary`）、`contracts/trade-breakdown-report.schema.json`
+* MQL5コンパイル（13ターゲット、0 errors/0 warnings）・全12 Script Test PASS、Pythonテスト70件PASS確認済み（2026-09-12）。Strategy TesterによるBaseline/ON比較・OOS/Final Holdoutでの効果検証は未実施（NOT VERIFIED、TASKS.md 2.1.3節参照）。

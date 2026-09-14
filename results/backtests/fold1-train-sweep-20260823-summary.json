@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "purpose": "ローリングWalk Forward Fold1 Train区間（2017-09-01〜2018-12-31）における、凍結IS最良パラメータセットをベースとしたStopAtrMultiple/RiskRewardRatio/RegimeTrendAdxMinのスイープ。InpMaxOpenPositions=5（既定値1から変更、取引数増加によるサンプル信頼性向上のためユーザー指定）を全runに適用。",
+  "fixed_parameters": {
+    "InpEntryUseStagedPipeline": true,
+    "InpSignalExitCheckH4Adx": false,
+    "InpEnableBreakevenStop": true,
+    "InpEnableSignalInvalidationExit": true,
+    "InpEnableTimeStop": true,
+    "InpMaxOpenPositions": 5
+  },
+  "runs": [
+    {"label": "baseline(ATR2.0/RR2.0/ADX40)", "run_id": "20260823-141618-USDJPY-H1", "InpStopAtrMultiple": 2.0, "InpRiskRewardRatio": 2.0, "InpRegimeTrendAdxMin": 40.0, "number_of_trades": 36, "net_profit": 10065, "profit_factor": 1.12, "sharpe_ratio": 0.27, "win_rate": 0.417, "max_drawdown_amount": 21309, "max_drawdown_rate": 0.0208},
+    {"label": "ATR1.5", "run_id": "20260823-141742-USDJPY-H1", "InpStopAtrMultiple": 1.5, "InpRiskRewardRatio": 2.0, "InpRegimeTrendAdxMin": 40.0, "number_of_trades": 39, "net_profit": 29140, "profit_factor": 1.33, "sharpe_ratio": 0.78, "win_rate": 0.436, "max_drawdown_amount": 18581, "max_drawdown_rate": 0.0182},
+    {"label": "ATR1.75", "run_id": "20260823-141905-USDJPY-H1", "InpStopAtrMultiple": 1.75, "InpRiskRewardRatio": 2.0, "InpRegimeTrendAdxMin": 40.0, "number_of_trades": 36, "net_profit": 2820, "profit_factor": 1.03, "sharpe_ratio": 0.09, "win_rate": 0.389, "max_drawdown_amount": 21376, "max_drawdown_rate": 0.0211},
+    {"label": "ATR2.25", "run_id": "20260823-142030-USDJPY-H1", "InpStopAtrMultiple": 2.25, "InpRiskRewardRatio": 2.0, "InpRegimeTrendAdxMin": 40.0, "number_of_trades": 36, "net_profit": -8610, "profit_factor": 0.89, "sharpe_ratio": -0.21, "win_rate": 0.417, "max_drawdown_amount": 21609, "max_drawdown_rate": 0.0215},
+    {"label": "ATR2.5", "run_id": "20260823-142153-USDJPY-H1", "InpStopAtrMultiple": 2.5, "InpRiskRewardRatio": 2.0, "InpRegimeTrendAdxMin": 40.0, "number_of_trades": 35, "net_profit": -10330, "profit_factor": 0.86, "sharpe_ratio": -0.28, "win_rate": 0.400, "max_drawdown_amount": 25866, "max_drawdown_rate": 0.0256},
+    {"label": "RR1.5", "run_id": "20260823-142318-USDJPY-H1", "InpStopAtrMultiple": 2.0, "InpRiskRewardRatio": 1.5, "InpRegimeTrendAdxMin": 40.0, "number_of_trades": 37, "net_profit": 4948, "profit_factor": 1.06, "sharpe_ratio": 0.14, "win_rate": 0.432, "max_drawdown_amount": 21309, "max_drawdown_rate": 0.0210},
+    {"label": "RR1.75", "run_id": "20260823-142443-USDJPY-H1", "InpStopAtrMultiple": 2.0, "InpRiskRewardRatio": 1.75, "InpRegimeTrendAdxMin": 40.0, "number_of_trades": 36, "net_profit": 516, "profit_factor": 1.01, "sharpe_ratio": 0.03, "win_rate": 0.417, "max_drawdown_amount": 21309, "max_drawdown_rate": 0.0210},
+    {"label": "ADX30", "run_id": "20260823-142648-USDJPY-H1", "InpStopAtrMultiple": 2.0, "InpRiskRewardRatio": 2.0, "InpRegimeTrendAdxMin": 30.0, "number_of_trades": 87, "net_profit": -48328, "profit_factor": 0.76, "sharpe_ratio": -0.81, "win_rate": 0.356, "max_drawdown_amount": 64941, "max_drawdown_rate": 0.0639},
+    {"label": "ADX35", "run_id": "20260823-142820-USDJPY-H1", "InpStopAtrMultiple": 2.0, "InpRiskRewardRatio": 2.0, "InpRegimeTrendAdxMin": 35.0, "number_of_trades": 57, "net_profit": -8188, "profit_factor": 0.94, "sharpe_ratio": -0.15, "win_rate": 0.421, "max_drawdown_amount": 27518, "max_drawdown_rate": 0.0274},
+    {"label": "ADX45", "run_id": "20260823-142954-USDJPY-H1", "InpStopAtrMultiple": 2.0, "InpRiskRewardRatio": 2.0, "InpRegimeTrendAdxMin": 45.0, "number_of_trades": 15, "net_profit": -11834, "profit_factor": 0.73, "sharpe_ratio": -0.43, "win_rate": 0.400, "max_drawdown_amount": 36687, "max_drawdown_rate": 0.0358},
+    {"label": "ADX50", "run_id": "20260823-143117-USDJPY-H1", "InpStopAtrMultiple": 2.0, "InpRiskRewardRatio": 2.0, "InpRegimeTrendAdxMin": 50.0, "number_of_trades": 7, "net_profit": -4965, "profit_factor": 0.80, "sharpe_ratio": -0.23, "win_rate": 0.286, "max_drawdown_amount": 24288, "max_drawdown_rate": 0.0238}
+  ],
+  "key_findings": [
+    "InpMaxOpenPositions=5は取引数に一切影響しなかった（baselineの取引数36件は、以前実行したInpMaxOpenPositions=1・同一パラメータのrun 20260823-131654と完全一致）。根本原因はmt5/Include/Risk/ExposureGuard.mqhの同一シンボル排他ルール（reason_code=DUPLICATE_POSITION）で、max_positionsの値に関わらず同一シンボルの既存ポジションがあれば常に追加を拒否する（ナンピン・ピラミッディング防止の意図的設計）。本EAは単一シンボル（USDJPY_HIST）のみ取引するため実質的に常時1ポジション上限となり、InpMaxOpenPositionsは事実上無効。証拠: baselineでもDUPLICATE_POSITION拒否が12件発生（ADX30は79件、ADX35は47件、ADX45は7件）しており、同時保有の試行自体は発生しているが常に拒否されている。",
+    "InpStopAtrMultiple=1.5がPF1.33・純利益29,140円と、他のどの組み合わせよりも顕著に良い。ただし隣接値（1.75:PF1.03、2.0:PF1.12）に対して非単調であり、元のIS期間全体（2017-09〜2020-12）での過去のStopAtrMultipleスイープでも同様の非単調パターン（1.5のみ突出、隣接1.25/1.75は悪化）が確認されている。本Train区間は元のIS期間の部分集合であり独立した検証ではないため、この一致は過学習リスクの再確認であって新規のロバスト性の証拠ではない。",
+    "InpRegimeTrendAdxMin=40（現行値）は本Train区間内でもスイープ中最良のPF（1.12）を維持し、30/35/45/50のいずれも下回る。ただし45（n=15）・50（n=7）はサンプル数が非常に少なく統計的な意味を持たない。",
+    "InpRiskRewardRatioはスイープ範囲内（1.5/1.75/2.0）でいずれもPFが1.0近辺であり、明確な優劣は確認できない。現行値2.0が3値中最良。"
+  ]
+}

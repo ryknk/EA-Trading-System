@@ -46,6 +46,82 @@ void OnStart(void)
    AssertTrue(provider.Initialize(config,error),"mock timeout initialized");
    AssertTrue(provider.Decide(signal,decision) && decision.status==EXTERNAL_DECISION_VETO,"mock timeout fails closed");
 
+   AssertTrue(!CStrategyModeRules::IsMeanReversionModeActive(STRATEGY_MODE_TREND_ONLY),
+              "TrendOnly does not activate mean reversion");
+   AssertTrue(CStrategyModeRules::IsMeanReversionModeActive(STRATEGY_MODE_MEAN_REVERSION_ONLY),
+              "MeanReversionOnly activates mean reversion");
+   AssertTrue(CStrategyModeRules::IsMeanReversionModeActive(STRATEGY_MODE_COMBINED),
+              "Combined activates mean reversion");
+   AssertTrue(!CStrategyModeRules::ShouldDiscardTrendCandidate(STRATEGY_MODE_TREND_ONLY),
+              "TrendOnly keeps trend candidates");
+   AssertTrue(!CStrategyModeRules::ShouldDiscardTrendCandidate(STRATEGY_MODE_COMBINED),
+              "Combined keeps trend candidates");
+   AssertTrue(CStrategyModeRules::ShouldDiscardTrendCandidate(STRATEGY_MODE_MEAN_REVERSION_ONLY),
+              "MeanReversionOnly discards trend candidates");
+
+   SEaConfig mode_config;
+   SetDefaultConfig(mode_config);
+   string mode_error;
+   AssertTrue(ValidateConfig(mode_config,mode_error),"default config (TrendOnly) validates");
+   mode_config.strategy_mode=STRATEGY_MODE_MEAN_REVERSION_ONLY;
+   AssertTrue(!ValidateConfig(mode_config,mode_error) && mode_error=="STRATEGY_MODE_REQUIRES_MEAN_REVERSION_ENABLED",
+              "MeanReversionOnly without enable_mean_reversion_strategy is rejected");
+   mode_config.enable_mean_reversion_strategy=true;
+   AssertTrue(ValidateConfig(mode_config,mode_error),"MeanReversionOnly with mean reversion enabled validates");
+   mode_config.strategy_mode=STRATEGY_MODE_COMBINED;
+   AssertTrue(ValidateConfig(mode_config,mode_error),"Combined with mean reversion enabled validates");
+   mode_config.strategy_mode=99;
+   AssertTrue(!ValidateConfig(mode_config,mode_error) && mode_error=="INVALID_STRATEGY_MODE",
+              "out-of-range strategy_mode is rejected");
+
+   SEaConfig audit_run_id_config;
+   SetDefaultConfig(audit_run_id_config);
+   string audit_run_id_error;
+   AssertTrue(ValidateConfig(audit_run_id_config,audit_run_id_error),
+              "default config has empty audit_run_id and validates");
+   audit_run_id_config.audit_run_id="ets-20260907-153000-USDJPY-H1";
+   AssertTrue(ValidateConfig(audit_run_id_config,audit_run_id_error),
+              "safe audit_run_id (letters/digits/./_/-) validates");
+   audit_run_id_config.audit_run_id="run/id";
+   AssertTrue(!ValidateConfig(audit_run_id_config,audit_run_id_error) && audit_run_id_error=="INVALID_AUDIT_RUN_ID",
+              "audit_run_id with path separator is rejected");
+   audit_run_id_config.audit_run_id="run:id";
+   AssertTrue(!ValidateConfig(audit_run_id_config,audit_run_id_error) && audit_run_id_error=="INVALID_AUDIT_RUN_ID",
+              "audit_run_id with ':' is rejected (avoids drive-letter confusion in a filename)");
+   string long_audit_run_id="";
+   for(int long_id_index=0; long_id_index<129; long_id_index++) long_audit_run_id+="a";
+   audit_run_id_config.audit_run_id=long_audit_run_id;
+   AssertTrue(!ValidateConfig(audit_run_id_config,audit_run_id_error) && audit_run_id_error=="INVALID_AUDIT_RUN_ID",
+              "audit_run_id longer than 128 chars is rejected");
+
+   SEaConfig trend_reversal_config;
+   SetDefaultConfig(trend_reversal_config);
+   string trend_reversal_error;
+   AssertTrue(!trend_reversal_config.enable_trend_reversal_exit,
+              "trend reversal exit defaults to disabled (safe-by-default)");
+   AssertTrue(ValidateConfig(trend_reversal_config,trend_reversal_error),
+              "default config (trend reversal exit disabled) validates");
+   trend_reversal_config.enable_trend_reversal_exit=true;
+   AssertTrue(ValidateConfig(trend_reversal_config,trend_reversal_error),
+              "trend reversal exit enabled with default thresholds validates");
+   trend_reversal_config.trend_reversal_activation_r_multiple=0.0;
+   AssertTrue(!ValidateConfig(trend_reversal_config,trend_reversal_error) &&
+              trend_reversal_error=="INVALID_TREND_REVERSAL_EXIT_CONFIG",
+              "zero activation r multiple is rejected when enabled");
+   trend_reversal_config.trend_reversal_activation_r_multiple=1.0;
+   trend_reversal_config.trend_reversal_retrace_r_multiple=0.0;
+   AssertTrue(!ValidateConfig(trend_reversal_config,trend_reversal_error) &&
+              trend_reversal_error=="INVALID_TREND_REVERSAL_EXIT_CONFIG",
+              "zero retrace r multiple is rejected when enabled");
+   trend_reversal_config.trend_reversal_retrace_r_multiple=0.5;
+   trend_reversal_config.trend_reversal_confirmation_ticks=0;
+   AssertTrue(!ValidateConfig(trend_reversal_config,trend_reversal_error) &&
+              trend_reversal_error=="INVALID_TREND_REVERSAL_EXIT_CONFIG",
+              "zero confirmation ticks is rejected when enabled");
+   trend_reversal_config.trend_reversal_confirmation_ticks=5;
+   AssertTrue(ValidateConfig(trend_reversal_config,trend_reversal_error),
+              "trend reversal exit config restored to valid thresholds validates");
+
    if(g_failures==0) Print("TEST_SUITE_PASS TestProductionSafetyRules");
    else PrintFormat("TEST_SUITE_FAIL TestProductionSafetyRules failures=%d",g_failures);
   }

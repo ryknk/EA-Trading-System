@@ -1,4 +1,4 @@
-# 既定ではOANDA証券MT5端末を対象とする（2026-08-16以降の本番運用Broker、DECISIONS.md DEC-023）。
+﻿# 既定ではOANDA証券MT5端末を対象とする（2026-08-16以降の本番運用Broker、DECISIONS.md DEC-023）。
 # XMTrading-MT5（C:\Program Files\MetaTrader 5、Terminal Data: D0E8209F77C8CF37AD8BF550E51FF075）は
 # 参考用として残しており、対象にする場合は-InstallPath/-TerminalDataを明示指定すること。
 param(
@@ -24,8 +24,11 @@ $targets = @(
     @{ Name = "TestTradingRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestTradingRules.mq5" },
     @{ Name = "TestDecisionApiRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestDecisionApiRules.mq5" },
     @{ Name = "TestAuditRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestAuditRules.mq5" },
+    @{ Name = "TestAuditPayloadBuilder"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestAuditPayloadBuilder.mq5" },
     @{ Name = "TestProductionSafetyRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestProductionSafetyRules.mq5" },
-    @{ Name = "TestEntryTimingAnalyzer"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestEntryTimingAnalyzer.mq5" }
+    @{ Name = "TestEntryTimingAnalyzer"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestEntryTimingAnalyzer.mq5" },
+    @{ Name = "TestBreakoutTimingAnalyzer"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestBreakoutTimingAnalyzer.mq5" },
+    @{ Name = "TestTradeAnalyticsTracker"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestTradeAnalyticsTracker.mq5" }
 )
 
 foreach ($target in $targets) {

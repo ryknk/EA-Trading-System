@@ -2,6 +2,7 @@
 #property script_show_inputs
 
 #include <EaTradingSystem/Filter/MarketRegimeClassifier.mqh>
+#include <EaTradingSystem/Filter/ChoppinessIndex.mqh>
 
 int g_failures=0;
 
@@ -54,6 +55,26 @@ void OnStart(void)
    AssertTrue(MarketRegimeVolatilityToString(MARKET_REGIME_VOLATILITY_NORMAL)=="NormalVolatility","NormalVolatility string mapping");
    AssertTrue(MarketRegimeVolatilityToString(MARKET_REGIME_VOLATILITY_LOW)=="LowVolatility","LowVolatility string mapping");
    AssertTrue(MarketRegimeVolatilityToString(MARKET_REGIME_VOLATILITY_UNKNOWN)=="Unknown","Volatility Unknown string mapping");
+
+   // Choppiness Index（III案、レジーム分類器の高度化。既存ADXベース判定とは独立の軸）
+   AssertTrue(MathAbs(CChoppinessIndex::Calculate(100.0,150.0,50.0,10)-0.0)<1.0e-9,
+              "choppiness index is zero when atr sum equals the period range (efficient trend)");
+   AssertTrue(MathAbs(CChoppinessIndex::Calculate(1000.0,150.0,50.0,10)-100.0)<1.0e-9,
+              "choppiness index reaches 100 when atr sum is period times the range");
+   AssertTrue(MathAbs(CChoppinessIndex::Calculate(316.2278,200.0,100.0,10)-50.0)<1.0e-3,
+              "choppiness index at the geometric midpoint is 50");
+   AssertTrue(CChoppinessIndex::Calculate(0.0,150.0,50.0,10)==0.0,
+              "choppiness index with zero atr sum treated as zero (data unavailable)");
+   AssertTrue(CChoppinessIndex::Calculate(100.0,100.0,100.0,10)==0.0,
+              "choppiness index with zero range treated as zero to avoid division by zero");
+   AssertTrue(CChoppinessIndex::Calculate(100.0,150.0,50.0,1)==0.0,
+              "choppiness index rejects a period below two");
+   AssertTrue(CChoppinessIndex::Calculate(MathSqrt(-1.0),150.0,50.0,10)==0.0,
+              "choppiness index rejects NaN input");
+
+   AssertTrue(CChoppinessIndex::IsChoppy(70.0,61.8),"choppiness above threshold is classified as choppy");
+   AssertTrue(CChoppinessIndex::IsChoppy(61.8,61.8),"choppiness exactly at threshold is classified as choppy");
+   AssertTrue(!CChoppinessIndex::IsChoppy(50.0,61.8),"choppiness below threshold is not classified as choppy");
 
    if(g_failures==0)
       Print("TEST_SUITE_PASS TestMarketRegimeClassifier");

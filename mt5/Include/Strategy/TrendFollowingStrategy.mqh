@@ -81,6 +81,27 @@ private:
       result.reason=message;
      }
 
+   // レジームフィルタの強化: 直近1本の判定だけでなく、過去persistence_bars本すべてが
+   // 継続してTrend状態（Range/Unknownでない）であることを要求する。トレンドへ切り替わった
+   // 直後の不安定な状態でのEntryを避ける狙い。persistence_bars=1（既定値）では従来の
+   // 単発判定と完全に等価（shift=1のみを確認）。データ取得不能時はfalse-safe（Range/Unknown扱い）。
+   bool IsRegimeTrendPersistent(const int persistence_bars)
+     {
+      for(int shift=1; shift<=persistence_bars; shift++)
+        {
+         double adx_at,ma_at,ma_reference_at;
+         if(!ReadIndicator(m_h1_adx_handle,shift,adx_at) ||
+            !ReadIndicator(m_h1_fast_handle,shift,ma_at) ||
+            !ReadIndicator(m_h1_fast_handle,shift+m_config.regime_ma_slope_lookback,ma_reference_at))
+            return false;
+         const EMarketRegimeTrend regime_at=CMarketRegimeClassifier::ClassifyTrend(
+            adx_at,ma_at,ma_reference_at,m_config.regime_trend_adx_min);
+         if(regime_at==MARKET_REGIME_TREND_RANGE || regime_at==MARKET_REGIME_TREND_UNKNOWN)
+            return false;
+        }
+      return true;
+     }
+
 public:
    CTrendFollowingStrategy(void)
      {
@@ -212,7 +233,8 @@ public:
       result.staged_pipeline_used=m_config.entry_use_staged_pipeline;
       result.stage_market_regime=MarketRegimeTrendToString(result.market_regime_trend);
       result.stage_market_regime_passed=(result.market_regime_trend!=MARKET_REGIME_TREND_RANGE &&
-                                          result.market_regime_trend!=MARKET_REGIME_TREND_UNKNOWN);
+                                          result.market_regime_trend!=MARKET_REGIME_TREND_UNKNOWN) &&
+                                         IsRegimeTrendPersistent(m_config.regime_trend_persistence_bars);
       if(m_config.entry_use_staged_pipeline && m_config.entry_require_market_regime_trend &&
          !result.stage_market_regime_passed)
         {
@@ -231,6 +253,10 @@ public:
         { result.reason_code="ATR_TOO_LOW"; result.reason="ATR is below the configured floor."; return true; }
       if(adx<m_config.minimum_adx)
         { result.reason_code="ADX_TOO_LOW"; result.reason="H1 ADX is below the configured trend-strength floor."; return true; }
+      // エグゾーション（過熱）局面の抑制: ADXが極端に高い状態は、健全なトレンド継続ではなく
+      // 伸び切った動きの終盤である可能性がある。maximum_adx<=0.0は無効（既定挙動）。
+      if(m_config.maximum_adx>0.0 && adx>m_config.maximum_adx)
+        { result.reason_code="ADX_TOO_HIGH"; result.reason="H1 ADX exceeds the configured exhaustion ceiling."; return true; }
       if(h4_adx<m_config.minimum_confirmation_adx)
         { result.reason_code="CONFIRMATION_ADX_TOO_LOW"; result.reason="H4 ADX is below the configured trend-strength floor."; return true; }
       if(!CTrendFollowingRules::MomentumAllowed(direction,rsi,m_config.rsi_buy_min,m_config.rsi_buy_max,m_config.rsi_sell_min,m_config.rsi_sell_max))
@@ -250,7 +276,8 @@ public:
          CTrendFollowingRules::IsBreakout(direction,entry_bar.close,previous_high,previous_low,m_config.breakout_buffer_points*point);
       const bool pullback=m_config.enable_pullback &&
          CTrendFollowingRules::IsPullback(direction,entry_bar.open,entry_bar.high,entry_bar.low,entry_bar.close,h1_fast,
-                                           touch_high,touch_low,h1_fast_touch,atr,m_config.pullback_atr_tolerance);
+                                           touch_high,touch_low,h1_fast_touch,atr,m_config.pullback_atr_tolerance,
+                                           m_config.pullback_trigger_atr_buffer);
 
       // Stage 3 Setup / Stage 4 Entry Trigger。IsPullbackをSetup（押し目/戻り成立）とTrigger（再加速）に
       // 分解した診断専用フィールド（既存のbreakout/pullback変数と数式上等価、判定への影響はない）。
@@ -260,7 +287,8 @@ public:
       result.stage_pullback_setup_passed=m_config.enable_pullback &&
          CTrendFollowingRules::IsPullbackSetup(direction,touch_high,touch_low,h1_fast_touch,atr,m_config.pullback_atr_tolerance);
       result.stage_pullback_trigger_passed=m_config.enable_pullback &&
-         CTrendFollowingRules::IsPullbackTrigger(direction,entry_bar.open,entry_bar.close,h1_fast,touch_high,touch_low);
+         CTrendFollowingRules::IsPullbackTrigger(direction,entry_bar.open,entry_bar.close,h1_fast,touch_high,touch_low,
+                                                  atr,m_config.pullback_trigger_atr_buffer);
 
       if(!breakout && !pullback)
         { result.reason_code="ENTRY_PATTERN_NOT_FOUND"; result.reason="No enabled closed-bar entry pattern matched."; return true; }
@@ -324,6 +352,24 @@ public:
         { reason_code="ADX_TOO_LOW"; return false; }
       if(m_config.signal_exit_check_h4_adx && h4_adx<m_config.minimum_confirmation_adx)
         { reason_code="CONFIRMATION_ADX_TOO_LOW"; return false; }
+      return true;
+     }
+
+   // 保有中ポジションのTrend Reversal Exit判定専用: Evaluate()のStage 1市場レジーム判定
+   // （既存のH1 ADX/EMA(Fast)ハンドルとregime_*設定を再利用）と同一の計算を、候補生成のための
+   // 他の判定（HTFバイアス・Setup・Trigger）を評価せずに即時取得する。確定足（shift>=1）のみを
+   // 参照し、look-ahead biasを発生させない。データ取得不能時はfalseを返し、呼び出し元は
+   // false-safe（Trend Reversal Exitを発動しない）に扱う。
+   bool CurrentMarketRegimeTrend(EMarketRegimeTrend &regime)
+     {
+      regime=MARKET_REGIME_TREND_UNKNOWN;
+      if(!m_initialized) return false;
+      double adx,ma_current,ma_reference;
+      if(!ReadIndicator(m_h1_adx_handle,1,adx) ||
+         !ReadIndicator(m_h1_fast_handle,1,ma_current) ||
+         !ReadIndicator(m_h1_fast_handle,1+m_config.regime_ma_slope_lookback,ma_reference))
+         return false;
+      regime=CMarketRegimeClassifier::ClassifyTrend(adx,ma_current,ma_reference,m_config.regime_trend_adx_min);
       return true;
      }
   };
