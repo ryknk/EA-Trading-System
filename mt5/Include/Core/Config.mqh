@@ -164,7 +164,11 @@ void SetDefaultConfig(SEaConfig &config)
    config.breakout_lookback         = 20;
    config.breakout_buffer_points    = 0.0;
    config.pullback_atr_tolerance    = 0.15;
-   config.pullback_trigger_atr_buffer = 0.0;
+   // 2026-08-23の単一銘柄Train区間スイープ（0.00/0.05/0.10/0.15/0.20）で採用され、以降のFold単位
+   // Walk-Forward検証でも「現行の設定」として使われ続けていたが、コード既定値へは反映されていな
+   // かった（2026-09-13の監査で発覚）。4銘柄Fold1-5検証（純利益+3.1%、20区分中7区分のみ発火）で
+   // 新たなリスクがないことを確認し既定値へ反映した（TASKS.md参照）。
+   config.pullback_trigger_atr_buffer = 0.10;
    config.rsi_buy_min               = 50.0;
    config.rsi_buy_max               = 75.0;
    config.rsi_sell_min              = 25.0;
@@ -178,9 +182,16 @@ void SetDefaultConfig(SEaConfig &config)
    config.risk_reward_ratio         = 2.0;
    config.enable_breakout           = true;
    config.enable_pullback           = true;
-   config.entry_use_staged_pipeline = false;
+   // 2026-09-13、`InpRegimeTrendAdxMin=40`（下記）を実際にEntry判定へ反映させるため既定trueへ更新した
+   // （それまでは全テストテンプレートのみがtrueを明示指定し、コード既定値は無効なfalseのままだった）。
+   // true化の効果はStage 1の市場レジームゲート（Range/Unknown確定足の追加棄却）のみで、他ステージの
+   // 判定式は既存方式（false時）と完全に同一（docs/configuration.md「段階的Entry判定パイプライン」参照）。
+   config.entry_use_staged_pipeline = true;
    config.entry_require_market_regime_trend = true;
-   config.regime_trend_adx_min      = 20.0;
+   // 2026-08-22のスイープ（25/30/35/40/45/50、IS期間）でPF>1・Sharpe>0を達成した唯一の閾値として
+   // 40.0がIS最良パラメータへ採用され、2026-08-23のFold1 Train再検証でも最良のPFを再確認した
+   // （TASKS.md参照）。
+   config.regime_trend_adx_min      = 40.0;
    config.regime_atr_baseline_period = 50;
    config.regime_high_volatility_ratio = 1.3;
    config.regime_low_volatility_ratio  = 0.7;
@@ -204,7 +215,12 @@ void SetDefaultConfig(SEaConfig &config)
    config.mean_reversion_bb_width_expansion_ratio = 1.5;
    config.mean_reversion_range_break_lookback = 20;
    config.mean_reversion_break_atr_multiplier = 0.25;
-   config.mean_reversion_break_confirm_seconds = 30;
+   // 2026-08-30のスイープ（0/5/10/15/20/25/30秒）で、既定30秒は短いほど単調に純損益が改善する
+   // ことが判明した（Fold1+Fold5合算: 30秒-35,671円→5秒-33,791円→0秒-31,963円）。0秒は
+   // 「実時間で確認する」という設計意図を実質放棄するため、改善の一部（約53%）を確保しつつ確認の
+   // 意図を残す5秒を採用した（他Foldでの再現性は未確認、TASKS.md参照。MR戦略自体は
+   // strategy_mode=STRATEGY_MODE_TREND_ONLYのため現状は無効）。
+   config.mean_reversion_break_confirm_seconds = 5;
    config.mean_reversion_restrict_to_tokyo_session = false;
    config.mean_reversion_max_holding_bars = 10;
    config.mean_reversion_magic_number = 26072002;
@@ -245,11 +261,12 @@ void SetDefaultConfig(SEaConfig &config)
    config.trend_reversal_activation_r_multiple = 1.0;
    config.trend_reversal_retrace_r_multiple = 0.5;
    config.trend_reversal_confirmation_ticks = 5;
-   // 既定値はOFF（安全側）。OOS分析で、SLへ至る負けトレードの92.5%がInpTrendReversalActivationR
-   // （含み益ピークによる反転監視の開始ライン）へ一度も到達していないと判明したため、含み益ピークの
-   // 存在を前提にしないExitとして新設する。
-   config.enable_early_adverse_exit = false;
-   config.early_adverse_exit_trigger_r_multiple = 0.5;
+   // 2026-09-13、Fold1-5スイープ検証（TriggerR 0.3〜0.9の9点、TASKS.md参照）で
+   // TriggerR=0.75がBaseline比+33,936円（+29%）、Fold×銘柄20区分中14区分で改善
+   // （純利益最大だったTriggerR=0.70の12区分より頑健）したことを受け、ユーザー判断により
+   // 既定trueへ採用した（Final Holdoutでの最終確認は未実施、TASKS.md参照）。
+   config.enable_early_adverse_exit = true;
+   config.early_adverse_exit_trigger_r_multiple = 0.75;
    config.early_adverse_exit_confirmation_ticks = 5;
    config.enable_entry_timing_analysis = false;
    config.entry_timing_max_wait_bars   = 6;

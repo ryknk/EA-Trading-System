@@ -20,7 +20,7 @@ EA設定は用途別に管理し、dev、staging・デモ、productionで設定�
 | `InpBreakoutLookback` | 20 | ブレイクアウト参照本数 |
 | `InpBreakoutBufferPoints` | 0 | ブレイク閾値へのbuffer（2026-08-17、効果不十分のため0へ差し戻し、詳細はTASKS.md参照） |
 | `InpPullbackAtrTolerance` | 0.15 | 押し目のATR許容幅（2026-08-17、誤発注抑制のため0.25→0.15へ縮小。押し目判定も1本足からタッチ足(shift2)＋確認足(shift1)の2本足確認へ変更。確認足のEMA近接制約・タッチ足の逆行性制約はいずれも効果不十分のため撤回済み、詳細はTASKS.md参照） |
-| `InpPullbackTriggerAtrBuffer` | 0（無効） | Pullback Entry Trigger（確認足の再加速判定）が、タッチ足高安値を単に上回る/下回るだけでなくATR基準の余裕幅を要求するようにする追加条件。0は無効化（既定挙動、従来のIsPullbackTriggerと完全一致）。2026-08-23追加、詳細はTASKS.md参照 |
+| `InpPullbackTriggerAtrBuffer` | 0.10 | Pullback Entry Trigger（確認足の再加速判定）が、タッチ足高安値を単に上回る/下回るだけでなくATR基準の余裕幅を要求するようにする追加条件。0は無効化（従来のIsPullbackTriggerと完全一致）。2026-08-23追加、2026-09-13に4銘柄Fold1-5検証（純利益+3.1%、発火頻度低いが新規リスクなし）を経て既定値0.10へ更新。詳細はTASKS.md参照 |
 | `InpRsiBuyMin` / `InpRsiBuyMax` | 50 / 75 | BUY RSI範囲（2026-08-17、55への引き上げは逆効果と判明したため50へ差し戻し、詳細はTASKS.md参照） |
 | `InpRsiSellMin` / `InpRsiSellMax` | 25 / 50 | SELL RSI範囲（2026-08-17、45への引き下げは逆効果と判明したため50へ差し戻し、詳細はTASKS.md参照） |
 | `InpMinimumAtrPoints` | 10 | 最低volatility |
@@ -31,15 +31,15 @@ EA設定は用途別に管理し、dev、staging・デモ、productionで設定�
 | `InpStopAtrMultiple` | 2 | SLのATR倍率（初期実装からATRベース。2026-08-17、1.0/1.25/1.5/1.75/2.0/2.5/3.0でスイープし、1.5が純損益・PFで最良だったが隣接水準(1.25/1.75)が非単調に悪化しIS期間への過学習リスクがあるため2.0を維持、詳細はTASKS.md参照） |
 | `InpRiskRewardRatio` | 2 | TP/SL比（初期実装からATRベース。2026-08-17、1.5/2.0/2.5/3.0でスイープし2.0が最良と再確認、詳細はTASKS.md参照） |
 | `InpEnableBreakout` / `InpEnablePullback` | true / true | entry pattern有効化 |
-| `InpEntryUseStagedPipeline` | false | 段階的Entry判定パイプライン（Market Regime→HTF Bias→Setup→Entry Trigger）を有効化する（2026-08-22追加）。falseの間は既存方式と完全に同一の判定・発注挙動を維持する。詳細は本節末尾および`docs/backtesting.md`「段階的Entry判定パイプライン」を参照 |
+| `InpEntryUseStagedPipeline` | true | 段階的Entry判定パイプライン（Market Regime→HTF Bias→Setup→Entry Trigger）を有効化する（2026-08-22追加、2026-09-13にFold1-5検証結果を受けて既定trueへ更新）。falseにすると既存方式（Stage 1のRange/Unknown棄却ゲートなし）と完全に同一の判定・発注挙動に戻る。詳細は本節末尾および`docs/backtesting.md`「段階的Entry判定パイプライン」を参照 |
 | `InpEntryRequireMarketRegimeTrend` | true | `InpEntryUseStagedPipeline=true`の場合のみ有効。市場レジームがRange/Unknownの確定足でEntry候補を棄却する（2026-08-22追加） |
-| `InpRegimeTrendAdxMin` | 20 | 市場レジーム判定用のADX下限。下回るとRange判定（Entry判定のADXフィルタとは独立） |
+| `InpRegimeTrendAdxMin` | 40 | 市場レジーム判定用のADX下限。下回るとRange判定（Entry判定のADXフィルタとは独立）。2026-09-13、Fold1 Train/Walk Forwardスイープ（2026-08-22/23、TASKS.md参照）で一貫して最良と確認された40へ既定値を更新し、同時に`InpEntryUseStagedPipeline`も既定`true`へ更新したため実際にEntry判定へ反映される（`InpEntryUseStagedPipeline=false`にすると本フィールドはログ記録専用に戻る） |
 | `InpRegimeAtrBaselinePeriod` | 50 | ボラティリティ判定用ATRベースライン（単純平均）の算出本数 |
 | `InpRegimeHighVolatilityRatio` | 1.3 | ATR/ベースライン比がこの値以上でHighVolatility判定 |
 | `InpRegimeLowVolatilityRatio` | 0.7 | ATR/ベースライン比がこの値以下でLowVolatility判定 |
 | `InpRegimeMaSlopeLookback` | 5 | トレンド方向判定用、H1 EMA(Fast)の参照本数（現在値と何本前を比較するか） |
 
-市場レジーム判定（`InpRegime*`）自体は`CMarketRegimeClassifier`（既存、変更なし）が行う。`InpEntryUseStagedPipeline=false`（既定値）では、この判定結果は監査ログ記録のみに使われ、Entry判定・発注・既存ポジション管理には一切影響しない（判定と売買制御の分離）。`InpEntryUseStagedPipeline=true`にした場合のみ、`InpEntryRequireMarketRegimeTrend`に従いRange/Unknown判定をEntry棄却条件として使用する。詳細は`docs/backtesting.md`「条件別分析」および「段階的Entry判定パイプライン」を参照。
+市場レジーム判定（`InpRegime*`）自体は`CMarketRegimeClassifier`（既存、変更なし）が行う。`InpEntryUseStagedPipeline=false`にすると、この判定結果は監査ログ記録のみに使われ、Entry判定・発注・既存ポジション管理には一切影響しない（判定と売買制御の分離）。`InpEntryUseStagedPipeline=true`（既定値）では、`InpEntryRequireMarketRegimeTrend`に従いRange/Unknown判定をEntry棄却条件として使用する。詳細は`docs/backtesting.md`「条件別分析」および「段階的Entry判定パイプライン」を参照。
 
 固定値を最適化結果だけで変更しない。変更前にOOS期間と受入基準を固定し、Walk Forwardとデモで再検証する。
 
@@ -56,7 +56,9 @@ Stage 4 Entry Trigger    : Setup成立後の再加速（CTrendFollowingRules::Is
                             またはレンジ突破（CTrendFollowingRules::IsBreakout、既存、変更なし）
 ```
 
-`InpEntryUseStagedPipeline=false`（既定値）では、Stage 1のRange/Unknown棄却ゲートが働かない点を除き、判定式は既存方式と完全に同一である（`IsPullback`は内部で`IsPullbackSetup && IsPullbackTrigger`として再定義されているが、数式は変更前と等価）。`true`にすると、Stage 1でRange/Unknown判定の確定足を追加で棄却する（`InpEntryRequireMarketRegimeTrend=true`の場合）。
+`InpEntryUseStagedPipeline=false`にすると、Stage 1のRange/Unknown棄却ゲートが働かない点を除き、判定式は既存方式と完全に同一である（`IsPullback`は内部で`IsPullbackSetup && IsPullbackTrigger`として再定義されているが、数式は変更前と等価）。`true`（既定値）では、Stage 1でRange/Unknown判定の確定足を追加で棄却する（`InpEntryRequireMarketRegimeTrend=true`の場合）。
+
+**既定値true採用の経緯（2026-09-13、ユーザー判断）**: `InpRegimeTrendAdxMin=40`を実際にEntry判定へ反映させる目的で既定`true`へ更新した。Fold1-5検証（EarlyAdverseExit ON・TriggerR=0.75を土台）で、無効化時はトレード数が5倍（525→2,642件）に急増するが、これは`entry_adx`が20台まで許容されることによる低品質トレードの薄利多売であり、1トレードあたりの期待値は290.4円→95.6円、簡易最大DDは77,100円→171,984円へ悪化することを確認した。純利益の絶対額は無効化の方が大きい（+65.7%）が、質・リスク両面で有効化（既定値）が優れていると判断した。詳細はTASKS.md参照。Final Holdoutでの最終確認は未実施。
 
 各段階の合否は、`CANDIDATE`イベント（Entry成立時のみ）と、`InpEntryUseStagedPipeline=true`の場合に限り毎確定足で記録される新規イベント`ENTRY_PIPELINE`（`stage_market_regime`・`stage_htf_bias`・`stage_breakout_setup_passed`・`stage_breakout_trigger_passed`・`stage_pullback_setup_passed`・`stage_pullback_trigger_passed`・`final_status`・`reason_code`・`reason`）へ記録される。`InpEntryUseStagedPipeline=false`のままでは`ENTRY_PIPELINE`イベントは記録されず、既存の監査ログ量・スキーマに影響しない。
 
@@ -105,9 +107,9 @@ Long/Short対称に実装されている（`CEarlyAdverseExitRules`、`mt5/Inclu
 
 決済時、監査ログへ`EARLY_ADVERSE_EXIT`イベント（`reason_code`固定値`EarlyAdverseConfirmed`、`adverse_r_multiple`、`confirmation_count`）が記録される（ローカル監査のみ、既存TRADE_CLOSEDの契約は変更しない）。`python.analysis.trade_breakdown.early_adverse_exit_summary()`でBaseline（`InpEnableEarlyAdverseExit=false`）とON（true）のバックテスト結果を比較できる。トレンド継続反転Exitと同時に有効化した場合、含み益ピークからの反転がトリガー到達より先に確定するトレードでは、トレンド継続反転Exit側が先に決済する（評価順序は`CEAController::OnTick`参照）。
 
-`InpEarlyAdverseExitTriggerR`（既定0.5）を1.0以上にする運用は推奨しない。`InpStopAtrMultiple`によるSL到達（1.0R相当）より先に、または同時に発動する意味がなくなるため。
+`InpEarlyAdverseExitTriggerR`を1.0以上にする運用は推奨しない。`InpStopAtrMultiple`によるSL到達（1.0R相当）より先に、または同時に発動する意味がなくなるため。
 
-**既定値0.5についての注意**: Fold1-5でのスイープ検証（`docs/backtesting.md`「初期逆行Exit比較分析」）の結果、既定値の`InpEarlyAdverseExitTriggerR=0.5`はOOSデータ上明確に有害（発動率60%超、正常なトレードまで大量に早期決済し純利益がBaselineを大きく下回る）と判明した。有効化する場合はこの既定値をそのまま使わず、TASKS.mdの検証結果を確認すること。既定値自体は`InpEnableEarlyAdverseExit=false`（無効）のため、有効化しない限りこの数値による影響はない。
+**既定値の採用経緯（2026-09-13、ユーザー判断）**: Fold1-5でのスイープ検証（`docs/backtesting.md`「初期逆行Exit比較分析」）で、TriggerR=0.3〜0.65は明確に有害（発動率60%超、正常なトレードまで大量に早期決済し純利益がBaselineを下回る）と判明した一方、TriggerR=0.70〜0.85の範囲でBaselineを上回った。純利益単体では0.70が最大（Fold×銘柄20区分中12区分で改善）だったが、0.75の方が改善区分数が多く（14区分）頑健性が高いと判断し、`InpEnableEarlyAdverseExit=true`・`InpEarlyAdverseExitTriggerR=0.75`を既定値として採用した。**この採用はFold1-5への複数回のパラメータ適合に基づくものであり、Final Holdout（2025-01〜2026-08）での最終確認は未実施**（詳細はTASKS.md参照）。
 
 ## リスク・注文設定
 
@@ -145,7 +147,7 @@ Long/Short対称に実装されている（`CEarlyAdverseExitRules`、`mt5/Inclu
 | `InpEnableTimeStop` | true | 時間切れ決済（Time Stop）の有効化。エントリー後、`InpMaxHoldingBars`本（entry_timeframe換算の確定足数）経過しても決済されていないポジションを成行決済する。`InpEnableTradeMutations=false`では発動しない。2026-08-17、既知の最良状態（Trend+H1 ADXのみ全条件完全決済のシグナル失効Exit）上で既定値（20本・最低MFE0.5R要求）で有効化し検証したところ、実際の発動は209件中2件のみで既存のシグナル失効Exitとほぼ完全に重複し、本IS期間では純損益がわずかに悪化（-44,039→-48,223円）した。この結果を踏まえたうえで、ユーザー判断によりリスク管理上の方針として既定trueを維持することを決定（ポジションが無期限に保有され続けることを防ぐセーフティネットとして、IS単体での純損益への影響とは別に採用）。詳細はTASKS.md参照 |
 | `InpMaxHoldingBars` | 20 | Time Stopが発動する経過バー数の上限（entry_timeframe換算）。`InpEnableTimeStop=true`時は1以上が必須 |
 | `InpTimeStopRequireMinMfe` | true | trueの場合、`InpMaxHoldingBars`経過時点で保有中のMFE（最大含み益、価格ベースのピーク追跡、`InpBreakevenTriggerR`と同じ「建値〜当初SL距離」をR換算）が`InpTimeStopMinMfeR`未満のときのみTime Stopを発動する。到達済みなら通常のSL/TP/建値ストップに委ねる |
-| `InpTimeStopMinMfeR` | 0.5 | Time Stopの最低MFE閾値（R倍数）。`InpTimeStopRequireMinMfe=true`時は0より大きい値が必須 |
+| `InpTimeStopMinMfeR` | 0.5 | Time Stopの最低MFE閾値（R倍数）。`InpTimeStopRequireMinMfe=true`時は0より大きい値が必須。2026-09-13、EarlyAdverseExit導入後にこの免除条件の緩和（無効化）・強化（1.0Rへ引き上げ）の両方をFold1-5で検証したが、いずれもBaselineを下回った（免除無効化は決済トレードの91.2%が決済時点で既にプラスだったにもかかわらず強制決済してしまうため）。既定の0.5から変更しないこと。詳細はTASKS.md参照 |
 | `InpEnableEntryTimingAnalysis` | false | Entry Timing比較分析（分析専用、実注文なし）を有効化する（2026-08-22追加）。プルバックSetupについて即時Entry・1本待ち・2本待ち・Trigger待ちの4方式をShadow Tradeとして並行シミュレートし監査ログへ記録する。falseの間はIndicatorハンドルすら作成せずコスト0で、既存の売買判断・発注には一切影響しない。詳細は`docs/backtesting.md`「Entry Timing比較分析」を参照 |
 | `InpEntryTimingMaxWaitBars` | 6 | Trigger待ち(WAIT_TRIGGER)方式がTriggerの成立を探す最大バー数。この本数を超えてもTriggerが成立しない場合はWAIT_TRIGGERのShadow Tradeを生成しない（`InpEnableEntryTimingAnalysis=true`時は1以上が必須） |
 | `InpEntryTimingMaxHoldingBars` | 20 | Shadow Trade（IMMEDIATE/WAIT_1_BAR/WAIT_2_BARS/WAIT_TRIGGERいずれも）の最大追跡バー数。SL/TP未到達のままこの本数へ達すると`EXPIRED`としてその時点の価格で打ち切る（`InpEnableEntryTimingAnalysis=true`時は1以上が必須） |
@@ -153,8 +155,8 @@ Long/Short対称に実装されている（`CEarlyAdverseExitRules`、`mt5/Inclu
 | `InpTrendReversalActivationR` | 1.0 | 反転監視を開始する最低到達ライン。含み益ピークが「建値〜当初SL距離（初期リスク）」のこの倍数（R）以上に達するまでは監視自体を行わない。`InpEnableTrendReversalExit=true`時は0より大きい値が必須 |
 | `InpTrendReversalRetraceR` | 0.5 | 反転検知の閾値。含み益ピークからの逆行が初期リスクのこの倍数（R）以上になったら「反転」として検知する。`InpEnableTrendReversalExit=true`時は0より大きい値が必須 |
 | `InpTrendReversalConfirmationTicks` | 5 | 反転検知が何Tick連続で継続したら決済するか（一時的なTickノイズによる誤Exitを防ぐ継続確認）。Peak方向へ戻れば0へリセットされる。`InpEnableTrendReversalExit=true`時は1以上が必須 |
-| `InpEnableEarlyAdverseExit` | false | 初期逆行Exit（Early Adverse Exit）の有効化（2026-09-12追加）。OOS分析で、SLへ至る負けトレードの92.5%がInpTrendReversalActivationRへ一度も到達していないと判明したため、含み益ピークの存在を前提にしないExitとして新設した。`InpEnableTradeMutations=false`では発動しない。既定値はOFF（安全側）。詳細は本節末尾「初期逆行Exit」を参照 |
-| `InpEarlyAdverseExitTriggerR` | 0.5 | 逆行検知の閾値。建値からの逆行が「建値〜当初SL距離（初期リスク）」のこの倍数（R）以上になったら検知する。`InpEnableEarlyAdverseExit=true`時は0より大きい値が必須（1.0以上は非推奨、本節末尾参照） |
+| `InpEnableEarlyAdverseExit` | true | 初期逆行Exit（Early Adverse Exit）の有効化（2026-09-12追加、2026-09-13にFold1-5検証結果を受けてユーザー判断により既定trueへ採用）。OOS分析で、SLへ至る負けトレードの多くがInpTrendReversalActivationRへ一度も到達していないと判明したため、含み益ピークの存在を前提にしないExitとして新設した。`InpEnableTradeMutations=false`では発動しない。詳細は本節末尾「初期逆行Exit」を参照 |
+| `InpEarlyAdverseExitTriggerR` | 0.75 | 逆行検知の閾値。建値からの逆行が「建値〜当初SL距離（初期リスク）」のこの倍数（R）以上になったら検知する。`InpEnableEarlyAdverseExit=true`時は0より大きい値が必須（1.0以上は非推奨、本節末尾参照） |
 | `InpEarlyAdverseExitConfirmationTicks` | 5 | 逆行検知が何Tick連続で継続したら決済するか（一時的なTickノイズによる誤Exitを防ぐ継続確認）。逆行が解消すれば0へリセットされる。`InpEnableEarlyAdverseExit=true`時は1以上が必須 |
 
 `InpEnableTradeMutations` は最後に有効化する。Risk Manager、Decision API、LLMがALLOWでも、この値がfalseなら新規発注しない。本番ゲート未達の状態でtrueにしてはならない。
@@ -207,7 +209,7 @@ IS/OOS/Walk Forwardの個別検証時は、同一の`.set`/`.ini`から`InpStrat
 | `InpMeanReversionBbWidthExpansionRatio` | 1.5 | 現在のBB Widthが過去平均の何倍以上で強制決済するか |
 | `InpMeanReversionRangeBreakLookback` | 20 | 強制決済（レンジブレイク）判定用の直近レンジ高安値（RangeLow/RangeHigh）の参照本数。エントリー側SLの参照本数（`InpMeanReversionBbPeriod`）とは独立（2026-08-25追加） |
 | `InpMeanReversionBreakAtrMultiplier` | 0.25 | 警戒状態中のTickブレイク判定で、RangeLow/RangeHighに加えるATRバッファの倍率（2026-08-26追加） |
-| `InpMeanReversionBreakConfirmSeconds` | 30 | 警戒状態中、ブレイク条件が実時間で何秒継続したら強制決済するか（Tick数ではなく実時間、2026-08-26追加） |
+| `InpMeanReversionBreakConfirmSeconds` | 5 | 警戒状態中、ブレイク条件が実時間で何秒継続したら強制決済するか（Tick数ではなく実時間、2026-08-26追加）。2026-08-30のスイープ（TASKS.md参照）で0秒に近いほど単調に純損益が改善することが判明し、2026-09-13に既定値を30→5へ更新した（他Foldでの再現性は未確認。MR戦略自体は既定`InpStrategyMode=STRATEGY_MODE_TREND_ONLY`のため現状無効） |
 | `InpMeanReversionRestrictToTokyoSession` | false | trueの場合、エントリー確定足がTokyoセッション（UTC相当hour∈[0,8)∪[22,24)）外であれば候補を棄却する |
 | `InpMeanReversionMaxHoldingBars` | 10 | 時間切れ決済が発動する経過バー数の上限（entry_timeframe換算）。2026-08-26、Fold1〜6 Trainスイープで20本が最悪と判明したため10本へ変更（詳細はTASKS.md参照） |
 | `InpMeanReversionMagicNumber` | 26072002 | レンジ戦略ポジション識別用のMagic Number（`InpMagicNumber`とは別値が必須） |

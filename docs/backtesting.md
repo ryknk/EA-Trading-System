@@ -165,7 +165,9 @@ python -m python.analysis.trade_breakdown --input results/backtests/<on-run-id>-
 
 **検証結果（2026-09-12〜13実施、Fold1-5×4銘柄、`InpEarlyAdverseExitTriggerR`=0.3/0.5/0.6/0.65/0.7/0.75/0.8/0.85/0.9、ConfirmationTicks=5固定、180ケース）**: Baseline（OFF、`results/backtests/20260912-164730-cases`、514トレード・純利益+118,533円、PF1.108、勝率36.6%）に対し、純利益はTriggerRに対して単調ではなく**TriggerR=0.70で単峰性のピーク（純利益+181,266円、Baseline比+62,733円、PF1.186）**を示した。0.3〜0.65はいずれもBaseline未達（0.5は黒字→赤字に転落）、0.75以降はBaselineへ緩やかに収束する（1.0Rに近づくほど通常のSLとの差がなくなるため構造的に自然）。Fold×銘柄20区分中、0.70で12区分・0.75で14区分・0.80で13区分が改善しており、特定の1銘柄・1年に依存した見かけ上の改善ではない。最良設定（0.70）でも発動率は49.1%（全トレードの約半数）に達しており、この機構は「損切りラインを全体的に手前へシフトして平均損失を圧縮する」タイプの効果であって、悪いトレードだけを狙い撃ちする精密フィルタではない。詳細な数値と追加の調整案（TrendReversalExitとの併用検証等）は`TASKS.md`セクション2.1.3を参照。
 
-**現時点の判断**: `InpEnableEarlyAdverseExit`は既定`false`のまま維持する。既定の`InpEarlyAdverseExitTriggerR=0.5`はOOSデータ上明確に有害と判明したため、**このままの既定値で有効化しないこと**。TriggerR=0.70〜0.85の範囲でBaselineを上回ったが、これはFold1-5への複数回のパラメータ適合（9点スイープ）の結果である。**本節の数値はFold1-5への複数回のパラメータ適合であり、Final Holdout（2025-01〜2026-08）での確認前に採用判断をしないこと。** また、TrendReversalExitとの併用検証など残る調整の余地があるため、これ以上Fold1-5上での探索を重ねる前に、全パラメータを固定してFinal Holdoutで一度きりの最終確認を行う計画を優先すべきである。
+**併用検証結果（2026-09-13実施）**: `InpEnableTrendReversalExit=true`（Activation=1.0/Retrace=0.5/Ticks=5）と`InpEnableEarlyAdverseExit=true`（TriggerR=0.7/Ticks=5）を同時に有効化すると、Baseline比+75,214円（+63.5%）、EarlyAdverseExit単独比でも+12,481円の上乗せとなり、単独設定より併用の方が良い結果だった（SL到達件数325→27件）。ただしFold×銘柄20区分中の改善区分数は10区分で、EarlyAdverseExit単独設定（12〜14区分）より頑健性は低い。詳細は`TASKS.md`セクション2.1.3を参照。
+
+**現時点の判断**: `InpEnableEarlyAdverseExit`は既定`false`のまま維持する。既定の`InpEarlyAdverseExitTriggerR=0.5`はOOSデータ上明確に有害と判明したため、**このままの既定値で有効化しないこと**。TriggerR=0.70〜0.85の範囲でBaselineを上回り、TrendReversalExitとの併用でさらに上乗せが確認されたが、これはFold1-5への複数回のパラメータ適合（9点スイープ＋併用検証）の結果である。**本節の数値はFold1-5への複数回のパラメータ適合であり、Final Holdout（2025-01〜2026-08）での確認前に採用判断をしないこと。** これ以上Fold1-5上での探索は重ねず、全パラメータを固定してFinal Holdoutで一度きりの最終確認を行う計画を優先すべきである。
 
 発動したトレードはEA側`CPositionExitEvaluator::EvaluateEarlyAdverseExits`が送出する`EARLY_ADVERSE_EXIT`イベント（`reason_code`固定値`EarlyAdverseConfirmed`、`adverse_r_multiple`、`confirmation_count`）で識別する。
 

@@ -1,0 +1,145 @@
+{
+  "description": "Time Stopの免除閾値を引き上げ（InpTimeStopMinMfeR=1.0）。MFEが1.0R未満のトレードのみ20バーで強制決済。EarlyAdverseExit(TriggerR=0.75)は既定どおり有効。",
+  "cases": [
+    {
+      "case_name": "USDJPY-TSMFE10-2020",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-TSMFE10-2021",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-TSMFE10-2022",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-TSMFE10-2023",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "USDJPY-TSMFE10-2024",
+      "symbol": "USDJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-TSMFE10-2020",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-TSMFE10-2021",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-TSMFE10-2022",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-TSMFE10-2023",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "EURJPY-TSMFE10-2024",
+      "symbol": "EURJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-TSMFE10-2020",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-TSMFE10-2021",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-TSMFE10-2022",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-TSMFE10-2023",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "EURUSD-TSMFE10-2024",
+      "symbol": "EURUSD_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-TSMFE10-2020",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2020.01.01",
+      "to_date": "2020.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-TSMFE10-2021",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2021.01.01",
+      "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-TSMFE10-2022",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2022.01.01",
+      "to_date": "2022.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-TSMFE10-2023",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2023.01.01",
+      "to_date": "2023.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    },
+    {
+      "case_name": "GBPJPY-TSMFE10-2024",
+      "symbol": "GBPJPY_HIST",
+      "from_date": "2024.01.01",
+      "to_date": "2024.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-EA075-TimeStopMfe1.0-H1.ini"
+    }
+  ]
+}
