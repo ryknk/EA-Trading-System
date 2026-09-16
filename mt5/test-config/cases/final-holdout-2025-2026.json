@@ -1,0 +1,9 @@
+{
+  "description": "Final Holdout（2025-01〜2026-08）: EA・MLモデル・閾値・SL/TP等を確定済み既定値（mt5/Include/Core/Config.mqhのSetDefaultConfig()、2026-09-15時点）のまま固定し、Fold1-5で使用してきた4銘柄（USDJPY/EURJPY/EURUSD/GBPJPY_HIST）で一度だけ評価する。開発・パラメータ調整・ML閾値調整には一切使用しない（DECISIONS.md DEC-024/DEC-025、docs/backtesting.md参照）。テンプレートはStrategyTester-Generic-H1.iniを使用し、EarlyAdverseExit・TrendReversalExit等、iniで明示指定しない項目はEA既定値（Config.mqh）がそのまま適用される。評価結果（Profit Factor・Max Drawdown・Expectancy・Sharpe・Trade Count等）をWalk Forward結果（Fold1-5）と比較し、大きく崩れていないか確認する。結果を見た後にパラメータを変更した場合、代替のFinal Holdout期間は確保されていない点に注意（DECISIONS.md DEC-024の影響欄参照）。",
+  "cases": [
+    { "case_name": "USDJPY-FINALHOLDOUT", "symbol": "USDJPY_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURJPY-FINALHOLDOUT", "symbol": "EURJPY_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURUSD-FINALHOLDOUT", "symbol": "EURUSD_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPJPY-FINALHOLDOUT", "symbol": "GBPJPY_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" }
+  ]
+}

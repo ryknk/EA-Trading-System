@@ -1,0 +1,37 @@
+STRATEGY_TESTER_BATCH_START total=4 case_file=D:\Dev\EA-Trading-System\mt5\test-config\cases\final-holdout-2025-2026.json
+STRATEGY_TESTER_CASE_START case=USDJPY-FINALHOLDOUT index=1/4 symbol=USDJPY_HIST from=2025.01.01 to=2026.08.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260915-232219-cases\USDJPY-FINALHOLDOUT-USDJPY_HIST-20250101_20260831\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260915-232219-cases\USDJPY-FINALHOLDOUT-USDJPY_HIST-20250101_20260831
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\Dev\EA-Trading-System\python\analysis\reports.py", line 260, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "D:\Dev\EA-Trading-System\python\analysis\reports.py", line 250, in main
+    inputs = load_analysis_inputs(args.input)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Dev\EA-Trading-System\python\analysis\reports.py", line 137, in load_analysis_inputs
+    parsed = _audit_inputs(audit_records)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Dev\EA-Trading-System\python\analysis\reports.py", line 117, in _audit_inputs
+    normalize_equity_snapshots(pd.DataFrame(snapshots, columns=SNAPSHOT_COLUMNS)),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Dev\EA-Trading-System\python\analysis\performance.py", line 112, in normalize_equity_snapshots
+    raise ValueError("snapshot timestamps must be unique")
+ValueError: snapshot timestamps must be unique
+STRATEGY_TESTER_ANALYSIS_FAILED case=USDJPY-FINALHOLDOUT exit=1
+STRATEGY_TESTER_CASE_END case=USDJPY-FINALHOLDOUT index=1/4 status=Succeeded elapsed_seconds=312 remaining=3 eta_seconds=936
+STRATEGY_TESTER_CASE_START case=EURJPY-FINALHOLDOUT index=2/4 symbol=EURJPY_HIST from=2025.01.01 to=2026.08.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260915-232219-cases\EURJPY-FINALHOLDOUT-EURJPY_HIST-20250101_20260831\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260915-232219-cases\EURJPY-FINALHOLDOUT-EURJPY_HIST-20250101_20260831
+STRATEGY_TESTER_CASE_END case=EURJPY-FINALHOLDOUT index=2/4 status=Succeeded elapsed_seconds=86 remaining=2 eta_seconds=398
+STRATEGY_TESTER_CASE_START case=EURUSD-FINALHOLDOUT index=3/4 symbol=EURUSD_HIST from=2025.01.01 to=2026.08.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260915-232219-cases\EURUSD-FINALHOLDOUT-EURUSD_HIST-20250101_20260831\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260915-232219-cases\EURUSD-FINALHOLDOUT-EURUSD_HIST-20250101_20260831
+STRATEGY_TESTER_CASE_END case=EURUSD-FINALHOLDOUT index=3/4 status=Succeeded elapsed_seconds=145 remaining=1 eta_seconds=181
+STRATEGY_TESTER_CASE_START case=GBPJPY-FINALHOLDOUT index=4/4 symbol=GBPJPY_HIST from=2025.01.01 to=2026.08.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260915-232219-cases\GBPJPY-FINALHOLDOUT-GBPJPY_HIST-20250101_20260831\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260915-232219-cases\GBPJPY-FINALHOLDOUT-GBPJPY_HIST-20250101_20260831
+STRATEGY_TESTER_CASE_END case=GBPJPY-FINALHOLDOUT index=4/4 status=Succeeded elapsed_seconds=79 remaining=0 eta_seconds=0
+STRATEGY_TESTER_BATCH_COMPLETED total=4 succeeded=4 failed=0 manifest=D:\Dev\EA-Trading-System\results\backtests\20260915-232219-cases\manifest.json summary=D:\Dev\EA-Trading-System\results\backtests\20260915-232219-cases\summary.csv

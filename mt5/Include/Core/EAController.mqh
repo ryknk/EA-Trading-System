@@ -111,7 +111,11 @@ private:
       const datetime now=TimeGMT();
       if(now<=0) return;
       const int day=(int)(now/86400);
-      if(day==m_last_snapshot_day) return;
+      // 2026-09-16判明: Strategy Tester実行中、TimeGMT()（テスター内ではTimeTradeServer()と同値）が
+      // 時折過去へ巻き戻ることがある（複数回のヒストリー処理パスによると推測）。等価比較
+      // (day==m_last_snapshot_day)だけでは、巻き戻り後に再前進した際「既に記録済みの日」を新しい日と
+      // 誤判定し重複記録してしまうため、単調増加のみを許可する比較(<=)へ変更した。
+      if(day<=m_last_snapshot_day) return;
       m_last_snapshot_day=day;
       string account_payload="{";
       account_payload+="\"balance\":"+JNumber(AccountInfoDouble(ACCOUNT_BALANCE))+",";
