@@ -1165,7 +1165,7 @@
   **再検証**: 同一OOS期間で再実行し、純損益+5,294円・PF1.02・Sharpe+0.20・取引数105が完全一致（退行なし）することを確認。修正後の162件の内訳は、160件が`EMERGENCY_CLOSE_ALREADY_ATTEMPTED`（初回試行でべき等性フラグが正しく設定されるようになり、以降のTickで無駄なOrderSend再試行をしなくなった）、残り2件が`EMERGENCY_CLOSE_FAILED retcode=10018 comment=Market closed`（正確な失敗理由）となり、以前の不透明な`EMERGENCY_ORDER_CHECK_FAILED retcode=0`から診断精度が大幅に改善した。
 
   **安全性への意義**: 本バグは、`EmergencyClose`が呼び出される稀な条件（`HasValidProtectiveStop`がfalseと判定される状況）で`OrderCheck`がretcode=0を返した場合に常に失敗する、という潜在的な安全網の欠陥だった。過去のIS/OOS全期間で`EmergencyClose`が呼び出しを試みたのは本件（週末ギャップ）が初めてであり実害はなかったが、今後、取引時間中に何らかの理由で正規のポジション保護が失われた場合の安全網が機能しない可能性があったため、安全性に関わる重要な修正である。未コミットの作業ツリー差分のため、対応方針が固まるまでcommitは保留する）
-* [ ] Final Holdout期間（2025-01〜2026-08）は、EA・MLモデル・閾値・SL/TP等を確定し他の全ゲートが完了するまで実行しない（一度だけの評価として温存する）
+* [x] Final Holdout期間（2025-01〜2026-08）は、EA・MLモデル・閾値・SL/TP等を確定し他の全ゲートが完了するまで実行しない（一度だけの評価として温存する）（2026-09-16/17実施、詳細は2.1.4節参照）
 * [x] 新結果を踏まえてHANDOFF.md / `docs/production-readiness-report.md` / `docs/production-readiness-checklist.md`を更新する（2026-08-16実施）
 
 ---
@@ -1557,6 +1557,34 @@
   StopATR=1.75とRR=1.75を組み合わせた場合にどうなるか（今回は一軸ずつのみ検証）は未検証だが、上記の不安定さを踏まえると追加検証の優先度は低いと判断する。
 
   **重要な注意**: 本タスクを含め、既に多数のパラメータ・組み合わせをFold1-5上で検証してきた。**これ以上の探索は行わず、次はFinal Holdout（2025-01〜2026-08）による現行設定一式の一度きりの最終確認へ進むことを推奨する。**
+
+## 2.1.4 Final Holdout実施（2026-09-16/17実施）
+
+Fold1-5への複数回のパラメータ適合を経て確定した現行設定一式（`InpEnableEarlyAdverseExit=true`・`TriggerR=0.75`・`ConfirmationTicks=5`、`InpEnableTrendReversalExit=false`、`InpEntryUseStagedPipeline=true`・`InpRegimeTrendAdxMin=40`、`InpPullbackTriggerAtrBuffer=0.10`等、`mt5/Include/Core/Config.mqh`の`SetDefaultConfig()`と完全一致）を一切変更せず、Final Holdout（2025-01〜2026-08、Fold1-5で使用してきた4銘柄: USDJPY/EURJPY/EURUSD/GBPJPY_HIST）で一度だけ評価した。CaseFileは`mt5/test-config/cases/final-holdout-2025-2026.json`。
+
+**実施前に発見・修正した監査ログ不具合**: 初回実行時、USDJPYケースのみPython分析（`python.analysis.reports`）が`ValueError: snapshot timestamps must be unique`で失敗した。調査の結果、`EAController.mqh`の`AuditDailySnapshots()`（`ACCOUNT_SNAPSHOT`を1日1回だけ記録する設計）が、Strategy Tester実行中に`TimeGMT()`（テスター内では`TimeTradeServer()`と同値）が時折過去へ巻き戻る現象に対して非頑健で、巻き戻り後に再前進すると「既に記録済みの日」を新しい日と誤判定し重複記録することが判明した（デバッグログで実証、36,353件中1件が完全同一秒に丸まり検出された）。副次的にウォームアップ期間（2016年〜）の記録混入も確認された。日付判定を等価比較(`day==m_last_snapshot_day`)から単調増加比較(`day<=m_last_snapshot_day`)へ修正（コミット`aa6d2cb`）。**この修正は監査ログの記録頻度のみに関わるものであり、売買判断・発注・実トレード結果（`TRADE_CLOSED`）には一切影響しない**ことを、修正前後でTP/SL/PF/Sharpe等の指標が完全一致することで確認済み。修正後、ACCOUNT_SNAPSHOT記録は507件（重複0件、ウォームアップ期間混入なし）に収まった。
+
+**Final Holdout結果（4銘柄合計、修正後の正式値）**:
+
+| 銘柄 | 純利益 | PF | Sharpe | 勝率 | 取引数 | 最大DD |
+|---|---:|---:|---:|---:|---:|---:|
+| USDJPY | -47,756円 | 0.49 | -1.49 | 17.9% | 39 | 5.3% |
+| EURJPY | +7,679円 | 1.08 | 0.18 | 32.6% | 46 | 3.5% |
+| EURUSD | +32,988円 | 1.39 | 0.68 | 30.2% | 43 | 3.9% |
+| GBPJPY | -21,902円 | 0.81 | -0.49 | 26.4% | 53 | 4.7% |
+| **4銘柄合計** | **-28,991円** | — | — | — | **181** | — |
+
+Walk Forward（Fold1-5、2020-2024、現行設定・4銘柄合計、`TASKS.md`本節上部参照）は525トレード・純利益+152,469円・PF1.150・期待値+290.4円/トレードだった。Final Holdoutは期待値-160.2円/トレードとなり、**符号が反転する乖離**が生じた（`docs/backtesting.md`・`DECISIONS.md`が定めるFinal Holdoutの目的「Walk Forward結果から大きく崩れていないか確認する」に照らし、明確に崩れている）。
+
+**原因分析（ユーザー依頼、パラメータ変更を伴わない理解目的の追加測定）**:
+
+1. **EarlyAdverseExitは主犯ではない**。`InpEnableEarlyAdverseExit=false`のBaselineを同一Final Holdout期間・同一4銘柄で測定（専用テンプレート`mt5/test-config/StrategyTester-Generic-EarlyAdverseOff-H1.ini`、CaseFile`mt5/test-config/cases/final-holdout-2025-2026-earlyadverse-off.json`）した結果、純利益-40,678円となり、現行設定（ON、-28,991円）より**+11,687円悪化**した。EarlyAdverseExitはこの期間でも損失を緩和する方向に機能している。
+2. **真因は戦略コア（Entry判定・TP/SL構造）の実質勝率（TP到達率）低下**。Final Holdoutの実質勝率は約20%（ON: 36/181=19.9%、OFF: 38/177=21.5%）で、RR比2.0の損益分岐点（33.3%）を下回る。TP到達トレードの質自体は健全（勝率100%、平均利益9,000円台、Walk Forwardと同水準）で、SL/EarlyAdverseExit到達件数の比率（＝実質勝率）だけが悪化している。
+3. **これは新しい現象ではなく、Walk Forward後半から続く既知の劣化トレンドの延長**。単一銘柄USDJPY・コア戦略のみでのWalk Forward年次結果（2026-08-23実施、本節上部）で、PFが2021→2024年にかけて1.22→1.21→1.15→**0.68**と単調悪化し、TP到達率も28.6%→23.3%→23.8%→**16.0%**と単調減少することが既に記録されていた（「単年の偶然ではなく複数年にわたる緩やかな劣化トレンド」「2024年は唯一の明確な負け年」）。当時は「2024年半ばのUSDJPY急落・乱高下が、トレンドフォロー前提（強いトレンド継続）と整合しなかった可能性」も指摘されていた。Final Holdout（2025-2026）の実質勝率約20%は、この劣化トレンドの延長線上にある数値として整合する。
+
+**結論**: Final Holdoutでの成績悪化は、Fold1-5で調整した特定パラメータ（EarlyAdverseExit等）の過学習という局所的な問題ではなく、**戦略の構造的優位性が2021年以降緩やかに失われつつある**可能性を示す。この所見は2026-08-23時点で「重大な懸念」として既に記録されていたにもかかわらず、その後もFold1-5上でのパラメータ調整が継続されていた。単純なパラメータ再調整では解決しない可能性が高く、本番移行判定は引き続き**NO-GO**とする。詳細は`docs/production-readiness-report.md`を参照。
+
+**残存リスク・未確認事項**: Final Holdoutは4銘柄・単一期間のみの一度きりの評価であり、統計的サンプル数は限定的（181トレード）。EarlyAdverseExit OFF比較・Walk Forward年次内訳による原因分析はUSDJPY単体データに基づく部分があり、他3銘柄での同様の年次劣化トレンドは未確認。Final Holdoutは既に消費済みのため、追加のパラメータ変更を行う場合は新しいFinal Holdout期間の確保が必要（`DECISIONS.md` DEC-024参照）。
 
 ## 2.2 `TestDecisionApiRules` の終了コード
 

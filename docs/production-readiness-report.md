@@ -1,6 +1,6 @@
 # 本番準備状況レポート
 
-評価日: 2026-07-21  
+評価日: 2026-07-21（2026-09-17、Final Holdout結果を反映し6/7/13/14節を更新）  
 対象: CoreEA 1.13 / Phase 13  
 判定: **NO-GO**
 
@@ -8,7 +8,9 @@
 
 既存の責務分離（Strategy、External Decision、Risk、Trading、Logging）とフェイルセーフ方針は維持されている。Risk Managerは外部ALLOW後に最新市場・口座状態で再計算され、1つでもGuard、Margin、OrderCheckが失敗すれば注文しない。既存ポジション監視は候補生成より前に実行される。
 
-Phase 13ではMQL5の実コンパイル、Script実行、Python/Lambda/CDK回帰試験を実施し、安全境界、Strategy単位停止、Tester用Mock、LLM Shadow Mode、ML評価指標、CloudWatch Alarm、再現用バックテスト設定を追加した。自動試験は通過し、Strategy Testerも2025年USDJPY/H1で完走したが、総損益-95,024円・Profit Factor 0.59・最大Drawdown 10%到達という損失結果であった（2026-08-09時点、受入基準未凍結のため合否未判定）。実市場OOS/Walk Forward、AWS dev実通信、LLM実通信、Demo/VPSは依然未検証である。このため実資金運用は **NO-GO** とする。
+Phase 13ではMQL5の実コンパイル、Script実行、Python/Lambda/CDK回帰試験を実施し、安全境界、Strategy単位停止、Tester用Mock、LLM Shadow Mode、ML評価指標、CloudWatch Alarm、再現用バックテスト設定を追加した。自動試験は通過し、Strategy Testerも2025年USDJPY/H1で完走したが、総損益-95,024円・Profit Factor 0.59・最大Drawdown 10%到達という損失結果であった（2026-08-09時点、受入基準未凍結のため合否未判定）。
+
+**2026-09-17追記**: その後rule-based StrategyでのIn-Sample凍結・Walk Forward・Final Holdoutを完了した。Final Holdout（2025-01〜2026-08、4銘柄）の結果、Walk Forward（+290.4円/トレード）から期待値の符号が反転する成績悪化（-160.2円/トレード）を確認した。原因分析の結果、これは特定パラメータの過学習ではなく、戦略の実質勝率が2021年以降緩やかに悪化し続けている構造的なトレンドの延長であることが判明した（詳細は7/7.5/13/14節）。この所見に加え、AWS dev実通信、LLM実通信、Demo/VPSは依然未検証である。このため実資金運用は **NO-GO** とする。
 
 ### 現状リポジトリ監査
 
@@ -65,11 +67,23 @@ DailyLossの日付切替、Broker server time、永続lock、Balance更新、実
 
 ## 6. Out-of-Sample結果
 
-実市場データとproduction候補モデルがないため **NOT VERIFIED**。期間は2026-08-16に確定した（`DECISIONS.md` DEC-024、DEC-025で補正）: 開発・In-Sample=2017-09〜2020-12、OOS/Walk Forward評価=2021-01〜2024-12、Final Holdout=2025-01〜2026-08（EA・Model・閾値確定後に一度だけ評価）。OOSを閾値調整へ再利用してはならない。
+production候補ML Modelを用いた評価は未実施のため **NOT VERIFIED**（3.3節参照）。期間は2026-08-16に確定した（`DECISIONS.md` DEC-024、DEC-025で補正）: 開発・In-Sample=2017-09〜2020-12、OOS/Walk Forward評価=2021-01〜2024-12、Final Holdout=2025-01〜2026-08（EA・Model・閾値確定後に一度だけ評価）。OOSを閾値調整へ再利用してはならない。
+
+一方、rule-based Strategy（ML/LLM未適用、Mock ALLOW）でのOOS・Walk Forward・Final Holdout自体はLocally Testedである。詳細は7節・7.5節を参照。
 
 ## 7. Walk Forward結果
 
-TimeSeriesSplitとgapの実装・合成データ試験はPASSした。実市場データによるローリング期間比較と取引指標は **NOT VERIFIED**。
+TimeSeriesSplitとgapの実装・合成データ試験はPASSした。ML学習を伴うWalk Forward評価は **NOT VERIFIED**（3.3節参照）。
+
+rule-based Strategy（凍結済みIS最良パラメータセット）でのWalk Forward（年次Fold、2021-2024、`TASKS.md` 2.1.1/2.1.3節）はLocally Testedである。単一銘柄（USDJPY）・コア戦略のみでの年次結果は、PFが2021→2024年にかけて1.22→1.21→1.15→**0.68**と単調悪化し、TP到達率（実質勝率）も28.6%→23.3%→23.8%→**16.0%**と単調減少する「重大な懸念」（`TASKS.md` 2.1.1節）が記録されている。単年の偶然ではなく複数年にわたる緩やかな劣化トレンドであり、2024年半ばのUSDJPY急落・乱高下がトレンドフォロー前提（強いトレンド継続）と整合しなかった可能性が指摘されている。4銘柄・現行設定一式でのWalk Forward合計は525トレード・純利益+152,469円・PF1.150・期待値+290.4円/トレード（`TASKS.md` 2.1節）。
+
+## 7.5 Final Holdout結果（2026-09-16/17実施）
+
+Final Holdout（2025-01〜2026-08、EA・パラメータ確定後に一度だけ評価、4銘柄: USDJPY/EURJPY/EURUSD/GBPJPY_HIST）を実施した。結果は4銘柄合計181トレード・純利益**-28,991円**・期待値**-160.2円/トレード**（Walk Forwardの+290.4円/トレードから符号が反転）。詳細な結果・原因分析は`TASKS.md` 2.1.4節を参照。
+
+原因分析の結果、Fold1-5で採用したEarlyAdverseExit等の特定パラメータの過学習ではなく、**戦略コア（Entry判定・TP/SL構造）の実質勝率が2021年以降緩やかに悪化し続けているトレンドの延長**であることが判明した（7節のWalk Forward年次内訳と整合）。単純なパラメータ再調整では解決しない可能性が高い。Final Holdoutは一度きりの評価のため既に消費済みであり、代替期間は確保されていない（`DECISIONS.md` DEC-024）。
+
+実施過程で監査ログ（`ACCOUNT_SNAPSHOT`）の記録頻度に関する不具合（Strategy Tester内での`TimeGMT()`の巻き戻りに対する非頑健性）を発見・修正した（コミット`aa6d2cb`）。売買判断・発注・実トレード結果には影響しない監査ログ専用の修正であることを確認済み。
 
 ## 8. ML検証
 
@@ -101,14 +115,16 @@ EAは長期AWS鍵を持たず、失効可能なkey IDとHMAC共有鍵ファイ�
 
 ## 13. 残存リスク
 
-1. Strategy TesterはIn-Sample期間（2017-09〜2020-12、OANDA証券MT5・`USDJPY_HIST`、DEC-024/DEC-025）について完走したが総損益-65,696円・PF 0.66の損失結果であり、受入基準未凍結のため合否未判定。OOS、Walk Forward、Final Holdout、Demoは未完了で、戦略とRiskの実データ挙動が不明。
-2. AWS dev実通信と障害注入、Alarm通知到達が未検証。
-3. 独立した定期EA Heartbeatが未実装で、無候補時間帯の死活判定が弱い。
-4. Kill Switchはコード・純粋ルールのみで、保有position中のSL/TP/安全決済継続を端末で実証していない。
-5. LLM Shadowの効果ログがなく、LLMを本番判断へ適用する根拠がない。
-6. `TestDecisionApiRules`のTerminal exit code 1を調査する必要がある。
-7. production用model checksum、endpoint、通知、Budget、rollback drill、VPS secret配布が未確定。
+1. Strategy TesterはIn-Sample期間（2017-09〜2020-12、OANDA証券MT5・`USDJPY_HIST`、DEC-024/DEC-025）について完走したが総損益-65,696円・PF 0.66の損失結果であり、受入基準未凍結のため合否未判定。
+2. **Final Holdout（2025-01〜2026-08、2026-09-17実施）で、Walk Forward結果から成績が明確に崩れることを確認した**（期待値+290.4円/トレード→-160.2円/トレード、符号反転）。原因分析の結果、特定パラメータの過学習ではなく、戦略コアの実質勝率が2021年以降緩やかに悪化し続けているトレンドの延長であることが判明した（詳細は7/7.5節、`TASKS.md` 2.1.4節）。単純なパラメータ再調整では解決しない可能性が高く、戦略の構造的な見直しが必要な段階にある。Final Holdoutは一度きりの評価のため既に消費済みで、代替期間は確保されていない。
+3. Demoは未完了で、Risk実データ挙動が不明。
+4. AWS dev実通信と障害注入、Alarm通知到達が未検証。
+5. 独立した定期EA Heartbeatが未実装で、無候補時間帯の死活判定が弱い。
+6. Kill Switchはコード・純粋ルールのみで、保有position中のSL/TP/安全決済継続を端末で実証していない。
+7. LLM Shadowの効果ログがなく、LLMを本番判断へ適用する根拠がない。
+8. `TestDecisionApiRules`のTerminal exit code 1を調査する必要がある。
+9. production用model checksum、endpoint、通知、Budget、rollback drill、VPS secret配布が未確定。
 
 ## 14. 本番移行判定
 
-**NO-GO**。現時点で許可できるのは、ローカル開発とAWS dev/stagingでの非取引検証、および `InpEnableTradeMutations=false` のDemo観測準備までである。実注文を伴うDemo開始前にもStrategy Tester完了が必要であり、小額実口座・productionはOOS、Walk Forward、Demo、AWS障害試験、Kill Switch実証、運用通知確認が揃うまで禁止する。
+**NO-GO**。Final Holdout（2025-01〜2026-08）の結果、Walk Forwardから成績が明確に崩れることが確認され（13節2.参照）、戦略の構造的な優位性そのものに疑義が生じている。これは実装・運用面の未検証事項（AWS/Demo/VPS等）とは別種の、より根本的な課題である。現時点で許可できるのは、ローカル開発とAWS dev/stagingでの非取引検証、および `InpEnableTradeMutations=false` のDemo観測準備までである。Final Holdoutでの成績悪化の原因（戦略の構造的な優位性低下の可能性）が解消・説明されない限り、小額実口座・productionへの昇格は推奨しない。単純な設定の再調整によるFinal Holdout再実施は、新しい評価期間の確保が必要な上、問題の根本原因（戦略ロジック自体の市場適合性）に対処しない限り同じ結果を繰り返すリスクが高い。
