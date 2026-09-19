@@ -68,7 +68,7 @@ Walk Forwardは、過去期間で学習・最適化し、直後の未来期間�
 
 Fold 1の学習期間開始もDEC-025に合わせて2017-09へ補正した。Fold 2以降の学習期間はrule-based Strategyの直接実行対象ではなく将来のML学習パイプライン向けであり、同様のバッファ制約が生じるかは未検証（DEC-025注意点参照）。OOS結果を見た後、同じOOS期間・Final Holdout期間へ再最適化しない。`mt5/test-config/StrategyTester-USDJPY-H1.ini`と`tools/run-strategy-tester.ps1`の既定Symbol/期間は、Final Holdoutを誤って消費しないようIn-Sample期間（`USDJPY_HIST`、2017-09-01〜2020-12-31）へ設定してある。各期間の実行は`-FromDate`/`-ToDate`を明示指定する。ML学習コードは時系列分割・gap・Walk Forwardと0.50/0.55/0.60/0.65/0.70の事前固定閾値比較を出力するが、実市場データでの評価は未実施である。
 
-## 非FX資産（JP225・US30・XAUUSD）のCustom Symbol仕様設定（2026-09-19、`DECISIONS.md` DEC-033）
+## 非FX資産（JP225・US30・XAUUSD・US100・US500・US2000）のCustom Symbol仕様設定（2026-09-19、`DECISIONS.md` DEC-033・DEC-035）
 
 接続先Broker（OANDA-Japan MT5 Demo）は全51銘柄がFXのみで、JP225・US30・XAUUSDの実Symbolがない。複製元なしで作成した`JP225_HIST`・`US30_HIST`・`XAUUSD_HIST`は仕様が初期値のままで、現行EAを実行しても取引が成立しなかった（Point=0.0001・契約サイズ100000・Volume 1e-8等のため、`SPREAD_TOO_WIDE`・`TICK_VALUE_UNAVAILABLE`・`INVALID_EXPOSURE_INPUT`で全候補が拒否される）。EA側の不具合ではなく、Custom Symbol側の仕様未設定が原因である。
 
@@ -77,6 +77,9 @@ Fold 1の学習期間開始もDEC-025に合わせて2017-09へ補正した。Fol
 | JP225_HIST | 仕様設定・バー再生成・EA動作確認済み（Locally Tested。2021-04〜12でRISK_DECISION承認10件、証拠金も計算される） |
 | US30_HIST | 同上（2021-04〜12で承認19件、`required_margin`約18.5万円）。バー再生成は2020-04〜2026-09の全月・約1.25億tick、失敗0 |
 | XAUUSD_HIST | 同上（2023-07〜12で承認10件、`required_margin`約5.5万円）。バー再生成は2022-06〜2026-09の全月・約2.46億tick、失敗0 |
+| US100_HIST | 仕様設定・動作確認済み（Locally Tested。2021-06〜12で承認14件、`required_margin`約5.4万〜24.2万円。InpMaxSpreadPoints=60。DEC-035） |
+| US500_HIST | 同上（2021-04〜12で承認34件。InpMaxSpreadPoints=20） |
+| US2000_HIST | 同上（2021-04〜12で承認17件。InpMaxSpreadPoints=540） |
 
 **手順（銘柄ごと。すべてMT5停止中に実行する）:**
 
@@ -89,7 +92,7 @@ Fold 1の学習期間開始もDEC-025に合わせて2017-09へ補正した。Fol
 
 **Testerのレバレッジ（2026-09-19判明）:** iniの`Leverage=10`のような数値のみの指定は無視され、Testerは`terminal.ini`に保存された値（実測で1:100）を使う。`Leverage=1:25`のように`1:N`形式で書くと反映される。既存の全テンプレート（77件）は`Leverage=10`だったため、2026-09-19までの全実行が1:100で走っていた（実口座のレバレッジは1:25）。同日、77件を`Leverage=1:25`へ修正し、以降の実行は1:25で走る。Final Holdout（4銘柄・181トレード・-28,991円）とWalk Forward（20ケース・520トレード）を1:25で再実行し、取引数・純損益が完全一致することを確認した（最低の証拠金維持率は低下したがガード150%には抵触せず）。詳細はTASKS.mdを参照。過去の`run-metadata`のtemplate_sha256は修正前のテンプレートのハッシュである。
 
-**注意:** これらの資産は初見資産であり、動作確認以外（パラメータ探索・採用判断・Final Holdoutの代替）の根拠には使わない。仕様値は2026-09-19にOANDA公式ページの原文で照合した（`DECISIONS.md` DEC-033「原ページとの照合結果」。US30のVolume Maxは100が正で、`ApplyCfdSymbolSpec.mq5`は訂正済み、実Symbolへの再適用は未実施。XAUUSDの取引数量の刻みは原ページに記載なく未確認。US30の最小取引単位は2021-05-31より前は1.00だった）。`InpMaxSpreadPoints`は非FX資産では専用テンプレートで決める（Pointが正しくなっても、既定値30では全候補が拒否される）。値はFX4銘柄の30 pointsの価格比（0.0227%）を基準価格へ適用して事前に固定した（JP225 110、US30 110、XAUUSD 770 points、`DECISIONS.md` DEC-034）。結果を見て調整しない。ただし全期間のスプレッド分布を確認した結果、JP225の2024年以降とXAUUSDの2025年以降は、Brokerのスプレッド水準の変化により固定値では候補の1〜4割が`SPREAD_TOO_WIDE`で拒否される（US30は全期間で2%以下）。非FX資産の結果には`SPREAD_TOO_WIDE`の割合を併記し、これらの期間を他の期間と単純に比較しない（DEC-034「追加確認」）。
+**注意:** これらの資産は初見資産であり、動作確認以外（パラメータ探索・採用判断・Final Holdoutの代替）の根拠には使わない。仕様値は2026-09-19にOANDA公式ページの原文で照合した（`DECISIONS.md` DEC-033・DEC-035の「原ページとの照合結果」。US100・US500・US2000も同様にDEC-035へ記録。US100の最小取引単位も2021-05-31より前は1.00で、動作確認は2021-06-01以降で行う。US30のVolume Maxは100が正で、`ApplyCfdSymbolSpec.mq5`は訂正済み、実Symbolへは2026-09-19に再適用済み。XAUUSDの取引数量の刻みは原ページに記載なく未確認。US30の最小取引単位は2021-05-31より前は1.00だった。Custom Symbolは変更せず、US30・US100の動作確認は2021-06-01以降で行い、それ以前を含む結果は「当時は発注できなかった数量を含む」と注記する。DEC-033）。`InpMaxSpreadPoints`は非FX資産では専用テンプレートで決める（Pointが正しくなっても、既定値30では全候補が拒否される）。値はFX4銘柄の30 pointsの価格比（0.0227%）を基準価格へ適用して事前に固定した（JP225 110、US30 110、XAUUSD 770 points、`DECISIONS.md` DEC-034）。結果を見て調整しない。ただし全期間のスプレッド分布を確認した結果、JP225の2024年以降とXAUUSDの2025年以降は、Brokerのスプレッド水準の変化により固定値では候補の1〜4割が`SPREAD_TOO_WIDE`で拒否される（US30は全期間で2%以下）。非FX資産の結果には`SPREAD_TOO_WIDE`の割合を併記し、これらの期間を他の期間と単純に比較しない（DEC-034「追加確認」）。
 
 ## Phase 10の共通指標定義
 

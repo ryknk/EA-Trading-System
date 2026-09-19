@@ -2,13 +2,13 @@
 #property strict
 #property script_show_inputs
 
-// 複製元を持たずに作成されたCFD系Custom Symbol（JP225_HIST/US30_HIST/XAUUSD_HIST）の仕様を、
+// 複製元を持たずに作成されたCFD系Custom Symbol（JP225_HIST/US30_HIST/XAUUSD_HIST/US100_HIST/US500_HIST/US2000_HIST）の仕様を、
 // OANDA証券の公開仕様（原ページで照合済み、DECISIONS.md DEC-033参照）へ設定する。
 // tick履歴には触れず、Symbolの削除・再作成も行わない。ただしDigitsの変更はMT5がバー履歴（.hcc）を
 // 消去するため、全仕様の適用後はRebuildBarsFromTicksでバーを再生成すること（2026-09-19確認）。
 // InpApply=false（既定）は現状値の出力のみで、何も変更しない。
 
-input string InpTargetSymbol = "JP225_HIST"; // JP225_HIST / US30_HIST / XAUUSD_HIST のいずれか
+input string InpTargetSymbol = "JP225_HIST"; // JP225_HIST / US30_HIST / XAUUSD_HIST / US100_HIST / US500_HIST / US2000_HIST のいずれか
 input bool   InpApply        = false;        // true = 仕様を書き換える
 input bool   InpMarginRateOnly = false;      // true = 計算モードと証拠金率のみ設定する（Digits等は触らない。Digits変更はバー履歴を消去するため）
 input string InpOutputPrefix = "cfd-spec";   // MQL5\Files\EaTradingSystem\Diagnostics\<prefix>-<symbol>-before|after.tsv
@@ -49,6 +49,33 @@ bool LoadSpec(const string symbol,SCfdSpec &spec)
      {
       spec.digits=1; spec.tick_size=0.1; spec.contract_size=1.0;
       spec.volume_min=0.1; spec.volume_step=0.1; spec.volume_max=100.0; // 最大取引数量100（最大建玉数量は250）
+      spec.currency_base="USD"; spec.currency_profit="USD"; spec.currency_margin="USD";
+      spec.calc_mode=SYMBOL_CALC_MODE_CFD;
+      spec.margin_rate=0.10;
+      return true;
+     }
+   if(symbol=="US100_HIST")
+     {
+      spec.digits=1; spec.tick_size=0.1; spec.contract_size=1.0;
+      spec.volume_min=0.1; spec.volume_step=0.1; spec.volume_max=200.0; // 最大建玉数量は1000
+      spec.currency_base="USD"; spec.currency_profit="USD"; spec.currency_margin="USD";
+      spec.calc_mode=SYMBOL_CALC_MODE_CFD;
+      spec.margin_rate=0.10;
+      return true;
+     }
+   if(symbol=="US500_HIST")
+     {
+      spec.digits=1; spec.tick_size=0.1; spec.contract_size=1.0;
+      spec.volume_min=1.0; spec.volume_step=1.0; spec.volume_max=1000.0; // 最大建玉数量は2500
+      spec.currency_base="USD"; spec.currency_profit="USD"; spec.currency_margin="USD";
+      spec.calc_mode=SYMBOL_CALC_MODE_CFD;
+      spec.margin_rate=0.10;
+      return true;
+     }
+   if(symbol=="US2000_HIST")
+     {
+      spec.digits=3; spec.tick_size=0.001; spec.contract_size=1.0;
+      spec.volume_min=1.0; spec.volume_step=1.0; spec.volume_max=200.0; // 最大建玉数量は3000
       spec.currency_base="USD"; spec.currency_profit="USD"; spec.currency_margin="USD";
       spec.calc_mode=SYMBOL_CALC_MODE_CFD;
       spec.margin_rate=0.10;
