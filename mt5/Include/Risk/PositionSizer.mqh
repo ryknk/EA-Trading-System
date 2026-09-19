@@ -40,12 +40,8 @@ public:
          return 0.0;
       return MathMin(floored,volume_max);
      }
-  };
 
-class CPositionSizer
-  {
-private:
-   int VolumeDigits(const double step)
+   static int VolumeDigits(const double step)
      {
       int digits=0;
       double scaled=step;
@@ -57,6 +53,19 @@ private:
       return digits;
      }
 
+   // 刻みが極小（1e-8以下）だとVolumeDigitsが0桁を返し、NormalizeDoubleでvolumeが0になる。
+   // 0のままsuccessにせず、呼び出し側が拒否できるよう0を返す（実Brokerの通常仕様では発生しない）。
+   static double NormalizeVolume(const double volume,const double step)
+     {
+      if(!MathIsValidNumber(volume) || !MathIsValidNumber(step) || volume<=0.0 || step<=0.0)
+         return 0.0;
+      const double normalized=NormalizeDouble(volume,VolumeDigits(step));
+      return (MathIsValidNumber(normalized) && normalized>0.0 ? normalized : 0.0);
+     }
+  };
+
+class CPositionSizer
+  {
 public:
    bool Calculate(const string symbol,const ESignalDirection direction,
                   const double entry_price,const double stop_loss,const double equity,
@@ -101,7 +110,9 @@ public:
       volume=CPositionSizerRules::FloorVolume(raw,volume_min,volume_max,volume_step);
       if(volume<=0.0)
         { error="SIZE_BELOW_MIN"; return false; }
-      volume=NormalizeDouble(volume,VolumeDigits(volume_step));
+      volume=CPositionSizerRules::NormalizeVolume(volume,volume_step);
+      if(volume<=0.0)
+        { error="SIZE_BELOW_MIN"; return false; }
       if(volume*loss_per_lot>risk_budget+0.01)
         { error="RISK_BUDGET_EXCEEDED"; volume=0.0; return false; }
       return true;

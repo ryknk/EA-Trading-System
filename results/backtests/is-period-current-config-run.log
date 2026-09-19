@@ -1,0 +1,50 @@
+STRATEGY_TESTER_BATCH_START total=12 case_file=D:\Dev\EA-Trading-System\mt5\test-config\cases\is-period-2017-2019-current-config.json
+STRATEGY_TESTER_CASE_START case=USDJPY-IS-2017 index=1/12 symbol=USDJPY_HIST from=2017.09.01 to=2017.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\USDJPY-IS-2017-USDJPY_HIST-20170901_20171231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\USDJPY-IS-2017-USDJPY_HIST-20170901_20171231
+STRATEGY_TESTER_CASE_END case=USDJPY-IS-2017 index=1/12 status=Succeeded elapsed_seconds=25 remaining=11 eta_seconds=275
+STRATEGY_TESTER_CASE_START case=USDJPY-IS-2018 index=2/12 symbol=USDJPY_HIST from=2018.01.01 to=2018.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\USDJPY-IS-2018-USDJPY_HIST-20180101_20181231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\USDJPY-IS-2018-USDJPY_HIST-20180101_20181231
+STRATEGY_TESTER_CASE_END case=USDJPY-IS-2018 index=2/12 status=Succeeded elapsed_seconds=52 remaining=10 eta_seconds=385
+STRATEGY_TESTER_CASE_START case=USDJPY-IS-2019 index=3/12 symbol=USDJPY_HIST from=2019.01.01 to=2019.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\USDJPY-IS-2019-USDJPY_HIST-20190101_20191231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\USDJPY-IS-2019-USDJPY_HIST-20190101_20191231
+STRATEGY_TESTER_CASE_END case=USDJPY-IS-2019 index=3/12 status=Succeeded elapsed_seconds=51 remaining=9 eta_seconds=384
+STRATEGY_TESTER_CASE_START case=EURJPY-IS-2017 index=4/12 symbol=EURJPY_HIST from=2017.09.01 to=2017.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\EURJPY-IS-2017-EURJPY_HIST-20170901_20171231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\EURJPY-IS-2017-EURJPY_HIST-20170901_20171231
+STRATEGY_TESTER_CASE_END case=EURJPY-IS-2017 index=4/12 status=Succeeded elapsed_seconds=31 remaining=8 eta_seconds=318
+STRATEGY_TESTER_CASE_START case=EURJPY-IS-2018 index=5/12 symbol=EURJPY_HIST from=2018.01.01 to=2018.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\EURJPY-IS-2018-EURJPY_HIST-20180101_20181231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\EURJPY-IS-2018-EURJPY_HIST-20180101_20181231
+STRATEGY_TESTER_CASE_END case=EURJPY-IS-2018 index=5/12 status=Succeeded elapsed_seconds=75 remaining=7 eta_seconds=328
+STRATEGY_TESTER_CASE_START case=EURJPY-IS-2019 index=6/12 symbol=EURJPY_HIST from=2019.01.01 to=2019.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\EURJPY-IS-2019-EURJPY_HIST-20190101_20191231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\EURJPY-IS-2019-EURJPY_HIST-20190101_20191231
+STRATEGY_TESTER_CASE_END case=EURJPY-IS-2019 index=6/12 status=Succeeded elapsed_seconds=58 remaining=6 eta_seconds=292
+STRATEGY_TESTER_CASE_START case=EURUSD-IS-2017 index=7/12 symbol=EURUSD_HIST from=2017.09.01 to=2017.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\EURUSD-IS-2017-EURUSD_HIST-20170901_20171231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\EURUSD-IS-2017-EURUSD_HIST-20170901_20171231
+STRATEGY_TESTER_CASE_END case=EURUSD-IS-2017 index=7/12 status=Succeeded elapsed_seconds=31 remaining=5 eta_seconds=231
+STRATEGY_TESTER_CASE_START case=EURUSD-IS-2018 index=8/12 symbol=EURUSD_HIST from=2018.01.01 to=2018.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\EURUSD-IS-2018-EURUSD_HIST-20180101_20181231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\EURUSD-IS-2018-EURUSD_HIST-20180101_20181231
+STRATEGY_TESTER_CASE_END case=EURUSD-IS-2018 index=8/12 status=Succeeded elapsed_seconds=87 remaining=4 eta_seconds=205
+STRATEGY_TESTER_CASE_START case=EURUSD-IS-2019 index=9/12 symbol=EURUSD_HIST from=2019.01.01 to=2019.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\EURUSD-IS-2019-EURUSD_HIST-20190101_20191231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\EURUSD-IS-2019-EURUSD_HIST-20190101_20191231
+STRATEGY_TESTER_CASE_END case=EURUSD-IS-2019 index=9/12 status=Succeeded elapsed_seconds=63 remaining=3 eta_seconds=158
+STRATEGY_TESTER_CASE_START case=GBPJPY-IS-2017 index=10/12 symbol=GBPJPY_HIST from=2017.09.01 to=2017.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\GBPJPY-IS-2017-GBPJPY_HIST-20170901_20171231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\GBPJPY-IS-2017-GBPJPY_HIST-20170901_20171231
+STRATEGY_TESTER_CASE_END case=GBPJPY-IS-2017 index=10/12 status=Succeeded elapsed_seconds=27 remaining=2 eta_seconds=100
+STRATEGY_TESTER_CASE_START case=GBPJPY-IS-2018 index=11/12 symbol=GBPJPY_HIST from=2018.01.01 to=2018.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\GBPJPY-IS-2018-GBPJPY_HIST-20180101_20181231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\GBPJPY-IS-2018-GBPJPY_HIST-20180101_20181231
+STRATEGY_TESTER_CASE_END case=GBPJPY-IS-2018 index=11/12 status=Succeeded elapsed_seconds=77 remaining=1 eta_seconds=52
+STRATEGY_TESTER_CASE_START case=GBPJPY-IS-2019 index=12/12 symbol=GBPJPY_HIST from=2019.01.01 to=2019.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\GBPJPY-IS-2019-GBPJPY_HIST-20190101_20191231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\GBPJPY-IS-2019-GBPJPY_HIST-20190101_20191231
+STRATEGY_TESTER_CASE_END case=GBPJPY-IS-2019 index=12/12 status=Succeeded elapsed_seconds=82 remaining=0 eta_seconds=0
+STRATEGY_TESTER_BATCH_COMPLETED total=12 succeeded=12 failed=0 manifest=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\manifest.json summary=D:\Dev\EA-Trading-System\results\backtests\20260917-222112-cases\summary.csv

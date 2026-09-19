@@ -1,0 +1,18 @@
+{
+  "description": "mfe_r低下パターンの資産クラス依存性を確認する探索的追加測定。USDJPY/EURJPY/EURUSD/GBPJPY（すべてJPY/EURクロス、相関が高い可能性）とは異なる資産クラス（JP225=日本株指数、US30=米国株指数、XAUUSD=金）で同じ傾向が見られるかを確認する。パラメータ調整・Fold1-5への適合には一切使わない初見資産であり、Final Holdoutやproduction判定の根拠にはしない。あくまで『トレンドの伸びしろ縮小が通貨クロス固有の現象か、より広い市場構造変化か』を切り分けるための参考情報。開始日は実データ最古日（JP225/US30=2020-04-01、XAUUSD=2022-06-28）からDEC-025と同じインジケーターウォームアップ制約（約9-10か月、テスト実行中に指標が後から回復しないため十分な余裕を見て12か月）を確保して補正した（2026-09-17）。あわせて、`InpMaxSpreadPoints`（既定30、通貨ペア前提の単位）がこれらの資産のPoint単位・価格水準と全く合わず、全候補がSPREAD_TOO_WIDEで拒否される事象を確認したため、各資産の実測spread_points分布（CANDIDATE.spread_points、JP225=50,000〜450,000、US30=15,000〜170,000、XAUUSD=2,700〜50,000）を上回る値へ緩和した専用テンプレート（StrategyTester-Generic-JP225-H1.ini=500,000、StrategyTester-Generic-US30-H1.ini=200,000、StrategyTester-Generic-XAUUSD-H1.ini=60,000）を使用する。他の全パラメータは4銘柄の確定設定と同一（Genericテンプレートからの差分はInpMaxSpreadPointsのみ）。",
+  "cases": [
+    { "case_name": "JP225-2021", "symbol": "JP225_HIST", "from_date": "2021.04.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-JP225-H1.ini" },
+    { "case_name": "JP225-2022", "symbol": "JP225_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-JP225-H1.ini" },
+    { "case_name": "JP225-2023", "symbol": "JP225_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-JP225-H1.ini" },
+    { "case_name": "JP225-2024", "symbol": "JP225_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-JP225-H1.ini" },
+    { "case_name": "JP225-2526", "symbol": "JP225_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-JP225-H1.ini" },
+    { "case_name": "US30-2021", "symbol": "US30_HIST", "from_date": "2021.04.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US30-H1.ini" },
+    { "case_name": "US30-2022", "symbol": "US30_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US30-H1.ini" },
+    { "case_name": "US30-2023", "symbol": "US30_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US30-H1.ini" },
+    { "case_name": "US30-2024", "symbol": "US30_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US30-H1.ini" },
+    { "case_name": "US30-2526", "symbol": "US30_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-US30-H1.ini" },
+    { "case_name": "XAUUSD-2023", "symbol": "XAUUSD_HIST", "from_date": "2023.07.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-XAUUSD-H1.ini" },
+    { "case_name": "XAUUSD-2024", "symbol": "XAUUSD_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-XAUUSD-H1.ini" },
+    { "case_name": "XAUUSD-2526", "symbol": "XAUUSD_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-XAUUSD-H1.ini" }
+  ]
+}

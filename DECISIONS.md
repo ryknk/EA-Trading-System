@@ -800,3 +800,140 @@ OOS分析（`python.analysis.trade_breakdown`、TASKS.md 2.1.3節）で、トレ
 * 追加: `mt5/Include/Trading/PositionManager.mqh`（`CTrendReversalExitRules`・`CTrendReversalTracker`・`CloseOnTrendReversal`）、`mt5/Include/Trading/PositionExitEvaluator.mqh`（`EvaluateTrendReversalExits`）、`mt5/Include/Strategy/TrendFollowingStrategy.mqh`（`CurrentMarketRegimeTrend`）
 * 変更: `mt5/Include/Core/Config.mqh`・`mt5/Experts/CoreEA.mq5`（設定4件）、`mt5/Include/Core/EAController.mqh`（OnTick呼び出し追加）、`mt5/Include/Logging/TradeLogger.mqh`・`python/analysis/reports.py`（新規イベント`TREND_REVERSAL_EXIT`許可リスト追加）、`python/analysis/trade_breakdown.py`（`trend_reversal_exit_summary`）、`contracts/trade-breakdown-report.schema.json`
 * MQL5コンパイル（13ターゲット、0 errors/0 warnings）・全12 Script Test PASS、Pythonテスト70件PASS確認済み（2026-09-12）。Strategy TesterによるBaseline/ON比較・OOS/Final Holdoutでの効果検証は未実施（NOT VERIFIED、TASKS.md 2.1.3節参照）。
+
+
+# DEC-033: 非FX資産のCustom Symbolは実Symbolを複製せず手動で仕様を設定し、証拠金計算はCFDモードを使う
+
+**状態:** 採用（JP225_HIST・US30_HIST・XAUUSD_HISTの3銘柄とも適用・EA動作確認済み、2026-09-19）
+
+## 背景
+
+DEC-023のCustom Symbol方式を、他資産クラス（JP225・US30・XAUUSD）の追加測定へ流用した（TASKS.md 2.1.4節 追加分析3）。現行EAを同一パラメータのまま実行しても取引が1件も成立しなかった。切り分けの結果（2026-09-19）、EA側の不具合ではなく、Custom Symbolの仕様が未設定であることが原因と確定した。
+
+* 接続先Broker（OANDA-Japan MT5 Demo）の全51銘柄はFXのみで、JP225・US30・XAUUSDの実Symbolが存在しない。複製元がないままCustom Symbolを作成したため、仕様が初期値のままになっていた（Digits=4、Point=0.0001、契約サイズ=100000、Volume Min/Max/Step=1e-8/1e-7/1e-8、利益通貨が銘柄名の切れ端`25_`等）。複製元に指定した銘柄名は、当時のログが残っておらず未確認。
+* JP225・US30の`TICK_VALUE_UNAVAILABLE`: 利益通貨が不正で`OrderCalcProfit`が損益0を返し、フォールバックもTickValue=0のため。
+* XAUUSDの`RISK_STATE_UNAVAILABLE`（reasonは`INVALID_EXPOSURE_INPUT`、`RiskManager.mqh:176`経由の`ExposureGuard.mqh:51`）: 契約サイズ100000のまま1ロット損失が約3.1億円となり、ロットがVolume Max（1e-7）に張り付いた。`PositionSizer::VolumeDigits(1e-8)`が0桁を返し、`NormalizeDouble`で0になったまま`Calculate()`がtrueを返すためと推定（コード解析による推定、volume=0だったことは監査ログのreasonで確認）。
+* `SPREAD_TOO_WIDE`: 実スプレッドの超過ではなく、Point定義の誤り（実際のスプレッドはJP225約6円、XAUUSD約0.3〜5ドル程度）。
+
+## 判断
+
+1. **非FX資産のCustom Symbolは、OANDA証券の公開仕様（`https://www.oanda.jp/indices/lineup`、`https://www.oanda.jp/commodity/lineup`）に基づき、`mt5/Tools/ApplyCfdSymbolSpec.mq5`で明示的に仕様を設定する。** 設定項目はDigits、Tick Size、契約サイズ、Volume Min/Step/Max、通貨、CalcMode、証拠金率。Tick Valueは設定せず、Testerの自動計算に任せる（実Symbol複製で正常動作している`EURUSD_HIST`等と同じ扱い）。
+2. **CalcModeはCFD（`SYMBOL_CALC_MODE_CFD`）とする。** 実験（`mt5/Tools/MarginExperimentSymbols.mq5`で作成した複製銘柄）で、Tester内の証拠金計算が次のとおりであることを確認した（JP225、価格約39,834、口座通貨JPY、レバレッジ100）。CFDINDEX（3）とFUTURES（1）は`SYMBOL_MARGIN_INITIAL`（固定額）×証拠金率で計算され、固定額が0のままだと証拠金が0になる。CFDLEVERAGE（4）は口座レバレッジでも割られ40円になる。CFD（2）は数量×契約サイズ×価格×証拠金率で3,983円となり期待どおりだった。
+3. **仕様値（OANDA公開ページ。2026-09-19に原ページの原文で照合し、US30のVolume Maxを250から100へ訂正した。照合結果は下の「原ページとの照合結果」）:**
+
+| 項目 | JP225_HIST | US30_HIST | XAUUSD_HIST |
+| --- | --- | --- | --- |
+| Digits / Point・Tick Size | 1 / 0.1 | 1 / 0.1 | 3 / 0.001（データは小数2桁） |
+| 契約サイズ | 1 | 1 | 100 |
+| Volume Min / Step / Max | 1 / 1 / 10000 | 0.1 / 0.1 / 100 | 0.01 / 0.01（原ページに記載なし）/ 20 |
+| 利益・証拠金通貨 | JPY | USD | USD |
+| 証拠金率 | 10% | 10% | 5% |
+
+4. **Digitsの変更は、MT5がバー履歴（`bases\Custom\history\<symbol>\*.hcc`）を消去する（2026-09-19実測）。** tick履歴（`bases\Custom\ticks\`）は消えない。適用前にtickフォルダとバー履歴（`.hcc`）の両方をバックアップする。バーの再生成には`mt5/Tools/RebuildBarsFromTicks.mq5`（保持tickを`CustomTicksReplace`で同内容のまま書き戻す）を使えるが、**直近月ではterminalのtick読み取りAPIが実データの約1%しか返さず、そのまま書き戻すとtickが欠落する**（JP225 2026-02〜08、US30 2026-05〜08、XAUUSD 2026-08で発生、tickはバックアップから復元済み）。バー再生成は、実行前に`apply=false`で件数を確認し、tickの`.tkc`サイズを実行前後で比較すること。この件は、tickをバックアップから復元し、バー履歴を修復して解消した。tick欠落の原因は、terminalのtick読み取りAPI（`CopyTicksRange`/`CopyTicks`）が直近月で実データの約1%しか返す元からの仕様を知らずに書き戻したこと、Testerのtick数の残差の原因は、その結果から作り直した誤りのバー履歴（tickのない分足にもバーがあり、Testerが合成tickで補う）であることを、未使用のUS500_HISTでの対照実験で確定した（Digits変更自体は原因ではない）。修復は、Digits変更前のバー履歴のバックアップを戻す方法（US30・XAUUSD、Testerのtick数・候補がSep 17と完全一致）、またはバックアップがない場合に、影響月のバーを`BarsFileTool`（削除モード）で削除し、Testerに全tickから生成させて（`mt5/Experts/ExportM1BarsEA.mq5`）ティックのある分足のバーだけを取り込む方法（JP225、候補97/97一致）による。**以後、Custom SymbolのDigitsを変える場合は、事前にtickフォルダとバー履歴（`.hcc`）の両方をバックアップし、`RebuildBarsFromTicks`は使わないこと**（このスクリプトは、terminalのAPI仕様のため直近月のtickを欠落させる。ヘッダーに警告済み）。詳細はTASKS.md 追加分析3の続き参照。
+
+## 理由
+
+* 仕様が初期値のCustom Symbolでは、Point・契約サイズ・Volume・通貨を前提とするEAのリスク計算・スプレッド判定・証拠金計算が成立しない。EA側にフォールバックを足すと、4銘柄（USDJPY/EURJPY/EURUSD/GBPJPY）の売買ロジックへ影響し得るため、Custom Symbol側を修正する。
+* 複製元がない資産では、Broker実仕様を読み取れないため、公開仕様を明示的に記録する。
+
+## 原ページとの照合結果（2026-09-19、公式ページの原文を確認）
+
+出典: [株価指数CFD取扱銘柄](https://www.oanda.jp/indices/lineup)、[商品CFD取扱銘柄](https://www.oanda.jp/commodity/lineup)、[株価指数CFDの取引数量（Lab）](https://www.oanda.jp/lab-education/beginners/aboutcfd/volume/)、[最小取引単位の引き下げのお知らせ（2021-05-26）](https://www.oanda.jp/info/787)。
+
+| 項目 | JP225 | US30 | XAUUSD |
+|---|---|---|---|
+| 呼値（Tick Size） | 0.1 一致 | 0.1 一致 | 0.001 一致 |
+| 通貨 | JPY 一致 | USD 一致 | USD 一致 |
+| 証拠金率（MT5） | 10% 一致 | 10% 一致 | 5% 一致 |
+| 契約サイズ | 1 一致（数量1＝指数×1。Labページ） | 1 一致（価格が1動くと1ドル） | 100 一致（1ロット＝100） |
+| 最小取引単位 | 1 一致 | 0.1 一致 | 0.01 一致 |
+| 取引数量の刻み | 1.00 一致（お知らせ） | 0.10 一致（お知らせ） | 原ページに記載なし（**未確認**、最小0.01から0.01と仮定） |
+| 最大取引数量 | 10,000 一致 | **100（設定は250で不一致→訂正）** | 20ロット 一致 |
+| 最大建玉数量（Custom Symbolへ未設定） | 25,000 | 250 | 30ロット |
+
+* **US30のVolume Max**: 当初の暫定値250は、最大建玉数量（250）を最大取引数量と取り違えた誤りだった。原ページの最大取引数量は100。`mt5/Tools/ApplyCfdSymbolSpec.mq5`を100へ訂正した。US30_HISTの実Symbolの値は、再適用するまで250のまま。承認されたvolumeの最大は0.7ロット（`20260919-132411`・`20260919-162553`のUS30実行）で上限に達しておらず、既存の実行結果は影響を受けない。
+* **時期による仕様の違い（限界）**: US30の最小取引単位は、2021-05-31取引開始より前は1.00だった（同日に0.10へ引き下げ。刻みも0.10単位へ）。Custom Symbolは全期間で0.1のため、2021年5月以前のバックテストの0.1〜0.7ロット（US30 2021-04〜12の実行の一部）は、当時の実Brokerでは発注できなかった数量になる。JP225は同日の変更対象外（従前から最小・刻みとも1.00）。他の過去時点の仕様（最大取引数量、証拠金率、契約サイズ）は公開情報で確認できず、**未確認**（照合したのは2026-09-19時点の現行ページ）。
+* **未確認のまま残る項目**: XAUUSDの取引数量の刻み（原ページに記載なし）、最大建玉数量のCustom Symbolへの設定（`SYMBOL_VOLUME_LIMIT`。EAは使用していないため未設定）、スワップ・スプレッド（原ページに記載なし）。
+
+## 影響
+
+* 追加（すべて新規ファイル）: `mt5/Tools/ApplyCfdSymbolSpec.mq5`、`mt5/Tools/RebuildBarsFromTicks.mq5`、`mt5/Tools/DiagnoseSymbolSpec.mq5`、`mt5/Experts/DiagnoseSymbolSpecEA.mq5`、`mt5/Include/Diagnostics/SymbolSpecDump.mqh`、`mt5/Include/Diagnostics/SymbolBarRebuild.mqh`、`mt5/Tools/CheckSymbolHistory.mq5`、`mt5/Tools/MarginExperimentSymbols.mq5`。EA本体（`mt5/Include`の売買・リスク・戦略コード）と、4銘柄の設定・テンプレートは変更していない。
+* JP225_HISTのバックテスト（2021-04〜12、現行パラメータ）で、RISK_DECISIONが承認10件・POSITION_LIMIT拒否15件となり、`TICK_VALUE_UNAVAILABLE`・`SPREAD_TOO_WIDE`・`RISK_STATE_UNAVAILABLE`が解消したことを確認した（`results/backtests/20260919-131018-JP225_HIST-H1`）。承認時の`required_margin`は約13.5万円、保有中の証拠金維持率は約1,140%。US30_HIST（2021-04〜12、`results/backtests/20260919-132411-US30_HIST-H1`）は承認19件・POSITION_LIMIT拒否14件、`required_margin`約18.5万円、保有中の証拠金維持率約543%。XAUUSD_HIST（2023-07〜12、`results/backtests/20260919-132447-XAUUSD_HIST-H1`）は承認10件・POSITION_LIMIT拒否4件、`required_margin`約5.5万円、保有中の証拠金維持率約2,423%。Tester内の`OrderCalcProfit`/`OrderCalcMargin`は、契約サイズ・通貨換算（USDJPY約150円）と整合する値（US30 1ロットSL幅390.6ドルで-58,618円、XAUUSD 1ロットSL幅20.8ドルで-312,568円）だった。これらは動作確認であり、成績評価・採用判断には使わない。
+* **未確認**: 各値のOANDA公式原ページとの照合、JP225のVolume Step（1か0.1か）、US30の契約サイズ／数量の意味、RebuildBarsFromTicks後のtick内容の全期間一致（2024-03のみ件数一致を確認）、`PositionSizer::VolumeDigits`の推定原因。
+* 実験用の複製銘柄（`JP225_XMCFD`・`JP225_XMLEV`・`JP225_XMFUT`・`JP225_XMIDX`）は実験後に削除済み（2026-09-19、`MarginExperimentSymbols`の`InpDelete=true`）。
+* **既知の残課題**: EAは`InpMaxSpreadPoints`（Point単位）を使うため、Pointが正しくなった非FX資産でも既定値30では全候補が拒否される。専用テンプレートで値を決める必要がある（決め方は未決定）。
+* Rollback: `symbols.custom.dat`（`bases\`直下）のバックアップをMT5停止中に戻し、tickバックアップを戻したうえで`RebuildBarsFromTicks`でバーを再生成する。
+
+
+# DEC-034: 非FX資産のInpMaxSpreadPointsは「FXの30 pointsと同じ価格比」で事前に決め、PositionSizerのVolume正規化にゼロ拒否の防御を入れる
+
+**状態:** 採用（2026-09-19）
+
+## 背景
+
+DEC-033でJP225・US30・XAUUSDのCustom Symbolに正しいPointを設定した結果、`InpMaxSpreadPoints`（既定30、Point単位）が非FX資産では合わなくなった（Pointが0.1のJP225で30 points＝3円は、通常のスプレッド5〜10円より狭く、全候補が拒否される）。それまでのテンプレートは、Pointが誤っていた状態で実測値を見て緩めた値（JP225 500000、US30 200000、XAUUSD 60000）で、事実上フィルターを無効化していた。また、`PositionSizer::VolumeDigits`は刻みが1e-8以下だと0桁を返し、`NormalizeDouble`でvolumeが0になったまま`Calculate()`がtrueを返す（初期値のCustom Symbolで実際に発生）。
+
+## 判断
+
+### 1. InpMaxSpreadPointsの決め方
+
+**「FX4銘柄の30 pointsが価格に占める割合の中央値（0.0227%）を、非FX資産の基準価格へ適用し、Point単位へ換算して10 points単位に丸める」とする。** 閾値は、事前にルールで決め、バックテストの結果（損益・勝率・スプレッド超過率）を見て調整しない。
+
+* FX4銘柄の実測: 30 pointsは価格の0.0186〜0.0266%（USDJPY 0.0232%、EURJPY 0.0222%、EURUSD 0.0266%、GBPJPY 0.0186%、中央値0.0227%）で、候補の93.6〜98.3%が通過する。
+* 基準価格は、各資産の候補時の中央値価格を丸めた値（JP225 48,000、US30 49,000、XAUUSD 3,400）。価格水準だけを使い、スプレッドの分布や成績は使わない。
+* 結果: **JP225 110 points（約11円）、US30 110 points（約11ポイント）、XAUUSD 770 points（約0.77ドル）**。`mt5/test-config/StrategyTester-Generic-{JP225,US30,XAUUSD}-H1.ini`へ反映した。
+* 参考（判断には使っていない）: 反映後の短期間実行（JP225 2021-04〜12、US30 2021-04〜12、XAUUSD 2023-07〜12）で、`SPREAD_TOO_WIDE`はJP225 8%（2/25件）、US30 0%、XAUUSD 0%。FX4銘柄の2〜6%と同水準で、閾値は調整しない。
+
+### 2. PositionSizer::VolumeDigitsの防御
+
+**防御を入れる（必要）。** 正規化後のvolumeが0以下なら、`Calculate()`は`SIZE_BELOW_MIN`で拒否する（新しい理由コードは追加せず、既存のコードを使う）。
+
+* `VolumeDigits`と、正規化を行う`NormalizeVolume`を`CPositionSizerRules`のstaticとして純粋関数に切り出した（ロジックは元のまま）。`Calculate()`は`NormalizeVolume`の結果が0以下なら拒否する。
+* 危険性: volume=0のまま成功でも、後段のExposureGuardが拒否する（fail-safe）ため、誤発注には至らない。ただし理由コードが`RISK_STATE_UNAVAILABLE`（リスク状態不明）となり、原因の切り分けを誤らせるため、Risk Managerの最終権限・原因の明確さの観点で入れる。
+* 4銘柄への無影響: 正常なBroker仕様（刻み0.01・0.1・1・0.001）では、正規化の前後でvolumeは変わらない（単体テストで確認）。Final Holdout 4銘柄（181トレード）をコード変更後に再実行し、取引数・純損益・PF・全335件のRISK_DECISION（volume・risk_budget含む）が修正前と完全に一致した（`results/backtests/20260919-133712-cases`と`20260919-161758-cases`）。
+
+## 理由
+
+* 価格比で揃えれば、FXで検証済みのフィルターの厳しさを非FX資産へ、実データの分布や成績を見ずに移せる。データを見て閾値を決めるより、過学習を避けられる。
+* コードの変更は最小（関数の切り出しと、0以下の拒否1か所）にとどめ、既存の売買・リスクロジックへ影響しない形にした。
+
+## 影響
+
+* 変更: `mt5/Include/Risk/PositionSizer.mqh`、`mt5/Tests/TestPositionSizer.mq5`（アサーション9件追加）、`mt5/test-config/StrategyTester-Generic-{JP225,US30,XAUUSD}-H1.ini`（`InpMaxSpreadPoints`）。
+* 検証: MQL5コンパイル13ターゲットが0 errors/0 warnings、全12 Script Test PASS、Final Holdout 4銘柄の再実行で完全一致（2026-09-19）。
+* 限界: 閾値はPoint単位の固定値のため、価格水準が大きく動くと（JP225は約3.3万〜6.9万）価格比が変わる。価格比で指定できるEAパラメータの追加は、設計変更のため今回は行わない。基準価格は、最初の追加測定で見えた価格水準に依存する（成績には依存しない）。
+* 未確認: OANDA公式のスプレッド水準との照合。
+* 価格水準・スプレッド水準が変わった場合の妥当性は、下の「追加確認」で全期間のtickを集計して確認した。
+
+## 追加確認: 全期間での閾値の妥当性（2026-09-19、読み取り専用、閾値は変更しない）
+
+`mt5/Tools/SpreadProfile.mq5`で、Custom Symbolのtickから月別のスプレッド（(ask-bid)/Point）と価格水準を集計した。各時間の最初のtick（H1候補の評価時点に近い）の年別結果は次のとおり（over_fixedは現行の固定値を超えた割合、over_ratioは「その年の価格×0.0227%」を超えた割合）。
+
+| 銘柄 | 年 | 平均価格 | スプレッド中央値(points) | 固定値/価格比換算 | over_fixed | over_ratio |
+|---|---|---|---|---|---|---|
+| JP225 | 2021 | 28,855 | 60 | 1.69 | 4.1% | 5.9% |
+| JP225 | 2023 | 30,657 | 60 | 1.58 | 3.3% | 5.7% |
+| JP225 | 2024 | 38,343 | 100 | 1.27 | 15.1% | 56.0% |
+| JP225 | 2025 | 41,790 | 100 | 1.16 | 10.1% | 40.2% |
+| JP225 | 2026 | 60,289 | 100 | 0.80 | 30.7% | 23.3% |
+| US30 | 2021 | 34,051 | 20 | 1.43 | 0.1% | 0.4% |
+| US30 | 2024 | 40,321 | 25 | 1.20 | 0.4% | 0.5% |
+| US30 | 2026 | 49,446 | 32 | 0.98 | 1.4% | 1.4% |
+| XAUUSD | 2022 | 1,731 | 260 | 1.96 | 0.6% | 4.3% |
+| XAUUSD | 2024 | 2,389 | 390 | 1.42 | 1.6% | 5.0% |
+| XAUUSD | 2025 | 3,442 | 765 | 0.98 | 43.1% | 38.2% |
+| XAUUSD | 2026 | 4,588 | 690 | 0.74 | 41.6% | 12.7% |
+
+* **US30**: 全期間で超過率2%以下。固定値110 pointsは、価格が2.5万〜5.3万に動いても問題ない。
+* **JP225**: 価格の上昇より、**Broker側のスプレッド水準の変化が支配的**。中央値が2024年前半に約5円から10円へ倍増し、以後の超過率は10〜31%になる。2026年は価格上昇（6万超）で価格比換算より固定値が厳しくなる（0.80倍）。
+* **XAUUSD**: 中央値が2024年の約0.39ドルから2025年の約0.77ドルへ倍増し、固定値770 pointsは2025年以降で候補の約4割を拒否する。
+* **価格比の方式でも解決しない**: 価格比換算（over_ratio）でもJP225 2024年は56%、XAUUSD 2025年は38%が超過する。スプレッドが価格に比例して動かず、価格水準よりスプレッド水準の変化が大きいため。固定値のままで問題ないのは、US30の全期間と、スプレッドが安定していた期間（JP225〜2023年、XAUUSD〜2024年）に限られる。
+* 先の短期間実行（JP225 2021-04〜12、US30 2021-04〜12、XAUUSD 2023-07〜12）が低い超過率だったのは、スプレッドが安定した期間だったため。全期間へ外挿できない。
+
+**判断:** 閾値は変更しない。データの分布を見て閾値を調整すれば、DEC-034の「事前固定」の原則を崩し、初見資産のパラメータ探索になるため。代わりに、次を運用ルールとする。
+
+* 非FX資産の結果を報告するときは、必ず`SPREAD_TOO_WIDE`の割合を併記する。2024年以降のJP225と2025年以降のXAUUSDは、スプレッドフィルターの拒否が結果を左右する期間として扱い、他の期間と単純に比較しない。
+* 価格比で閾値を指定するEAパラメータや、期間ごとの閾値は、設計変更となるため導入しない（必要なら別のDECで判断する）。
+
+**限界:** 直近月（JP225 2026年2月以降、US30 2026年5月以降、XAUUSD 2026年8月）は、terminalのtick読み取りAPIが約1%しか返さない（DEC-033）ため標本が間引かれている。JP225の2020年前半はtickが疎（2020年4月は7,624件）で、統計として弱い。各時間の最初のtickはAPI経由の値で、Testerが評価する最初のtickと厳密には一致しない場合がある。OANDAの公式スプレッドとの照合は未実施。
+* Rollback: `git checkout -- mt5/Include/Risk/PositionSizer.mqh mt5/Tests/TestPositionSizer.mq5`でコードを戻し、テンプレートの`InpMaxSpreadPoints`は元の値（500000/200000/60000）へ戻す。

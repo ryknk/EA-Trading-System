@@ -1,0 +1,25 @@
+{
+  "description": "Final Holdout原因分析用の追加測定。現行確定設定一式（mt5/Include/Core/Config.mqhのSetDefaultConfig()、2026-09-17時点、EarlyAdverseExit ON TriggerR=0.75・StagedPipeline ON・AdxMin=40等）をそのまま使い、Walk Forward期間（2020-2024年次Fold、4銘柄）を再測定する。年次・銘柄別のTP到達率（実質勝率）の推移を確認し、Final Holdout（2025-2026）で観測された劣化トレンドが2020-2024年から既に始まっていたか、全銘柄に共通か銘柄固有かを切り分ける目的。パラメータ変更は行わない（StrategyTester-Generic-H1.ini使用、テンプレートに明示のない項目はコード既定値をそのまま使用）。",
+  "cases": [
+    { "case_name": "USDJPY-WF-2020", "symbol": "USDJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDJPY-WF-2021", "symbol": "USDJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDJPY-WF-2022", "symbol": "USDJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDJPY-WF-2023", "symbol": "USDJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDJPY-WF-2024", "symbol": "USDJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURJPY-WF-2020", "symbol": "EURJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURJPY-WF-2021", "symbol": "EURJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURJPY-WF-2022", "symbol": "EURJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURJPY-WF-2023", "symbol": "EURJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURJPY-WF-2024", "symbol": "EURJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURUSD-WF-2020", "symbol": "EURUSD_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURUSD-WF-2021", "symbol": "EURUSD_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURUSD-WF-2022", "symbol": "EURUSD_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURUSD-WF-2023", "symbol": "EURUSD_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURUSD-WF-2024", "symbol": "EURUSD_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPJPY-WF-2020", "symbol": "GBPJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPJPY-WF-2021", "symbol": "GBPJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPJPY-WF-2022", "symbol": "GBPJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPJPY-WF-2023", "symbol": "GBPJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPJPY-WF-2024", "symbol": "GBPJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" }
+  ]
+}

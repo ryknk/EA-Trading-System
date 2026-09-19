@@ -1,0 +1,82 @@
+STRATEGY_TESTER_BATCH_START total=20 case_file=D:\Dev\EA-Trading-System\mt5\test-config\cases\walk-forward-2020-2024-current-config.json
+STRATEGY_TESTER_CASE_START case=USDJPY-WF-2020 index=1/20 symbol=USDJPY_HIST from=2020.01.01 to=2020.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\USDJPY-WF-2020-USDJPY_HIST-20200101_20201231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\USDJPY-WF-2020-USDJPY_HIST-20200101_20201231
+STRATEGY_TESTER_CASE_END case=USDJPY-WF-2020 index=1/20 status=Succeeded elapsed_seconds=58 remaining=19 eta_seconds=1102
+STRATEGY_TESTER_CASE_START case=USDJPY-WF-2021 index=2/20 symbol=USDJPY_HIST from=2021.01.01 to=2021.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\USDJPY-WF-2021-USDJPY_HIST-20210101_20211231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\USDJPY-WF-2021-USDJPY_HIST-20210101_20211231
+STRATEGY_TESTER_CASE_END case=USDJPY-WF-2021 index=2/20 status=Succeeded elapsed_seconds=52 remaining=18 eta_seconds=990
+STRATEGY_TESTER_CASE_START case=USDJPY-WF-2022 index=3/20 symbol=USDJPY_HIST from=2022.01.01 to=2022.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\USDJPY-WF-2022-USDJPY_HIST-20220101_20221231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\USDJPY-WF-2022-USDJPY_HIST-20220101_20221231
+STRATEGY_TESTER_CASE_END case=USDJPY-WF-2022 index=3/20 status=Succeeded elapsed_seconds=80 remaining=17 eta_seconds=1077
+STRATEGY_TESTER_CASE_START case=USDJPY-WF-2023 index=4/20 symbol=USDJPY_HIST from=2023.01.01 to=2023.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\USDJPY-WF-2023-USDJPY_HIST-20230101_20231231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\USDJPY-WF-2023-USDJPY_HIST-20230101_20231231
+STRATEGY_TESTER_CASE_END case=USDJPY-WF-2023 index=4/20 status=Succeeded elapsed_seconds=46 remaining=16 eta_seconds=944
+STRATEGY_TESTER_CASE_START case=USDJPY-WF-2024 index=5/20 symbol=USDJPY_HIST from=2024.01.01 to=2024.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\USDJPY-WF-2024-USDJPY_HIST-20240101_20241231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\USDJPY-WF-2024-USDJPY_HIST-20240101_20241231
+STRATEGY_TESTER_CASE_END case=USDJPY-WF-2024 index=5/20 status=Succeeded elapsed_seconds=56 remaining=15 eta_seconds=876
+STRATEGY_TESTER_CASE_START case=EURJPY-WF-2020 index=6/20 symbol=EURJPY_HIST from=2020.01.01 to=2020.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURJPY-WF-2020-EURJPY_HIST-20200101_20201231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURJPY-WF-2020-EURJPY_HIST-20200101_20201231
+STRATEGY_TESTER_CASE_END case=EURJPY-WF-2020 index=6/20 status=Succeeded elapsed_seconds=61 remaining=14 eta_seconds=824
+STRATEGY_TESTER_CASE_START case=EURJPY-WF-2021 index=7/20 symbol=EURJPY_HIST from=2021.01.01 to=2021.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURJPY-WF-2021-EURJPY_HIST-20210101_20211231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURJPY-WF-2021-EURJPY_HIST-20210101_20211231
+STRATEGY_TESTER_CASE_END case=EURJPY-WF-2021 index=7/20 status=Succeeded elapsed_seconds=58 remaining=13 eta_seconds=763
+STRATEGY_TESTER_CASE_START case=EURJPY-WF-2022 index=8/20 symbol=EURJPY_HIST from=2022.01.01 to=2022.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURJPY-WF-2022-EURJPY_HIST-20220101_20221231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURJPY-WF-2022-EURJPY_HIST-20220101_20221231
+STRATEGY_TESTER_CASE_END case=EURJPY-WF-2022 index=8/20 status=Succeeded elapsed_seconds=98 remaining=12 eta_seconds=764
+STRATEGY_TESTER_CASE_START case=EURJPY-WF-2023 index=9/20 symbol=EURJPY_HIST from=2023.01.01 to=2023.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURJPY-WF-2023-EURJPY_HIST-20230101_20231231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURJPY-WF-2023-EURJPY_HIST-20230101_20231231
+STRATEGY_TESTER_CASE_END case=EURJPY-WF-2023 index=9/20 status=Succeeded elapsed_seconds=51 remaining=11 eta_seconds=684
+STRATEGY_TESTER_CASE_START case=EURJPY-WF-2024 index=10/20 symbol=EURJPY_HIST from=2024.01.01 to=2024.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURJPY-WF-2024-EURJPY_HIST-20240101_20241231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURJPY-WF-2024-EURJPY_HIST-20240101_20241231
+STRATEGY_TESTER_CASE_END case=EURJPY-WF-2024 index=10/20 status=Succeeded elapsed_seconds=62 remaining=10 eta_seconds=622
+STRATEGY_TESTER_CASE_START case=EURUSD-WF-2020 index=11/20 symbol=EURUSD_HIST from=2020.01.01 to=2020.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURUSD-WF-2020-EURUSD_HIST-20200101_20201231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURUSD-WF-2020-EURUSD_HIST-20200101_20201231
+STRATEGY_TESTER_CASE_END case=EURUSD-WF-2020 index=11/20 status=Succeeded elapsed_seconds=80 remaining=9 eta_seconds=574
+STRATEGY_TESTER_CASE_START case=EURUSD-WF-2021 index=12/20 symbol=EURUSD_HIST from=2021.01.01 to=2021.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURUSD-WF-2021-EURUSD_HIST-20210101_20211231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURUSD-WF-2021-EURUSD_HIST-20210101_20211231
+STRATEGY_TESTER_CASE_END case=EURUSD-WF-2021 index=12/20 status=Succeeded elapsed_seconds=69 remaining=8 eta_seconds=514
+STRATEGY_TESTER_CASE_START case=EURUSD-WF-2022 index=13/20 symbol=EURUSD_HIST from=2022.01.01 to=2022.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURUSD-WF-2022-EURUSD_HIST-20220101_20221231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURUSD-WF-2022-EURUSD_HIST-20220101_20221231
+STRATEGY_TESTER_CASE_END case=EURUSD-WF-2022 index=13/20 status=Succeeded elapsed_seconds=125 remaining=7 eta_seconds=482
+STRATEGY_TESTER_CASE_START case=EURUSD-WF-2023 index=14/20 symbol=EURUSD_HIST from=2023.01.01 to=2023.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURUSD-WF-2023-EURUSD_HIST-20230101_20231231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURUSD-WF-2023-EURUSD_HIST-20230101_20231231
+STRATEGY_TESTER_CASE_END case=EURUSD-WF-2023 index=14/20 status=Succeeded elapsed_seconds=57 remaining=6 eta_seconds=408
+STRATEGY_TESTER_CASE_START case=EURUSD-WF-2024 index=15/20 symbol=EURUSD_HIST from=2024.01.01 to=2024.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURUSD-WF-2024-EURUSD_HIST-20240101_20241231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\EURUSD-WF-2024-EURUSD_HIST-20240101_20241231
+STRATEGY_TESTER_CASE_END case=EURUSD-WF-2024 index=15/20 status=Succeeded elapsed_seconds=64 remaining=5 eta_seconds=339
+STRATEGY_TESTER_CASE_START case=GBPJPY-WF-2020 index=16/20 symbol=GBPJPY_HIST from=2020.01.01 to=2020.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\GBPJPY-WF-2020-GBPJPY_HIST-20200101_20201231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\GBPJPY-WF-2020-GBPJPY_HIST-20200101_20201231
+STRATEGY_TESTER_CASE_END case=GBPJPY-WF-2020 index=16/20 status=Succeeded elapsed_seconds=60 remaining=4 eta_seconds=269
+STRATEGY_TESTER_CASE_START case=GBPJPY-WF-2021 index=17/20 symbol=GBPJPY_HIST from=2021.01.01 to=2021.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\GBPJPY-WF-2021-GBPJPY_HIST-20210101_20211231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\GBPJPY-WF-2021-GBPJPY_HIST-20210101_20211231
+STRATEGY_TESTER_CASE_END case=GBPJPY-WF-2021 index=17/20 status=Succeeded elapsed_seconds=56 remaining=3 eta_seconds=200
+STRATEGY_TESTER_CASE_START case=GBPJPY-WF-2022 index=18/20 symbol=GBPJPY_HIST from=2022.01.01 to=2022.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\GBPJPY-WF-2022-GBPJPY_HIST-20220101_20221231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\GBPJPY-WF-2022-GBPJPY_HIST-20220101_20221231
+STRATEGY_TESTER_CASE_END case=GBPJPY-WF-2022 index=18/20 status=Succeeded elapsed_seconds=78 remaining=2 eta_seconds=135
+STRATEGY_TESTER_CASE_START case=GBPJPY-WF-2023 index=19/20 symbol=GBPJPY_HIST from=2023.01.01 to=2023.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\GBPJPY-WF-2023-GBPJPY_HIST-20230101_20231231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\GBPJPY-WF-2023-GBPJPY_HIST-20230101_20231231
+STRATEGY_TESTER_CASE_END case=GBPJPY-WF-2023 index=19/20 status=Succeeded elapsed_seconds=52 remaining=1 eta_seconds=66
+STRATEGY_TESTER_CASE_START case=GBPJPY-WF-2024 index=20/20 symbol=GBPJPY_HIST from=2024.01.01 to=2024.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\GBPJPY-WF-2024-GBPJPY_HIST-20240101_20241231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\GBPJPY-WF-2024-GBPJPY_HIST-20240101_20241231
+STRATEGY_TESTER_CASE_END case=GBPJPY-WF-2024 index=20/20 status=Succeeded elapsed_seconds=59 remaining=0 eta_seconds=0
+STRATEGY_TESTER_BATCH_COMPLETED total=20 succeeded=20 failed=0 manifest=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\manifest.json summary=D:\Dev\EA-Trading-System\results\backtests\20260917-214524-cases\summary.csv
