@@ -16,6 +16,12 @@
 
 結果は `results/backtests/<run-id>-<Symbol>-<Period>/` へ保存する（`<Symbol>`・`<Period>`はTemplateの`[Tester]`セクションから読み取る。`-Symbol`未指定時は`StrategyTester-USDJPY-H1.ini`の`Symbol=USDJPY_HIST`がそのまま使われるため、`<run-id>-USDJPY_HIST-H1/`となる）。メタデータは `results/backtests/run-metadata.template.json` を複製し、EA・Strategy・Config版と全入力値を記録する。
 
+## tickデータの取得・MT5投入（2026-09-21追加、`DECISIONS.md` DEC-036）
+
+OANDA以外のヒストリカルtick（Dukascopy等）の取得・正規化・検証・MT5 Custom Symbolへの投入は`tools/tick-data.ps1`で行う。取込後のCustom Symbolは、上記の`-CaseFile`ケースの`symbol`に指定すればStrategy Testerで使える。
+
+**2026-09-22: 既存の`*_HIST`10銘柄（OANDA由来）を再投入した**。旧Importerがバッチごとに末尾128 tick（全体で0.641%）を保存していなかったため、元zipから補った（`DECISIONS.md` DEC-037、[tickデータパイプライン](tick-data-pipeline.md)）。**このため、それ以前に得たバックテスト結果（IS・Walk Forward・Final Holdout・他資産確認）は再投入前のtickによる値**で、再実行していない（バーも再生成されており、結果が微小に変わり得る。影響は未評価）。
+
 ## 複数ケース実行（Cross-Asset Validation、OOS、Walk Forward、Stress Test等の共通基盤）
 
 `tools/run-strategy-tester.ps1`は`-CaseFile`を指定すると、複数銘柄・複数期間のケースを同じ1ケース実行処理で順番に実行する汎用Runnerとして動作する（`-CaseFile`未指定時は従来どおりの単体実行）。用途別の専用Runnerは追加せず、Cross-Asset Validation・OOS・Walk Forward・Final Holdout・Stress Testいずれもこの基盤を使う。

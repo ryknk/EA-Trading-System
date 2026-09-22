@@ -1025,3 +1025,66 @@ DEC-033でJP225・US30・XAUUSDのCustom Symbolに正しいPointを設定した�
 
 * 変更: `mt5/Tools/ApplyCfdSymbolSpec.mq5`（`LoadSpec`に3銘柄）、`mt5/test-config/StrategyTester-Generic-{US100,US500,US2000}-H1.ini`（新規）。Custom Symbolの実体: `US100_HIST`・`US500_HIST`・`US2000_HIST`の仕様。
 * Rollback: バックアップ（`backup-before-us3-spec`）から`symbols.custom.dat`・.hcc・tickを戻す。コードは`git checkout -- mt5/Tools/ApplyCfdSymbolSpec.mq5`、テンプレート3件は削除。
+
+
+# DEC-036: ヒストリカルtickの取得・変換はProvider交換式のPythonパイプラインとし、MT5投入は既存Importerを再利用する
+
+**状態:** 採用（2026-09-21）。実Dukascopy・MT5実機での確認結果は下の「確認結果」を参照。
+
+## 背景
+
+長期バックテストのtickは、OANDAのWeb版ダウンロード（手動、DEC-023）に依存していた。別データソース（Dukascopy等）を、手作業なしに再現可能な手順で取得し、Strategy Testerで使える形にする必要があった。
+
+## 決定
+
+1. **処理本体は`python/tickdata/`（Python）に置き、Node.js（dukascopy-node）は1チャンク分を取得する薄いAdapter（`tools/tick-data/dukascopy-download.mjs`）に限る。** chunk分割・retry・resume・checksum・検証・変換を2言語で二重実装しない。
+2. **Providerは`TickProvider`（`download_chunk`・`iter_rows`）で交換可能にし、後段は共通tick（UTCエポックms＋bid/ask/volume）だけを扱う。** symbol・provider・期間は行ではなくmanifestで持つ。
+3. **MT5投入は既存`ImportOandaTicks.mq5`を再利用し（tick欠落の修正はDEC-037）、MT5標準のタブCSVへ変換して渡す。** Providerごとの別Importerは作らない。実Symbolは変更せず、既存`*_HIST`とは別名のCustom Symbolへ投入する。既存symbolへの追記・再投入は既定で拒否し、`-AllowExistingSymbol`で明示した場合のみ行う（完全にやり直す場合は`-ResetCustomSymbol`で削除して再作成）。
+4. **MT5サーバー時刻への変換規則（`server_time`）は必須の明示設定とする。** D1・H4の境界が変わるため、既定値は置かない。OANDA-Japan MT5は`ny_close`（NY現地時刻+7時間）であることを既存OANDA tickで確認した。
+5. **検証をconvertの前提にする。** 検証がFAILの、または検証後に変わったデータは変換しない。取込は`complete`/`complete_with_skips`/`incomplete`、品質確認はtick数0を成功にしない。
+6. **Tickstoryはパイプラインに組み込まない。** GUI自動操作を避け、Tickstoryが出力したCSVは`csvfile` Providerで取り込む方針とする（CSV形式は未確認）。
+
+## 確認結果（2026-09-21）
+
+* **Locally Tested**: Python単体・結合テスト60件（`python/tests/test_tickdata_*.py`）。既存のPython/Lambda/infraテスト194件（新規60件を含む）、既存MQL5 Script Test 12件（`run-mql5-tests.ps1`）は全て成功。
+* **実Dukascopy（USDJPY、2020-03-02〜03-06、5日、894,250 tick）**: 取得（dukascopy-node 1.50.0）→正規化→検証（PASS）→MT5形式変換（サーバー時刻`ny_close`）が成功。既存ImportOandaTicks.mq5で試験用Custom Symbolへ取込し、Strategy Testerで「100%リアルティック」を確認した。初回の取込では、MT5から取得できたtickが888,490件（5,760件・0.64%少ない）だった。原因はImporterの`CustomTicksAdd()`（DEC-037）で、修正後は894,250件が一致した。
+* **サーバー時刻**: `ny_close`がOANDA-Japan MT5の時刻に一致することを、既存OANDA tick（2017-03の週明けが米国DST前後とも月曜00:00台）で確認した。Dukascopy由来tickの最終tickが`2020.03.06 23:59:56`（OANDAの週末終了`23:59:59`と同型）になることとも整合する。
+* **mock（合成tick）**: 取込・件数照合・Strategy Testerまで、MT5実機で確認（tick数一致）。試験用Custom Symbol・Junction・プリセットは削除済み。
+* **既存OANDA取込のImporter**: DEC-037で修正した。修正後のImporterでの、OANDA形式CSVそのものの取込は未実施（元CSVが圧縮ファイルのまま。Dukascopy由来・mockのMT5形式CSVでは確認済み）。
+* **未実施**: Dukascopy全期間（2016-09〜2020-12）の取得・投入、Dukascopyのライセンス確認、Dukascopy由来tickでのIS/OOS再検証、Tickstory連携、CoreEAでの実行（ウォームアップに長い履歴が必要なため5日では不可）。
+## 影響
+
+* 追加: `python/tickdata/`、`python/tests/test_tickdata_*.py`、`tools/tick-data.ps1`、`tools/tick-data/`、`mt5/Tools/VerifyCustomSymbolTicks.mq5`、`docs/tick-data-pipeline.md`。既存のEAロジック、`run-strategy-tester.ps1`、OANDA tick運用（既存Custom Symbol）は変更していない。`ImportOandaTicks.mq5`はDEC-037で修正した。
+* Node.js依存（`dukascopy-node` 1.50.0、`tools/tick-data/package-lock.json`で固定）が加わる。使うのはDukascopy取得時のみ。
+* Rollback: 上記の追加ファイルを削除し、`.gitignore`の`tools/tick-data/node_modules/`を戻す。作成したCustom Symbolは別名のため既存の履歴に影響しない。
+
+# DEC-037: ImportOandaTicks.mq5はCustomTicksReplace()で投入する（CustomTicksAdd()はバッチ末尾128 tickを永続化しない）
+
+**状態:** 採用（2026-09-21）。修正後のImporterで、Dukascopyサンプル・複数ファイル・同一ms・再投入を実機確認済み。既存10銘柄の再投入は2026-09-22に完了。
+
+## 背景
+
+DEC-036のパイプラインで、取込後のtick数照合が0.64%（バッチごとに128件）不足した。既存`USDJPY_HIST`（DEC-023、OANDA由来）でも、2016-08-31の1日で66,878件中384件が欠けていた（同じImporterで投入したため）。
+
+## 調査結果（実機）
+
+* `CustomTicksAdd()`は、呼び出し直後は全件を返す（`CopyTicksRange`）が、端末終了・再起動後は各呼び出しの末尾128件が取得できない。256件以下の呼び出しは何も永続化されない。待機、`TerminalClose`、通常のウィンドウ終了では変わらない。
+* 時刻が複数の日にまたがる疎なtickでは欠けなかった。発生条件の全体は特定していない。
+* `CustomTicksReplace()`で各バッチの時刻範囲を置換すると、全件が永続化された（894,250件、時刻・bid・askの順序付きchecksumが元ファイルと一致）。
+
+## 決定
+
+1. **`InpUseReplace`（既定true）を追加し、各バッチを`CustomTicksReplace()`で投入する。** `false`で従来の`CustomTicksAdd()`に戻せる。入力形式・他のパラメータ・出力マーカーは変更しない。
+2. **同一msのtickの途中でバッチを分割しない**（ファイルをまたぐ場合は持ち越す）。置換範囲が隣のバッチのtickを消さないため。
+3. **入力が時刻順でなく範囲が重なる場合は、従来の`CustomTicksAdd()`へ切り替える**（`REPLACE_FALLBACK_ADD`を出力）。既に投入したtickを消さないため。
+4. **既存の`*_HIST`（OANDA由来の10銘柄）は、元のzipから修正済みImporterで再投入して補修する（ユーザー指示、2026-09-21）。** Custom Symbolの仕様・履歴は削除せず（`InpResetSymbol=false`）、範囲置換で欠けたtickだけを補う。事前にバックアップを取る。手順・結果は`docs/tick-data-pipeline.md`、道具は`tools/reimport-oanda-ticks.ps1`。
+
+## 影響
+
+* 変更: `mt5/Tools/ImportOandaTicks.mq5`・`.ex5`（再コンパイル）。追加: `mt5/Tools/CountCustomSymbolTicks.mq5`（読み取り専用）、`tools/reimport-oanda-ticks.ps1`、`python/tickdata/oanda_zip.py`。EA本体・Strategy Testerは無変更。既存10銘柄のtick・バーは再投入で更新した。
+* 同じデータの再投入は範囲置換のため重複せず、件数も変わらない（従来は重複・不一致）。別データの範囲は上書きされる。
+* **再投入の結果（2026-09-21〜22）**: 10銘柄（52億tick、全月ファイル）を再投入し、約3,359万tick（0.641%）を補った。欠落量は、バッチ数×128で予測どおり（20ファイル中19ファイルで1件も違わず一致、残り1件は30件多い）。Importerの受理数は全銘柄で元データの行数と一致（skip 0、パース失敗0）。全ファイルがMT5上の件数、または（直近月でCopyTicksRangeが過少になるため）Strategy Testerのtick数で、元データと完全一致した。JP225の1日分の（時刻・bid・ask）checksumも元CSVと一致し、10銘柄でStrategy Testerが100%リアルティックで完走した。バックアップ: `D:\Backup\mt5-custom-before-tickfix-20260921`（bases\Custom＝tick・バー約26GBと`symbols.custom.dat`）。
+* **バーは再生成される**（USDJPY 2016-09のH1バーが再投入前後で微小に変化）。**過去のバックテスト結果（IS・Walk Forward・Final Holdout・他資産確認）は再投入前のtickによる値で、再実行していない。** 影響は未評価。
+* **`CopyTicksRange`は直近数か月（2025-12以降）で実データの一部しか返さない**（DEC-033と同じ現象）。データ自体は完全で、Testerのtick数で照合した。
+* **未確認**: 0.6%の欠落・バーの微小な変化が過去のバックテスト結果へ与えた影響、OANDA形式CSVを修正後のImporterで取り込む際の全月ファイル以外の条件、`CustomTicksAdd()`が欠落する条件の全容。
+* Rollback: コードは`git checkout -- mt5/Tools/ImportOandaTicks.mq5 mt5/Tools/ImportOandaTicks.ex5`（または`InpUseReplace=false`）。データはMT5停止中に、バックアップの`Custom\ticks`・`Custom\history`・`symbols.custom.dat`を`bases\`へ戻す。

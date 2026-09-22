@@ -81,6 +81,8 @@ python -m python.analysis.reports `
 
 JSON、Markdown、正規化取引CSV、資産曲線CSV、月次成績CSVを出力します。詳細は [backtesting](docs/backtesting.md) を参照してください。
 
+ヒストリカルtick（Dukascopy等）の取得・検証・MT5 Custom Symbolへの投入は `.\tools\tick-data.ps1 run -Config tools\tick-data\profiles\dukascopy-USDJPY-sample.json` で実行できます。詳細は [tickデータパイプライン](docs/tick-data-pipeline.md) を参照してください。
+
 ## 障害時対応
 
 外部API、ML、LLM、JSON、認証、時刻、Risk Managerの異常時は新規注文を停止します。既存ポジション管理を継続し、候補IDと理由コードをローカルログへ記録します。復旧後も自動再発注せず、新しい確定足の新規候補として再評価します。

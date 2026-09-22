@@ -1,0 +1,15 @@
+{
+  "_comment": "Dukascopy USDJPYの全期間プロファイル。server_timeのny_closeはOANDA-Japan MT5のサーバー時刻（NYクローズ基準のGMT+2/+3）に対応する。検証根拠はdocs/tick-data-pipeline.md参照。取込先は既存USDJPY_HIST（OANDA tick由来）と別名にしてある。",
+  "provider": "dukascopy",
+  "symbol": "USDJPY",
+  "from": "2016-09-01",
+  "to": "2020-12-31",
+  "timezone": "UTC",
+  "chunk_unit": "day",
+  "storage_root": "tick/pipeline",
+  "server_time": { "mode": "ny_close" },
+  "provider_options": { "instrument": "usdjpy", "batch_pause_ms": 3000, "retry_count": 4, "retry_pause_ms": 30000 },
+  "retry": { "max_attempts": 4, "initial_backoff_seconds": 2, "max_backoff_seconds": 60, "timeout_seconds": 3600 },
+  "validation": { "max_gap_seconds": 14400, "max_price_jump_ratio": 0.05, "max_rejected_ratio": 0.001 },
+  "mt5": { "source_symbol": "USDJPY", "custom_symbol": "USDJPY_DUKA", "custom_path": "EaTradingSystem\\History" }
+}

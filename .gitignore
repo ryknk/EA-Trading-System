@@ -15,3 +15,4 @@ results/backtests/*/
 results/mql5-tests/
 HANDOFF.md
 tools/config/mt5-vm.settings.json
+tools/tick-data/node_modules/

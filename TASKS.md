@@ -1695,6 +1695,9 @@ Walk Forward（Fold1-5、2020-2024、現行設定・4銘柄合計、`TASKS.md`�
 * [ ] Point-in-time整合性を確認する
 * [x] Spread、Commission、Swap、Slippageのデータ条件を決定する（2026-08-22決定。**Spread**: `USDJPY_HIST`は`mt5/Tools/ImportOandaTicks.mq5`が`CustomSymbolCreate`の`origin_name`にOANDA証券MT5口座接続時点の実`USDJPY`を指定して仕様を複製しており、Bid/Askも実tickデータをそのまま使用するためヒストリカルなOANDA実勢スプレッドを再現している（`DECISIONS.md`参照）。**Commission**: OANDA証券公式サイト（[oanda.jp/course](https://www.oanda.jp/course)、WebFetchで確認）で、MT5対応の東京サーバー2コース（裁量プラン・スタンダードプラン、いずれもUSD/JPYスプレッド0.3〜0.7銭程度）はいずれも「取引手数料：無料」であることを確認。Strategy Testerの既定Commission（0円）はOANDA MT5の実態と一致しており変更不要と判断した。**Swap**: `CustomSymbolCreate`が実`USDJPY`からSwap仕様も複製するため、OANDA証券の実際のSwap Rateを反映している（前提: Custom Symbol作成時にOANDA証券MT5口座へ接続済みであったこと、`DECISIONS.md` DEC-023参照）。**Slippage**: EA側の許容上限は`InpMaxDeviationPoints`（既定10 Point）。実際に発生するSlippageはStrategy Testerの実tickベース約定シミュレーション（`Model=4`、`ExecutionMode=0`）に委ねており、これはSpread同様「過去データへ最も都合よく適合する値を注入しない」という本プロジェクトの分析方針に沿う。ただし本IS期間の実行では`ORDER_SUBMISSION.slippage_points`の合計が0（`results/backtests/20260822-230027-USDJPY-H1/`のコスト感応度分析で確認）であり、Testerの約定モデルが楽観的（Slippage無し）である可能性を残存リスクとして記録する。詳細な評価は2.1節のコスト感応度分析エントリを参照）
 * [ ] Data Quality Checkを実装または実行する
+* [x] 既存`*_HIST`（OANDA由来）のtick欠落（バッチごとに128 tick、全体で0.641%）を、元zipからの再投入で補修する（2026-09-22完了。`DECISIONS.md` DEC-037、`docs/tick-data-pipeline.md`。10銘柄・52億tickを、MT5上の件数またはTesterのtick数で全ファイル照合済み。バックアップ: `D:\Backup\mt5-custom-before-tickfix-20260921`、不要になれば削除）
+* [ ] 再投入（欠落補修とバー再生成）が過去のバックテスト結果へ与えた影響を確認する（IS・Walk Forward・Final Holdout・他資産確認は再投入前のtickによる値。再実行するか、Final Holdoutは消費済みで代替期間がない点を踏まえてどう扱うかはユーザー判断）
+* [x] tickデータ取得・MT5変換パイプラインを実装する（2026-09-21、`docs/tick-data-pipeline.md`、`DECISIONS.md` DEC-036。Locally Testedのみ。Dukascopy全期間（2016-09〜2020-12）の取得・投入、Dukascopy由来tickでのIS/OOS再検証、Dukascopyのライセンス確認、Tickstory連携の実機確認は未実施）
 
 ## 3.2 検証期間
 

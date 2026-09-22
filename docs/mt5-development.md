@@ -73,6 +73,8 @@ Strategy Tester・MQL5単体テスト実行中、Host実行では既定でtermin
 
 `-ExecutionMode Host`時のみ有効な`-HostUseIsolatedSession $true|$false`（既定`$true`）で、非表示デスクトップ実行と従来の`-WindowStyle Hidden`方式を切り替えられる（後者は画面表示が発生するが動作実績のある方式で、通常は既定のままでよい）。
 
+tickデータ取得・MT5投入パイプライン（`tools/tick-data.ps1`・`tools/reimport-oanda-ticks.ps1`、詳細は[tickデータパイプライン](tick-data-pipeline.md)参照）も同じ`-HostUseIsolatedSession`（既定`$true`）で、ImporterやVerify等のMT5起動を非表示デスクトップ上で行う（VM実行は未対応、ホスト実行のみ）。tick取得・投入は1回の実行でMT5を多数回起動しうるため、既定を非表示デスクトップにしたことで画面表示・フォーカス奪取の繰り返しを避けられる。
+
 VM実行時の接続方式はVM設定ファイルの`connectionType`で選択する（詳細な設計判断は`DECISIONS.md` DEC-029を参照）。
 
 * `Vmrun`（既定・優先） — VMware Workstation/Player付属の`vmrun`コマンドラインツールでゲストOS内のMT5を直接実行する。ゲスト側のIPアドレス管理やWinRM設定は不要。
