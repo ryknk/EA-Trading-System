@@ -20,7 +20,11 @@ function Assert-True([bool]$Condition, [string]$Message) {
 function Assert-ProductionEvidence([string]$Path) {
     Assert-True (-not [string]::IsNullOrWhiteSpace($Path)) "Productionでは-EvidenceFileが必須です。"
     $resolved = Resolve-Path -LiteralPath $Path -ErrorAction Stop
-    $evidence = Get-Content -LiteralPath $resolved -Raw -Encoding UTF8 | ConvertFrom-Json
+    # PowerShell 7はISO 8601文字列をDateTimeへ自動変換しオフセット情報を失うため、
+    # -DateKind String（7.5以降）で元の文字列のまま読み込む。5.1は元々文字列のまま返す。
+    $convertOptions = @{}
+    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey("DateKind")) { $convertOptions.DateKind = "String" }
+    $evidence = Get-Content -LiteralPath $resolved -Raw -Encoding UTF8 | ConvertFrom-Json @convertOptions
     Assert-True ($evidence.schema_version -eq "1.0" -and $evidence.environment -eq "production") "本番証跡のschema/environmentが不正です。"
     Assert-True ($evidence.aws_account_id -match '^[0-9]{12}$') "AWS account IDが不正です。"
     Assert-True ($evidence.aws_region -match '^[a-z]{2}-[a-z]+-[0-9]$') "AWS regionが不正です。"
@@ -38,8 +42,14 @@ function Assert-ProductionEvidence([string]$Path) {
         $report = Join-Path $evidenceRoot $relative
         Assert-True (Test-Path -LiteralPath $report -PathType Leaf) "証跡ファイルが見つかりません: $field"
     }
-    $approved = [DateTimeOffset]::Parse($evidence.approved_at)
-    Assert-True ($approved.Offset -eq [TimeSpan]::Zero) "approved_atはUTCで指定してください。"
+    # 文字列以外（-DateKind非対応の7.0〜7.4でDateTime化された値を含む）はUTCか判定できないため拒否する。
+    $approvedText = $evidence.approved_at
+    $approved = [DateTimeOffset]::MinValue
+    $isUtcTimestamp = $approvedText -is [string] -and
+        $approvedText -match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|\+00:00)$' -and
+        [DateTimeOffset]::TryParse($approvedText, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$approved) -and
+        $approved.Offset -eq [TimeSpan]::Zero
+    Assert-True $isUtcTimestamp "approved_atはUTCで指定してください。"
 }
 
 Push-Location $root
