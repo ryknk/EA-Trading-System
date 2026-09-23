@@ -3,7 +3,7 @@
 // Dukascopyのレート制限（HTTP 429）で範囲全体を失わないための「1時間単位の取得と待機・再試行」だけ。
 //
 // 使い方: node dukascopy-download.mjs --instrument usdjpy --from 2020-03-05T00:00:00.000Z --to 2020-03-06T00:00:00.000Z --out <file>
-//   任意: --batch-pause-ms(時間ごとの待機、既定3000) --retry-count(既定4) --retry-pause-ms(初回の待機、以後倍々、既定30000)
+//   任意: --batch-pause-ms(時間ごとの待機、既定500。DECISIONS.md DEC-039参照) --retry-count(既定4) --retry-pause-ms(初回の待機、以後倍々、既定30000)
 // 出力列: timestamp(UTCエポックms),askPrice,bidPrice,askVolume,bidVolume
 import { createWriteStream } from "node:fs";
 import { once } from "node:events";
@@ -60,7 +60,7 @@ async function main() {
   if (Number.isNaN(fromMs) || Number.isNaN(toMs) || toMs <= fromMs) {
     throw new Error(`期間が不正です: ${args.from} - ${args.to}`);
   }
-  const pauseMs = Number(args["batch-pause-ms"] ?? 3000);
+  const pauseMs = Number(args["batch-pause-ms"] ?? 500);
   const retryCount = Number(args["retry-count"] ?? 4);
   const retryPauseMs = Number(args["retry-pause-ms"] ?? 30000);
 

@@ -1696,7 +1696,33 @@ Walk Forward（Fold1-5、2020-2024、現行設定・4銘柄合計、`TASKS.md`�
 * [x] Spread、Commission、Swap、Slippageのデータ条件を決定する（2026-08-22決定。**Spread**: `USDJPY_HIST`は`mt5/Tools/ImportOandaTicks.mq5`が`CustomSymbolCreate`の`origin_name`にOANDA証券MT5口座接続時点の実`USDJPY`を指定して仕様を複製しており、Bid/Askも実tickデータをそのまま使用するためヒストリカルなOANDA実勢スプレッドを再現している（`DECISIONS.md`参照）。**Commission**: OANDA証券公式サイト（[oanda.jp/course](https://www.oanda.jp/course)、WebFetchで確認）で、MT5対応の東京サーバー2コース（裁量プラン・スタンダードプラン、いずれもUSD/JPYスプレッド0.3〜0.7銭程度）はいずれも「取引手数料：無料」であることを確認。Strategy Testerの既定Commission（0円）はOANDA MT5の実態と一致しており変更不要と判断した。**Swap**: `CustomSymbolCreate`が実`USDJPY`からSwap仕様も複製するため、OANDA証券の実際のSwap Rateを反映している（前提: Custom Symbol作成時にOANDA証券MT5口座へ接続済みであったこと、`DECISIONS.md` DEC-023参照）。**Slippage**: EA側の許容上限は`InpMaxDeviationPoints`（既定10 Point）。実際に発生するSlippageはStrategy Testerの実tickベース約定シミュレーション（`Model=4`、`ExecutionMode=0`）に委ねており、これはSpread同様「過去データへ最も都合よく適合する値を注入しない」という本プロジェクトの分析方針に沿う。ただし本IS期間の実行では`ORDER_SUBMISSION.slippage_points`の合計が0（`results/backtests/20260822-230027-USDJPY-H1/`のコスト感応度分析で確認）であり、Testerの約定モデルが楽観的（Slippage無し）である可能性を残存リスクとして記録する。詳細な評価は2.1節のコスト感応度分析エントリを参照）
 * [ ] Data Quality Checkを実装または実行する
 * [x] 既存`*_HIST`（OANDA由来）のtick欠落（バッチごとに128 tick、全体で0.641%）を、元zipからの再投入で補修する（2026-09-22完了。`DECISIONS.md` DEC-037、`docs/tick-data-pipeline.md`。10銘柄・52億tickを、MT5上の件数またはTesterのtick数で全ファイル照合済み。バックアップ: `D:\Backup\mt5-custom-before-tickfix-20260921`、不要になれば削除）
-* [ ] 再投入（欠落補修とバー再生成）が過去のバックテスト結果へ与えた影響を確認する（IS・Walk Forward・Final Holdout・他資産確認は再投入前のtickによる値。再実行するか、Final Holdoutは消費済みで代替期間がない点を踏まえてどう扱うかはユーザー判断）
+* [x] **再投入（欠落補修）が過去のバックテスト結果へ与えた影響を確認する（2026-09-22実施、ユーザー指示）。** EA・パラメータ一式は無変更（`mt5/Include/Core/Config.mqh`・`mt5/Experts/CoreEA.mq5`は2026-09-17以降コミットなし、`git log`で確認）のまま、tick修正後データで主要な検証（現行設定一式を使うCaseFile: IS期間の一部・Walk Forward・Final Holdout）を再実行し、旧結果（tick修正前）と突き合わせた。
+
+  | 検証 | CaseFile | 取引数（旧→新） | 純利益（旧→新） | 差分 |
+  |---|---|---|---|---|
+  | IS期間（2017-09〜2019-12、4銘柄・12ケース） | `is-period-2017-2019-current-config.json` | 216→216 | -46,582円→-46,324円 | +258円（+0.6%） |
+  | Walk Forward（2020-2024、4銘柄・20ケース） | `walk-forward-2020-2024-current-config.json` | 520→521 | +157,169円→+169,416円 | +12,247円（+7.8%） |
+  | Final Holdout（2025-01〜2026-08、4銘柄・4ケース） | `final-holdout-2025-2026.json` | 181→182 | -28,991円→-18,349円 | +10,642円（損失37%縮小） |
+
+  比較の基準は、いずれもLeverage=1:25反映後（DEC実測確認済み）の`results/backtests/20260917-222112-cases`（IS）・`20260917-214524-cases`（Walk Forward、Leverage差の影響なしを2026-09-19に別途確認済み）・`20260919-133712-cases`（Final Holdout）。新結果は`results/backtests/20260922-113349-cases`・`20260922-114452-cases`・`20260922-120856-cases`（`summary.csv`）。
+
+  **Final Holdout再実行結果（4銘柄、tick修正後）**:
+
+  | 銘柄 | 純利益 | PF | Sharpe | 勝率 | 取引数 | 最大DD |
+  |---|---:|---:|---:|---:|---:|---:|
+  | USDJPY | -47,401円 | 0.50 | -1.48 | 17.9% | 39 | 5.3% |
+  | EURJPY | +7,175円 | 1.08 | 0.17 | 32.6% | 46 | 3.5% |
+  | EURUSD | +32,721円 | 1.38 | 0.68 | 30.2% | 43 | 3.9% |
+  | GBPJPY | -10,844円 | 0.91 | -0.23 | 27.8% | 54 | 3.3% |
+  | **4銘柄合計** | **-18,349円** | — | — | — | **182** | — |
+
+  **IS期間はケースごとの取引数まで完全一致**（12ケース全て、216→216）し、純利益の差はごく小さい（+0.6%）。**Walk Forward・Final Holdoutでは取引数自体が変わるケースが複数あり**（Walk Forward 20ケース中6ケース、Final Holdoutは4ケース中GBPJPYのみ+1件）、個別ケースで数千〜1万円規模の振れが生じた（例: Walk Forward USDJPY-2023が+8,781円→-955円、GBPJPY-2021が+29,611円→+21,897円、Final HoldoutはGBPJPYが-21,902円→-10,844円と変化の大半を占めた）。原因は未検証の仮説だが、EAのEntry/Exit確認ロジックが連続tick数（`InpTrendReversalConfirmationTicks`=5等）を判定に使うため、復元されたtickが確認タイミングや約定価格を変えうることが考えられる。監査ログの`SYSTEM_ERROR`（Market closed時の緊急決済失敗、既知の挙動）は旧78件→新81件と近い水準で、新規の異常は確認していない。
+
+  **年次expectancy推移（4銘柄合計、tick修正後）**: 2017(9-12月) +1,169.5円→2018 -908.8円→2019 +105.5円→2020 +377.8円→2021 +523.0円→**2022 +682.2円（ピーク）**→2023 +93.5円→2024 -69.6円→Final Holdout -100.8円/トレード。旧結果（+1,172.6/-910.2/+102.3/+400.6/+551.2/+581.9/+103.7/-151.9/-160.2円）と比べ、個々の値はやや変動したが**トレンドの形（上昇→2022年ピーク→下降、Final Holdoutで符号反転）は保たれている**。
+
+  **結論**: tick欠落修正は、IS期間ではほぼ無視できる差（0.6%）だが、Walk Forward・Final Holdoutでは無視できない幅（+7.8%、損失37%縮小）の変化を生じさせた。ただし、本節・`docs/production-readiness-report.md`が依拠する中核的な結論（「Final HoldoutでWalk Forwardから期待値の符号が反転する」「戦略の実質勝率が2022年以降悪化するトレンド」「2018年型の循環か恒久的な構造変化かは未判別」）はいずれも維持され、**NO-GO判定は変わらない**。詳細な数値は`docs/production-readiness-report.md` 7.5節末尾を参照。
+
+  **残存**: 他資産確認（3資産・6資産、追加分析3）は現行設定ではなく初見資産の動作確認・探索目的のため優先度を下げ、今回は再実行していない。Final Holdoutは今回で2回目の評価となるため、今後さらなるパラメータ変更を行う場合は新しいFinal Holdout期間の確保が必要な点は変わらない（`DECISIONS.md` DEC-024）。
 * [x] tickデータ取得・MT5変換パイプラインを実装する（2026-09-21、`docs/tick-data-pipeline.md`、`DECISIONS.md` DEC-036。Locally Testedのみ。Dukascopy全期間（2016-09〜2020-12）の取得・投入、Dukascopy由来tickでのIS/OOS再検証、Dukascopyのライセンス確認、Tickstory連携の実機確認は未実施）
 
 ## 3.2 検証期間

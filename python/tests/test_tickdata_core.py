@@ -211,6 +211,69 @@ class ProviderTests(unittest.TestCase):
                         provider.download_chunk(chunk, Path(directory) / "out.csv")
                     self.assertTrue(context.exception.retryable)
 
+    def test_dukascopy_skips_saturday_by_default_but_not_when_opted_out(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            saturday = plan_chunks(date(2020, 3, 7), date(2020, 3, 7), "day")[0]
+            self.assertTrue(saturday.is_saturday_only)
+            destination = Path(directory) / "out.csv"
+
+            # 既定（skip_weekend_closed_hours未指定）では土曜はNode.jsを呼ばず空ファイルを直接書く
+            # （本プロジェクトの本番ブローカーOANDA証券はMT5で週末取引銘柄を扱っていないため、DEC-038）
+            provider = create_provider(make_config(Path(directory), provider="dukascopy"))
+            with mock.patch.object(dukascopy_module.subprocess, "run") as run:
+                provider.download_chunk(saturday, destination)
+            run.assert_not_called()
+            self.assertEqual(destination.read_text(encoding="utf-8"), "timestamp,askPrice,bidPrice,askVolume,bidVolume\n")
+
+            # skip_weekend_closed_hours=falseを明示した場合のみ、週末も取引される銘柄向けに通常どおり取得する
+            provider = create_provider(make_config(
+                Path(directory), provider="dukascopy", provider_options={"skip_weekend_closed_hours": False}))
+            with mock.patch.object(dukascopy_module.shutil, "which", return_value=None):
+                with self.assertRaises(ProviderError):
+                    provider.download_chunk(saturday, destination)
+
+            # 土曜以外は、既定（true）でも通常どおりNode.jsを呼び出す
+            weekday = plan_chunks(date(2020, 3, 5), date(2020, 3, 5), "day")[0]
+            provider = create_provider(make_config(Path(directory), provider="dukascopy"))
+            with mock.patch.object(dukascopy_module.shutil, "which", return_value=None):
+                with self.assertRaises(ProviderError):
+                    provider.download_chunk(weekday, destination)
+
+    def test_dukascopy_trims_friday_and_sunday_closed_hours_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            tool_dir = Path(directory) / "tool"
+            (tool_dir / "node_modules" / "dukascopy-node").mkdir(parents=True)
+            friday = plan_chunks(date(2020, 3, 6), date(2020, 3, 6), "day")[0]
+            sunday = plan_chunks(date(2020, 3, 8), date(2020, 3, 8), "day")[0]
+            self.assertTrue(friday.is_friday_only)
+            self.assertTrue(sunday.is_sunday_only)
+
+            with mock.patch.object(dukascopy_module, "_TOOL_DIR", tool_dir), \
+                    mock.patch.object(dukascopy_module.shutil, "which", return_value="node"), \
+                    mock.patch.object(dukascopy_module.subprocess, "run") as run:
+                run.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+
+                # skip_weekend_closed_hours=falseを明示した場合は、金曜・日曜とも終日（00:00〜翌日00:00）を要求する
+                # （週末も取引される銘柄向け）
+                provider = create_provider(make_config(
+                    Path(directory), provider="dukascopy", provider_options={"skip_weekend_closed_hours": False}))
+                provider.download_chunk(friday, Path(directory) / "f.csv")
+                command = run.call_args.args[0]
+                self.assertIn("2020-03-06T00:00:00.000Z", command)
+                self.assertIn("2020-03-07T00:00:00.000Z", command)
+
+                # 既定（true）では、金曜は22:00 UTCまで、日曜は21:00 UTCからに縮める
+                provider = create_provider(make_config(Path(directory), provider="dukascopy"))
+                provider.download_chunk(friday, Path(directory) / "f.csv")
+                command = run.call_args.args[0]
+                self.assertIn("2020-03-06T00:00:00.000Z", command)
+                self.assertIn("2020-03-06T22:00:00.000Z", command)
+
+                provider.download_chunk(sunday, Path(directory) / "s.csv")
+                command = run.call_args.args[0]
+                self.assertIn("2020-03-08T21:00:00.000Z", command)
+                self.assertIn("2020-03-09T00:00:00.000Z", command)
+
     def test_dukascopy_missing_node_or_package_is_not_retryable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             chunk = plan_chunks(date(2020, 3, 5), date(2020, 3, 5), "day")[0]

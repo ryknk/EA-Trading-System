@@ -20,7 +20,7 @@
 
 OANDA以外のヒストリカルtick（Dukascopy等）の取得・正規化・検証・MT5 Custom Symbolへの投入は`tools/tick-data.ps1`で行う。取込後のCustom Symbolは、上記の`-CaseFile`ケースの`symbol`に指定すればStrategy Testerで使える。
 
-**2026-09-22: 既存の`*_HIST`10銘柄（OANDA由来）を再投入した**。旧Importerがバッチごとに末尾128 tick（全体で0.641%）を保存していなかったため、元zipから補った（`DECISIONS.md` DEC-037、[tickデータパイプライン](tick-data-pipeline.md)）。**このため、それ以前に得たバックテスト結果（IS・Walk Forward・Final Holdout・他資産確認）は再投入前のtickによる値**で、再実行していない（バーも再生成されており、結果が微小に変わり得る。影響は未評価）。
+**2026-09-22: 既存の`*_HIST`10銘柄（OANDA由来）を再投入した**。旧Importerがバッチごとに末尾128 tick（全体で0.641%）を保存していなかったため、元zipから補った（`DECISIONS.md` DEC-037、[tickデータパイプライン](tick-data-pipeline.md)）。**このため、それ以前に得たバックテスト結果（IS・Walk Forward・Final Holdout・他資産確認）は再投入前のtickによる値**だった（バーも再生成されており、結果が微小に変わり得る）。同日、IS期間の一部・Walk Forward・Final Holdoutを再実行して影響を確認した（EA・パラメータは無変更）。IS期間はほぼ無変化（純利益差+0.6%）だったが、Walk Forward（+7.8%）・Final Holdout（損失37%縮小）では無視できない幅の変化があった。ただし年次expectancyのトレンド形状・Final Holdoutでの符号反転・NO-GO判定という中核的な結論は維持された。詳細は`docs/production-readiness-report.md` 7.5節、`TASKS.md` 3.1節を参照。他資産確認（3資産・6資産）は今回は再実行していない。
 
 ## 複数ケース実行（Cross-Asset Validation、OOS、Walk Forward、Stress Test等の共通基盤）
 

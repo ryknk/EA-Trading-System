@@ -22,6 +22,14 @@ class Chunk:
     def is_saturday_only(self) -> bool:
         return self.first_date == self.last_date and self.first_date.weekday() == 5
 
+    @property
+    def is_friday_only(self) -> bool:
+        return self.first_date == self.last_date and self.first_date.weekday() == 4
+
+    @property
+    def is_sunday_only(self) -> bool:
+        return self.first_date == self.last_date and self.first_date.weekday() == 6
+
 
 def _next_month_start(day: date) -> date:
     return date(day.year + (day.month == 12), day.month % 12 + 1, 1)
