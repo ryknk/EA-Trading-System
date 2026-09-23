@@ -114,6 +114,17 @@ MT5へ渡す前に`validation.json`と`dataset.json`へ記録する。**error（
 * MT5端末を閉じてから実行する。ホスト実行のみ対応（VM実行は未対応）。
 * MT5の起動は既定で、画面表示・フォーカス奪取を避ける非表示デスクトップ方式（`-HostUseIsolatedSession`、既定true、`run-strategy-tester.ps1`・`run-mql5-tests.ps1`と同じCreateDesktopEx方式、DEC-031）を使う。`tools/tick-data.ps1`・`tools/reimport-oanda-ticks.ps1`（`-HistoryQuality`/`TesterCheck`が内部で呼ぶ`run-strategy-tester.ps1`にも引き継ぐ）のいずれも対応する。管理者権限は不要。`-HostUseIsolatedSession $false`で従来の`-WindowStyle Hidden`方式へフォールバックできる。
 
+### Tick履歴の物理保存先（ローカル開発環境、2026-09-24）
+
+`CustomTicksAdd`/`CustomTicksReplace`で投入したCustom SymbolのTick履歴は、MT5端末とStrategy Testerがそれぞれ独立したキャッシュに永続化する。既定では両方ともCドライブ（`%APPDATA%\MetaQuotes\...`）配下で、Dukascopy等の大容量投入でCドライブを圧迫するため、本開発環境ではDドライブへディレクトリジャンクションで退避している。
+
+| 用途 | 参照パス（Cドライブ、変更不可） | 実体（Dドライブ） |
+| --- | --- | --- |
+| MT5端末本体 | `%APPDATA%\MetaQuotes\Terminal\<terminal_id>\bases` | `D:\MT5_Data\terminal-bases` |
+| Strategy Tester | `%APPDATA%\MetaQuotes\Tester\<terminal_id>\bases` | `D:\MT5_Data\tester-bases` |
+
+MT5・Strategy Testerはジャンクション先を透過的に読み書きするため、動作への影響はない。ジャンクションの張り替えはMT5端末を終了した状態で行うこと（稼働中のファイルロックを避けるため）。`terminal_id`は`tools/link-mt5.ps1`の既定値（OANDA証券MT5端末）と同じ。
+
 ## ImportOandaTicks.mq5のtick欠落と修正（2026-09-21）
 
 **事象**: 従来のImporterは`CustomTicksAdd()`で投入しており、**呼び出し（バッチ）ごとに末尾128 tickがMT5に永続化されなかった**（端末を再起動すると取得できない。`IMPORT_COMPLETED`は全件受理と報告する）。Dukascopyサンプル（894,250 tick）でバッチ20,000なら45×128=5,760件（0.64%）が欠け、既存`USDJPY_HIST`（OANDA由来）も2016-08-31の1日で66,878件中384件（3バッチ分）が欠けていた。

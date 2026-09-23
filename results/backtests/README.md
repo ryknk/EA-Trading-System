@@ -41,6 +41,6 @@ OANDA証券のWeb版Tickダウンロードツールから取得した2016年9月
 * 複数実行15ケース中13ケース（EURJPY全年・EURUSD 2020-2023・GBPJPY 2020-2023）: **ヒストリー品質0%リアルティック**
 * EURUSD-2024・GBPJPY-2024の2ケースのみ、ブローカーのライブtickキャッシュ分で**44%・43%リアルティック**
 
-**2026-09-01判明: EURJPY/EURUSD/GBPJPYのreal tickは既に`EURJPY_HIST`・`EURUSD_HIST`・`GBPJPY_HIST`として投入済みだった。** `D:\MT5_Data\bases\Custom\ticks\`配下に、`USDJPY_HIST`と同じ方式（DEC-023）でEURJPY_HIST/EURUSD_HIST/GBPJPY_HIST（2016-08〜2026年分）に加え、JP225_HIST/US30_HIST/US100_HIST/US500_HIST/US2000_HIST/XAUUSD_HIST（2020-04〜2026年分）のtickも既に投入済みであることを確認した。CaseFile（`mt5/test-config/cases/cross-symbol-2020-2024.json`）が無印の`EURJPY`等を指定していたため、これらの投入済みCustom Symbolが使われていなかった。CaseFileの`symbol`を`*_HIST`へ修正済み。再実行が必要。
+**2026-09-01判明: EURJPY/EURUSD/GBPJPYのreal tickは既に`EURJPY_HIST`・`EURUSD_HIST`・`GBPJPY_HIST`として投入済みだった。** `D:\MT5_Data\terminal-bases\Custom\ticks\`（2026-09-24にMT5端末Tick履歴用フォルダを`bases`→`terminal-bases`へ改称。Strategy Tester用の`tester-bases`と命名を揃えた）配下に、`USDJPY_HIST`と同じ方式（DEC-023）でEURJPY_HIST/EURUSD_HIST/GBPJPY_HIST（2016-08〜2026年分）に加え、JP225_HIST/US30_HIST/US100_HIST/US500_HIST/US2000_HIST/XAUUSD_HIST（2020-04〜2026年分）のtickも既に投入済みであることを確認した。CaseFile（`mt5/test-config/cases/cross-symbol-2020-2024.json`）が無印の`EURJPY`等を指定していたため、これらの投入済みCustom Symbolが使われていなかった。CaseFileの`symbol`を`*_HIST`へ修正済み。再実行が必要。
 
 Net Profit・Profit Factor・Sharpe等の数値は`summary.csv`・`summary.md`に記録済みだが、上記の理由によりCross-Asset Validationの正式な証跡としては使用しないこと。USDJPYの正式なIn-Sample再現には、単体実行時に`-Symbol`を指定せずテンプレート既定の`USDJPY_HIST`をそのまま使うこと。
