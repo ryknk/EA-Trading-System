@@ -8,7 +8,7 @@
   "chunk_unit": "day",
   "storage_root": "tick/pipeline",
   "server_time": { "mode": "ny_close" },
-  "provider_options": { "instrument": "usdjpy", "batch_pause_ms": 500, "retry_count": 4, "retry_pause_ms": 30000 },
+  "provider_options": { "instrument": "usdjpy", "batch_pause_ms": 0, "retry_count": 4, "retry_pause_ms": 30000 },
   "retry": { "max_attempts": 4, "initial_backoff_seconds": 2, "max_backoff_seconds": 60, "timeout_seconds": 3600 },
   "validation": { "max_gap_seconds": 14400, "max_price_jump_ratio": 0.05, "max_rejected_ratio": 0.001 },
   "mt5": { "source_symbol": "USDJPY", "custom_symbol": "USDJPY_DUKA", "custom_path": "EaTradingSystem\\History" }
