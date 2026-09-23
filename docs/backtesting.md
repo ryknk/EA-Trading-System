@@ -305,3 +305,36 @@ python -m python.analysis.cost_sensitivity `
 - `cost_summary`: 総取引コスト・1トレードあたり平均コスト・Spread/Slippage/Commission/Swapそれぞれの合計
 - `performance_with_cost` / `performance_before_cost`: 実績（`net_pnl`）とコスト除外時の推定成績（`pnl_before_cost`）それぞれについて、既存`performance.analyze_performance`と同一定義のTrades・Net Profit・Profit Factor・Win Rate・Expectancy・Max Drawdownを算出（両者の差が大きいほど、コストがエッジを侵食している可能性を示唆する）
 - `cost_tier_breakdown`: `total_cost`の実データ三分位によるLow/Normal/High Cost別の同上指標（固定しきい値はハードコードせず、実際に発生したコスト分布から算出する）
+
+## ベンチマーク比較（2026-09-23実装、`DECISIONS.md` DEC-041）
+
+`python.analysis.benchmark_comparison`は、Release Gateの「ベンチマーク受入基準」（`docs/release-gate.md`）を判定する。EAの決済済み取引と、MSCI ACWI（配当込み・円換算）の月末値を比べ、税引き後CAGRとSharpe比の両方でEAが上回るかを期間ごとに判定する。計算上の仮定（東京時間での月・暦年の区切り、複数ケースの損益合算、課税のタイミング等）はDEC-041を正とする。
+
+ベンチマークの月末値はネットワークから自動取得しない。評価期間の開始前月から終了月までの月末値を、次の形式のCSVで用意する（`level`は指数値またはファンドの基準価額）。
+
+```text
+month,level
+2019-12,123.45
+2020-01,125.67
+```
+
+ファンドの基準価額を使う場合は信託報酬が控除済みのため、`--benchmark-annual-fee 0`を指定する。指数値を使う場合は、代表的な連動ファンドの信託報酬（年率）を指定する。
+
+```powershell
+$env:PYTHONPATH='.'
+python -m python.analysis.benchmark_comparison `
+  --period walk_forward 2020-01 2024-12 `
+  --input walk_forward results/backtests/<walk-forward-run-id>-cases `
+  --period final_holdout 2025-01 2026-08 `
+  --input final_holdout results/backtests/<final-holdout-run-id>-cases `
+  --initial-balance 1000000 `
+  --benchmark-csv <月末値CSV> `
+  --benchmark-source "<データ源>" `
+  --benchmark-retrieved-on <取得日YYYY-MM-DD> `
+  --benchmark-annual-fee <信託報酬（年率）> `
+  --output build/benchmark-comparison
+```
+
+`--input`にディレクトリを指定すると、配下の`trades-normalized.csv`（複数ケース実行の出力）をすべて読み込む。取引CSV・監査JSONLのファイルを直接指定することもできる。評価期間外に決済された取引があるとエラーになる。
+
+出力は`benchmark-comparison.json`（JSON契約は`contracts/benchmark-comparison-report.schema.json`を正とする）と`benchmark-comparison.md`である。全期間で合格した場合だけ`criteria_met`が`true`になり、標準出力へ`BENCHMARK_CRITERIA_MET=true|false`を表示する。

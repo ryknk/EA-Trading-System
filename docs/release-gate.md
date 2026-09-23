@@ -16,7 +16,7 @@ Phase 12完了は「ソフトウェア構造と開発検証手順が完成した
 
 ## 本番ゲート
 
-productionでは、開発ゲートに加えて `production-release-evidence.schema.json` に従う証跡JSONと、同じディレクトリに置いたOOS、Walk Forward、デモ、小額実口座のレポートを要求する。
+productionでは、開発ゲートに加えて `production-release-evidence.schema.json` に従う証跡JSONと、同じディレクトリに置いたOOS、Walk Forward、デモ、小額実口座、ベンチマーク比較のレポートを要求する。
 
 ```powershell
 .\tools\release-gate.ps1 `
@@ -24,7 +24,7 @@ productionでは、開発ゲートに加えて `production-release-evidence.sche
   -EvidenceFile release-evidence\production-release.json
 ```
 
-証跡には秘密値や口座番号を含めない。ML model versionとSHA-256、固定LLM provider/model、prompt version、AWS account・region、VPS秘密ファイル検証、SNS通知、予算通知、rollback drill、承認UTC時刻だけを記録する。詳細レポートは暗号化したS3等へ保管し、ローカル `release-evidence/` はGit管理外とする。
+証跡には秘密値や口座番号を含めない。ML model versionとSHA-256、固定LLM provider/model、prompt version、AWS account・region、VPS秘密ファイル検証、SNS通知、予算通知、rollback drill、ベンチマーク受入基準の合否、承認UTC時刻だけを記録する。詳細レポートは暗号化したS3等へ保管し、ローカル `release-evidence/` はGit管理外とする。
 
 ## 必須ゲート
 
@@ -38,6 +38,36 @@ productionでは、開発ゲートに加えて `production-release-evidence.sche
 - Decision/Telemetry URLをWebRequest許可リストへ登録し、dev・demoでHMAC疎通する
 - 緊急停止、手動決済、認証失効、モデル切戻し、CDK rollbackを演習する
 - 変更内容、設定差分、テスト結果、承認者、承認時刻を保全する
+- 下記「ベンチマーク受入基準」を満たす
+
+## ベンチマーク受入基準
+
+EAの運用資金は、NISA非課税枠を超えた資産を想定する。EAを使わない場合、この資金は課税口座でインデックス投資へ回すことになるため、EAはその代替案を上回らない限り使う意義がない（`DECISIONS.md` DEC-041）。この基準は結果を見る前に固定したものであり、結果を見た後に緩和しない。変更する場合は `DECISIONS.md` へ理由を記録し、既に評価済みの期間は合否判定へ使わない。
+
+### 比較対象
+
+- ベンチマーク: MSCI ACWI（全世界株式、配当込み、円換算）。代表的な連動インデックスファンドの信託報酬（年率）を控除し、採用した値をレポートへ記録する。
+- 比較期間: EAの評価期間と同一の期間とする。
+- 投入資金: EAの割当資金（Strategy Testerの `Deposit`）と同額を、期間の開始時にベンチマークへ一括投資したものとする。
+
+### 税の扱い
+
+- EA: 国内FX・CFDの申告分離課税20.315%を、暦年ごとの純損益へ適用する。損失は翌年以降3年間の繰越控除を適用する。
+- ベンチマーク: 期間中は課税せず、期間の終了時に全額を売却したものとして、譲渡益へ20.315%を適用する（課税繰延の効果を反映する）。
+- EAの損益には、spread、手数料、swapを含める。
+
+### 合格条件
+
+次の2つを、**Walk Forward（全Fold合算）とFinal Holdoutのそれぞれで**満たすこと。どちらか一方でも満たさない場合、他のゲートの結果に関わらずproductionゲートは不合格とする。
+
+1. **税引き後の年率リターン**: EAの税引き後の年率リターン（CAGR）が、ベンチマークの税引き後の年率リターンを上回る。
+2. **Sharpe比**: 月次リターン（税引き前、リスクフリーレート0、年率換算）から計算したEAのSharpe比が、ベンチマークのSharpe比を上回る。
+
+Demo口座と小額実口座は期間が短いため、この基準の合否には使わず、バックテストとの差異のレビューにだけ使う。
+
+### 証跡
+
+比較結果は `python.analysis.benchmark_comparison` で作成し（使い方は `docs/backtesting.md`「ベンチマーク比較」節）、出力の `benchmark-comparison.json` を `benchmark_comparison_report` として本番証跡へ添付し、合格条件をすべて満たした場合だけ `benchmark_criteria_met` を `true` とする。`true` でない証跡は `release-gate.ps1 -Mode Production` が拒否する。レポートには、ベンチマークのデータ源と取得日、控除した信託報酬、各期間の税引き前・税引き後のCAGRとSharpe比、年次損益と繰越控除の計算過程を記録する。
 
 ## フラグ有効化順序
 

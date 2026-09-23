@@ -1732,6 +1732,10 @@ Walk Forward（Fold1-5、2020-2024、現行設定・4銘柄合計、`TASKS.md`�
 * [x] Out-of-Sample期間を固定する（`DECISIONS.md` DEC-024で2021-01〜2024-12に確定済み）
 * [ ] Label Horizonに応じたgapを固定する（rule-based Strategyには教師ラベルが存在しないため現時点で対象外。ML学習パイプライン導入時に別途検討する）
 * [x] OOS確認後に同じ期間を再利用しない運用を確立する（本セッション全体を通じ、IS期間のみでのパラメータ探索・OOS/Walk Forward期間への非先取りを一貫して実施（例: 2.1節各エントリの「OOS期間を先取りして確認することはしない」等の記述）。2026-08-22のIS凍結以降は、OOS/Walk Forward結果を理由とした本パラメータセットの再変更を行わない運用を明文化した）
+* [x] ベンチマーク受入基準（MSCI ACWI配当込み・円換算に対し、税引き後CAGRとSharpe比の両方で上回る）をRelease Gateへ追加する（2026-09-23、ユーザー指示、`docs/release-gate.md`・`DECISIONS.md` DEC-041）
+* [x] ベンチマーク比較レポートの計算処理（EAの年次課税・損失繰越、CAGR・Sharpe比の算出）を実装する（2026-09-23、`python/analysis/benchmark_comparison.py`、Unit Tested。Walk Forward・Final Holdoutの実取引データ（521件・182件）の読込みは仮の横ばいベンチマークで動作確認のみ）
+* [ ] MSCI ACWI（配当込み・円換算）の月末値を2019-12〜2026-08の範囲で取得し、`month,level`形式のCSVにする（ユーザー作業。取得元のライセンス条件を確認のうえ実施。データ源・取得日をレポートへ記録する）
+* [ ] Walk Forward（2020-2024）とFinal Holdout（2025-01〜2026-08）の既存結果でベンチマーク受入基準を判定する（未判定）
 
 ## 3.3 ML評価
 

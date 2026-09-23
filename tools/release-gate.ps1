@@ -28,11 +28,11 @@ function Assert-ProductionEvidence([string]$Path) {
     foreach ($field in @("ml_model_version", "llm_provider", "llm_model", "prompt_version")) {
         Assert-True ($evidence.$field -match '^[A-Za-z0-9._-]+$') "本番証跡の$fieldが不正です。"
     }
-    foreach ($field in @("vps_secret_file_verified", "sns_notification_verified", "budgets_verified", "rollback_drill_verified")) {
+    foreach ($field in @("vps_secret_file_verified", "sns_notification_verified", "budgets_verified", "rollback_drill_verified", "benchmark_criteria_met")) {
         Assert-True ($evidence.$field -eq $true) "本番ゲート未達: $field"
     }
     $evidenceRoot = Split-Path -Parent $resolved
-    foreach ($field in @("oos_report", "walk_forward_report", "demo_report", "small_real_report")) {
+    foreach ($field in @("oos_report", "walk_forward_report", "demo_report", "small_real_report", "benchmark_comparison_report")) {
         $relative = [string]$evidence.$field
         Assert-True (-not [IO.Path]::IsPathRooted($relative) -and $relative -notmatch '(^|[\\/])\.\.([\\/]|$)') "証跡pathは同じdirectory配下の相対pathにしてください: $field"
         $report = Join-Path $evidenceRoot $relative

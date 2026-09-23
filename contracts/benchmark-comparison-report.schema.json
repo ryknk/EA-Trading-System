@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/v1/benchmark-comparison-report.schema.json",
+  "title": "BenchmarkComparisonReportV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "currency", "benchmark", "definitions", "periods", "criteria_met"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "currency": {"const": "JPY"},
+    "benchmark": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source", "retrieved_on", "annual_fee"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "retrieved_on": {"type": "string", "format": "date"},
+        "annual_fee": {"type": "number", "minimum": 0, "exclusiveMaximum": 1}
+      }
+    },
+    "definitions": {"type": "object"},
+    "periods": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "label", "start_month", "end_month", "initial_balance", "number_of_trades",
+          "ea", "benchmark", "ea_tax_years", "ea_monthly_returns", "benchmark_monthly_returns",
+          "after_tax_cagr_exceeds_benchmark", "sharpe_exceeds_benchmark", "criteria_met"
+        ],
+        "properties": {
+          "label": {"type": "string", "minLength": 1},
+          "start_month": {"type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"},
+          "end_month": {"type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"},
+          "initial_balance": {"type": "number", "exclusiveMinimum": 0},
+          "number_of_trades": {"type": "integer", "minimum": 0},
+          "ea": {"$ref": "#/$defs/returnMetrics"},
+          "benchmark": {"$ref": "#/$defs/returnMetrics"},
+          "ea_tax_years": {"type": "array"},
+          "ea_monthly_returns": {"type": "array"},
+          "benchmark_monthly_returns": {"type": "array"},
+          "after_tax_cagr_exceeds_benchmark": {"type": "boolean"},
+          "sharpe_exceeds_benchmark": {"type": "boolean"},
+          "criteria_met": {"type": "boolean"}
+        }
+      }
+    },
+    "criteria_met": {"type": "boolean"}
+  },
+  "$defs": {
+    "returnMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["months", "pre_tax_cagr", "after_tax_cagr", "after_tax_ending_multiple", "total_tax", "sharpe_ratio"],
+      "properties": {
+        "months": {"type": "integer", "minimum": 1},
+        "pre_tax_cagr": {"type": "number"},
+        "after_tax_cagr": {"type": "number"},
+        "after_tax_ending_multiple": {"type": "number"},
+        "total_tax": {"type": "number", "minimum": 0},
+        "sharpe_ratio": {"type": ["number", "null"]}
+      }
+    }
+  }
+}

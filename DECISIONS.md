@@ -1191,3 +1191,28 @@ DEC-039で500msを採用した際、0msも429なしで成功していたが、�
 * 期待効果: 1時間ごとの待機が500ms→0msになるため、1日24時間の待機時間だけで23×0.5秒＝約11.5秒/日のさらなる短縮。DEC-038以前（3,000ms）比では23×3.0秒＝約69秒/日相当の短縮になる。
 * 稼働中のジョブは変更時点で存在しないため、この変更が稼働中プロセスに影響することはなかった。
 * Rollback: `git checkout -- tools/tick-data/dukascopy-download.mjs tools/tick-data/profiles/`。データへの影響はない（設定変更のみ）。
+
+# DEC-041: Release Gateへベンチマーク受入基準（MSCI ACWI比、税引き後CAGRとSharpe比）を追加する
+
+**状態:** 採用（2026-09-23、ユーザー指示）。
+
+## 背景
+
+EAの運用資金は、NISA非課税枠（1,800万円）を超えた資産を想定している。EAを使わない場合、この資金は課税口座でインデックス投資へ回すことになるため、EAはその代替案を税引き後・リスク調整後で上回らない限り使う意義がない。既存の必須ゲートは「事前固定した受入基準を満たす」とだけ定めており、何と比べてどれだけ上回ればよいかは未定義だった。
+
+## 決定
+
+1. **ベンチマークはMSCI ACWI（全世界株式、配当込み、円換算）とする。** ユーザーが選択した（候補: 全世界株式・S&P500・TOPIX）。
+2. **合格条件は、税引き後CAGRとSharpe比の両方がベンチマークを上回ることとする。** ユーザーが選択した（候補: 両方・税引き後リターンのみ・Sharpe比のみ）。Walk Forward（全Fold合算）とFinal Holdoutのそれぞれで満たす必要がある。
+3. **税は非対称に扱う。** OANDA証券は国内業者であり、EAの損益は申告分離課税20.315%が暦年ごとに課税される（損失は3年間繰越可能）。一方、ベンチマークは売却まで課税が繰り延べられるため、期間終了時に一括課税する。税率は同じでも、課税時期の違いによって複利の面でEAが不利になる点を、比較に反映する。
+4. **機械的に強制する。** `contracts/production-release-evidence.schema.json`へ`benchmark_comparison_report`（レポートへの相対path）と`benchmark_criteria_met`（`const: true`）を必須項目として追加し、`tools/release-gate.ps1 -Mode Production`で検証する。
+
+詳細な計算方法は`docs/release-gate.md`「ベンチマーク受入基準」を正本とする。
+
+## 影響
+
+* production証跡の必須項目が2つ増える。schema_versionは据え置いた（production証跡はまだ一度も作成されておらず、互換性を保つべき既存証跡が存在しないため）。
+* Developmentモードの挙動は変わらない。
+* 比較レポートの計算処理は`python/analysis/benchmark_comparison.py`として実装した（2026-09-23、出力契約は`contracts/benchmark-comparison-report.schema.json`）。ベンチマークの月末値はネットワークから自動取得せず、利用者が用意したCSVを入力とする（データ提供元のライセンス条件に依存し、取得元とデータを固定して再現性を保つため）。既存のWalk Forward・Final Holdout結果での合否は、ベンチマークデータ未取得のため未判定。
+* 実装時に次の計算上の仮定を固定した。(1) 月・暦年はAsia/Tokyoで区切る（課税年度と円建て月末値に合わせる）。(2) 複数ケース（銘柄×年）の取引は、ケースごとの口座通貨建て損益をそのまま1口座（`--initial-balance`）へ合算する（1口座で複数銘柄を運用する実際の配置に近いが、ケース間で`InpMaxOpenRiskPercent`等の口座全体の制約が効かない近似である）。(3) EAの税は年末に資産から差し引き、翌年以降の収益率はその資産へ掛ける（EAのLotは有効証拠金に比例するため）。(4) 期間末の途中年も、その時点までの利益へ課税する。繰越控除しきれなかった損失は価値ゼロとして扱う（ベンチマーク側も期間末の損失に価値を認めない）。(5) Sharpe比が算出不能な場合は「上回った」と判断できないため不合格とする。
+* Rollback: `git checkout -- docs/release-gate.md docs/operations.md docs/production-readiness-checklist.md contracts/production-release-evidence.schema.json tools/release-gate.ps1`、および本DECと`TASKS.md`の追加項目を削除する。

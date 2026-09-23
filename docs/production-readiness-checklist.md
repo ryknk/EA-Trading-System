@@ -8,6 +8,7 @@
 - [x] 0 warnings
 - [x] Unit Tests pass
 - [ ] Strategy Tester pass（2026-08-16にOANDA証券MT5・Custom Symbol `USDJPY_HIST`・In-Sample期間（2017-09〜2020-12、DEC-024/DEC-025）で完走、総損益-65,696円/PF 0.66の損失結果。受入基準未凍結のためpass/fail判定は保留。XMTrading-MT5時代の2025年単年実行（総損益-95,024円/PF 0.59）は参考記録。**2026-09-17: Final Holdout（2025-01〜2026-08、4銘柄）を実施、純利益-28,991円・期待値-160.2円/トレードでWalk Forward（+290.4円/トレード）から明確に悪化。原因分析の結果、戦略コアの実質勝率が2021年以降緩やかに悪化し続ける構造的トレンドと判明。pass/fail判定は依然保留だが、Final Holdoutは既に消費済み。**詳細は`docs/production-readiness-report.md`5/7/7.5/13/14節、`TASKS.md` 2.1.4節）
+- [ ] ベンチマーク受入基準pass（2026-09-23追加、`docs/release-gate.md`「ベンチマーク受入基準」・DEC-041。Walk Forward・Final Holdoutとも未判定）
 
 ## Risk
 

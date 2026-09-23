@@ -60,7 +60,7 @@ Dashboardは必要な環境だけ `-c enable_dashboard=true` で有効化する�
 
 開発ゲートは `.\tools\release-gate.ps1 -Mode Development` で実行する。これは静的検査、全Python・Lambda・CDKテスト、CDK synth、MetaEditor compile、MT5 script testを行うが、AWS deployや取引は行わない。
 
-Productionゲートには `contracts/production-release-evidence.schema.json` に従う証跡が必要である。OOS、Walk Forward、demo、小額実口座のレポート、model checksum、固定LLM model・prompt、AWS account・region、VPS秘密ファイル、SNS、Budgets、rollback drillを確認する。証跡不足時はゲート失敗を正常な安全動作として扱い、フラグを有効化しない。
+Productionゲートには `contracts/production-release-evidence.schema.json` に従う証跡が必要である。OOS、Walk Forward、demo、小額実口座、ベンチマーク比較のレポート、ベンチマーク受入基準の合否（`docs/release-gate.md`）、model checksum、固定LLM model・prompt、AWS account・region、VPS秘密ファイル、SNS、Budgets、rollback drillを確認する。証跡不足時はゲート失敗を正常な安全動作として扱い、フラグを有効化しない。
 
 有効化はDecision・Telemetryの観測だけを先に行い、取引変更を最後にする。最初から3フラグを同時にtrueにしない。production移行後も日次・週次レビューを続け、最大DD、Daily Loss、認証、モデル、アラーム、費用のいずれかに異常があれば前段環境へ戻す。
 
