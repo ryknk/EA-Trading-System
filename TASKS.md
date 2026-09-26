@@ -1739,6 +1739,44 @@ Walk Forward（Fold1-5、2020-2024、現行設定・4銘柄合計、`TASKS.md`�
 * **解釈の更新**: 2022年以降の劣化は、JPY建て全般の問題ではなく、既存FX4銘柄（USDJPY/EURJPY/EURUSD/GBPJPY、あるいはこれらに固有の相関構造・需給要因）に、より狭く限定される現象である可能性が強まった。
 * **限界**: (1) 年間取引数が10〜60件程度と少なく、統計的有意性の検定は行っていない。(2) AUDJPY・CADJPYは商品国通貨（豪ドル・加ドル）で、既存4銘柄（米ドル・ユーロ・ポンド・円）とは経済的性質が異なるため、この2ペアだけで「JPY建て全般」を代表できるとは言い切れない。(3) これまでの検証と同じ限界（tickデータソースの違い、価格トレンドとの交絡）も引き続き残る。
 
+* [x] **TrendReversalExit併用の独立追加検証（2026-09-26実施、ユーザー依頼）。** `docs/backtesting.md`「TrendReversalExitを不採用のまま据え置いた理由」に記載の計画（Final Holdoutで現行既定一式を確認した後、余力があればTriggerR=0.75でのTrendReversalExit併用を独立した追加検証として扱う）に基づき実施。現行既定（`InpEnableEarlyAdverseExit=true`・TriggerR=0.75・ConfirmationTicks=5）に`InpEnableTrendReversalExit=true`（Activation=1.0/Retrace=0.5/Ticks=5）を追加した専用テンプレート`StrategyTester-Generic-TrendReversalOn-H1.ini`で、Fold1-5・4銘柄（20ケース、CaseFile`walk-forward-2020-2024-trendreversal-on.json`、`results/backtests/20260926-145345-cases`）を実行し、Baseline（tick修正後の現行既定、`results/backtests/20260922-114452-cases`、純利益169,416円・521件）と比較した。
+
+  | 指標 | Baseline（現行既定） | TrendReversalExit ON | 差分 |
+  |---|---:|---:|---:|
+  | 純利益 | 169,416円 | 163,721円 | -5,695円（-3.4%） |
+  | 取引数 | 521件 | 547件 | +26件 |
+  | TP到達件数 | 117件 | 62件 | -55件（-47%） |
+  | SL到達件数 | 112件 | 29件 | -83件 |
+  | EarlyAdverseExit発動 | 249件（-919,939円） | 268件（-989,601円） | +19件 |
+  | 改善区分数（Fold×銘柄20区分） | — | 10/20（50%） | — |
+
+  **内訳**: TrendReversalExit単体の効果自体は良好（151件発動、勝率100%、平均+4,012円、合計+605,844円）で、発動トレードのうち`reached_tp_equivalent_r`（本来TPへ到達していたはずのトレードを早期Exitしていないか）は0件だった。しかし、**TP到達件数自体が117件→62件へ47%も減少しており、これが全体の純利益悪化の主因**。TrendReversalExit単体の発動パターンからは説明できない減少幅であり、EarlyAdverseExitとの相互作用（発動タイミングの変化、EA内部の判定順序への影響）によって間接的にTP到達機会が失われたと考えられるが、詳細な因果関係は未特定。
+
+  **結論**: `docs/backtesting.md`が懸念していたとおり、TriggerR=0.7時点の併用検証結果（Baseline比+63.5%改善）はTriggerR=0.75（現行既定）では再現せず、むしろ悪化した。改善区分数も10/20と、EarlyAdverseExit単独採用時（14/20）を下回り頑健性も低い。**TrendReversalExitの追加採用は推奨しない。現行既定（EarlyAdverseExit単独、TrendReversalExit OFF）を維持する。** これでExit戦略側の探索候補（建値ストップ・部分利確・ATRトレーリング・シグナル失効Exit・早期逆行Exit・トレンド継続反転Exit）は出尽くしたと判断する。
+
+* [x] **Entry側の条件別分析（2026-09-26実施、ユーザー依頼）。** Exit側の探索が出尽くしたことを受け、「含み益からの反転率は94〜95%で全設定を通じてほぼ不変」（2.1.3節参照）という既存所見から、問題がExit管理ではなくEntry判定の精度にある可能性を検証した。4銘柄・IS（2017-2019）〜Final Holdout相当（2025-2026）の全期間（`results/backtests/20260922-113349-cases`・`20260922-114452-cases`・`20260922-120856-cases`、919トレード）を`python.analysis.trade_breakdown.build_trade_context`でプールし、市場レジーム（トレンド・ボラティリティ）・セッション・曜日・方向別に期待値・勝率・反転率を集計した。
+
+  | 軸 | 区分 | n | 勝率 | 期待値 | 反転率 |
+  |---|---|---:|---:|---:|---:|
+  | ボラティリティレジーム | LowVolatility | 101 | 28.7% | +592円 | 0.545 |
+  | | NormalVolatility | 740 | 31.2% | +30円 | 0.600 |
+  | | HighVolatility | 78 | 35.9% | +288円 | 0.615 |
+  | セッション | NewYork | 224 | 38.8% | +332円 | 0.554 |
+  | | London | 226 | 27.9% | +203円 | 0.619 |
+  | | Tokyo | 270 | 30.4% | +231円 | 0.585 |
+  | | London_NY_Overlap | 199 | 28.1% | -392円 | 0.628 |
+  | 方向 | BUY | 615 | 34.0% | +230円 | 0.566 |
+  | | SELL | 304 | 26.0% | -120円 | 0.655 |
+
+  ATR・ADXの細かい帯別分析（既存`atr_band`/`adx_band`）はn=1〜18程度でノイズが大きく、明確なパターンは見出せなかった。BUY/SELLの差は過去の分析（USDJPY単体、2021-2024の円安トレンドと整合）と同様、市場環境の事後的な反映であり、Entry側の判定精度の問題ではないと判断した。
+
+  **2つの手がかりの頑健性確認**: LowVolatility優位性（+592円）とLondon_NY_Overlap劣位性（-392円）について、年別（9期間）・銘柄別（4銘柄）の一貫性を確認した。
+
+  * LowVolatility: 年別9期間中5期間で優位、4期間で劣位。**銘柄別ではEURJPY（+1,545 vs -190）・GBPJPY（+1,136 vs +413）でのみ明確に優位で、EURUSD（+15 vs -21）・USDJPY（+16 vs -17）ではほぼ差がなく、円クロス2銘柄への依存が強い。**
+  * London_NY_Overlap: 年別9期間中6期間で劣位、3期間で優位。銘柄別ではEURJPY・EURUSD・GBPJPYの3銘柄で劣位を確認したが、**USDJPYのみ逆に優位（+408 vs -120）**で完全な一貫性はない。
+
+  **結論**: 参考として過去の採用基準（EarlyAdverseExit単独採用時の改善区分数14/20=70%、不採用のTrendReversalExit併用10/20=50%）と比較すると、今回の2手がかりはその中間（LowVolatility 56%、Overlap除外67%）で、いずれも「弱いシグナル」の段階に留まり、特にLowVolatilityは特定の円クロス2銘柄への依存が強く汎用的なフィルタとしての採用は見送る。**Entry側の条件別分析からは、Exit側改善に匹敵する明確で頑健な改善余地は見つからなかった。** Entry側の探索はここで一旦区切る。
+
 ## 2.2 `TestDecisionApiRules` の終了コード
 
 **2026-08-16追記**: 本番運用ブローカーをOANDA証券MT5へ切り替え（`DECISIONS.md` DEC-023）、`tools/compile-mql5.ps1`・`tools/run-mql5-tests.ps1`・`tools/run-strategy-tester.ps1`・`tools/release-gate.ps1`・`tools/link-mt5.ps1`のデフォルト対象をOANDA端末へ変更した上で、Compile・7 Script Testを再実行した。結果はXMTrading環境と同一（全PASS、`TestDecisionApiRules`のみexit code 1）。この事象はBroker固有ではなく、Script/Runner/Terminal設定側の問題であることが裏付けられた。

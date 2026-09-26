@@ -209,6 +209,8 @@ python -m python.analysis.trade_breakdown --input results/backtests/<on-run-id>-
 
 **現時点の判断**: `InpEnableEarlyAdverseExit`は既定`true`（TriggerR=0.75、`ConfirmationTicks`=5）へ採用済みである（2026-09-13、ユーザー明示指示、`TASKS.md`参照）。`InpEnableTrendReversalExit`は上記の理由により既定`false`を維持する。**本節の数値はいずれもFold1-5への複数回のパラメータ適合の結果であり、Final Holdout（2025-01〜2026-08）での確認前に、これ以上の採用範囲拡大の判断をしないこと。**
 
+**独立追加検証の結果（2026-09-26実施）**: 上記の計画（Final Holdout確認後、TriggerR=0.75での併用を独立した追加検証として扱う）に基づき、現行既定（TriggerR=0.75）を土台に`InpEnableTrendReversalExit=true`を追加してFold1-5・4銘柄で再検証した（`results/backtests/20260926-145345-cases`、Baseline=`results/backtests/20260922-114452-cases`）。**懸念どおり、TriggerR=0.7時点の併用検証結果（Baseline比+63.5%）はTriggerR=0.75では再現せず、純利益はむしろ-3.4%悪化した（169,416円→163,721円）。** 改善区分数も10/20と単独設定（14/20）を下回り頑健性も低い。原因はTP到達件数の大幅減少（117件→62件、-47%）で、TrendReversalExit単体の効果自体（151件発動・勝率100%・合計+605,844円、TP取りこぼし0件）は良好だったが、EarlyAdverseExitとの相互作用でTP到達機会自体が失われたと考えられる（詳細因果は未特定）。**結論: TrendReversalExitの追加採用は推奨しない。現行既定（EarlyAdverseExit単独、TrendReversalExit OFF）を維持する。** 詳細は`TASKS.md` 2.1.4節を参照。
+
 発動したトレードはEA側`CPositionExitEvaluator::EvaluateEarlyAdverseExits`が送出する`EARLY_ADVERSE_EXIT`イベント（`reason_code`固定値`EarlyAdverseConfirmed`、`adverse_r_multiple`、`confirmation_count`）で識別する。
 
 ```powershell
