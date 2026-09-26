@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-09-26T06:54:05.523709Z",
+  "currency": "ACCOUNT_CURRENCY",
+  "definitions": {
+    "net_pnl": "手数料・スワップ・fee込みの決済済み取引損益",
+    "sharpe": "ACCOUNT_EQUITY_SNAPSHOTSの暦日の日次収益率、標本標準偏差、年率化係数sqrt(365.2425)",
+    "max_drawdown": "ACCOUNT_EQUITY_SNAPSHOTS"
+  },
+  "metrics": {
+    "starting_balance": 1000000.0,
+    "ending_balance": 1007654.0,
+    "net_profit": 7654.0,
+    "return_rate": 0.00765400000000005,
+    "cagr": 0.00337764229878516,
+    "gross_profit": 119419.0,
+    "gross_loss": -111765.0,
+    "profit_factor": 1.0684829776763745,
+    "sharpe_ratio": -0.1085760956704837,
+    "sharpe_source": "ACCOUNT_EQUITY_SNAPSHOTS",
+    "win_rate": 0.2545454545454545,
+    "average_win": 8529.92857142857,
+    "average_loss": -3020.675675675676,
+    "expectancy": 139.16363636363636,
+    "maximum_consecutive_losses": 11,
+    "number_of_trades": 55,
+    "analysis_start": "2017-09-12T17:00:00Z",
+    "analysis_end": "2019-12-17T14:47:45Z",
+    "duration_days": 825.9081597222222,
+    "drawdown_source": "ACCOUNT_EQUITY_SNAPSHOTS",
+    "max_drawdown_amount": 64227.0,
+    "max_drawdown_rate": 0.0619925408573381,
+    "drawdown_peak_time": "2017-12-29T00:00:00Z",
+    "drawdown_trough_time": "2019-08-22T00:00:00Z",
+    "drawdown_recovery_time": null,
+    "closed_trade_max_drawdown_amount": 59707.0,
+    "closed_trade_max_drawdown_rate": 0.05685113984121634
+  },
+  "by_strategy": [
+    {
+      "strategy": "BREAKOUT",
+      "number_of_trades": 45,
+      "net_profit": 19334.0,
+      "win_rate": 0.26666666666666666,
+      "profit_factor": 1.2259436718476102,
+      "expectancy": 429.64444444444445,
+      "average_win": 8742.0,
+      "average_loss": -2950.689655172414
+    },
+    {
+      "strategy": "PULLBACK",
+      "number_of_trades": 10,
+      "net_profit": -11680.0,
+      "win_rate": 0.2,
+      "profit_factor": 0.5541133804161099,
+      "expectancy": -1168.0,
+      "average_win": 7257.5,
+      "average_loss": -3274.375
+    }
+  ],
+  "by_symbol": [
+    {
+      "symbol": "EURJPY_HIST",
+      "number_of_trades": 55,
+      "net_profit": 7654.0,
+      "win_rate": 0.2545454545454545,
+      "profit_factor": 1.0684829776763745,
+      "expectancy": 139.16363636363636,
+      "average_win": 8529.92857142857,
+      "average_loss": -3020.675675675676
+    }
+  ]
+}

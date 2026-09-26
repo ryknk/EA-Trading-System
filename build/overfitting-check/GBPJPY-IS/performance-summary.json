@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-09-26T06:54:06.621859Z",
+  "currency": "ACCOUNT_CURRENCY",
+  "definitions": {
+    "net_pnl": "手数料・スワップ・fee込みの決済済み取引損益",
+    "sharpe": "ACCOUNT_EQUITY_SNAPSHOTSの暦日の日次収益率、標本標準偏差、年率化係数sqrt(365.2425)",
+    "max_drawdown": "ACCOUNT_EQUITY_SNAPSHOTS"
+  },
+  "metrics": {
+    "starting_balance": 1000000.0,
+    "ending_balance": 1033398.0,
+    "net_profit": 33398.0,
+    "return_rate": 0.03339800000000004,
+    "cagr": 0.015149952231817296,
+    "gross_profit": 155776.0,
+    "gross_loss": -122378.0,
+    "profit_factor": 1.2729085293108238,
+    "sharpe_ratio": 0.655024309148594,
+    "sharpe_source": "ACCOUNT_EQUITY_SNAPSHOTS",
+    "win_rate": 0.359375,
+    "average_win": 6772.869565217391,
+    "average_loss": -3059.45,
+    "expectancy": 521.84375,
+    "maximum_consecutive_losses": 7,
+    "number_of_trades": 64,
+    "analysis_start": "2017-09-19T09:00:00Z",
+    "analysis_end": "2019-11-26T09:09:10Z",
+    "duration_days": 798.0063657407408,
+    "drawdown_source": "ACCOUNT_EQUITY_SNAPSHOTS",
+    "max_drawdown_amount": 37365.0,
+    "max_drawdown_rate": 0.03703340291034081,
+    "drawdown_peak_time": "2017-12-29T00:00:00Z",
+    "drawdown_trough_time": "2018-12-21T00:00:00Z",
+    "drawdown_recovery_time": "2019-04-15T00:00:27Z",
+    "closed_trade_max_drawdown_amount": 36674.0,
+    "closed_trade_max_drawdown_rate": 0.03614138441783438
+  },
+  "by_strategy": [
+    {
+      "strategy": "BREAKOUT",
+      "number_of_trades": 56,
+      "net_profit": 40580.0,
+      "win_rate": 0.375,
+      "profit_factor": 1.389989812981721,
+      "expectancy": 724.6428571428571,
+      "average_win": 6887.333333333333,
+      "average_loss": -3060.4117647058824
+    },
+    {
+      "strategy": "PULLBACK",
+      "number_of_trades": 8,
+      "net_profit": -7182.0,
+      "win_rate": 0.25,
+      "profit_factor": 0.6080550098231827,
+      "expectancy": -897.75,
+      "average_win": 5571.0,
+      "average_loss": -3054.0
+    }
+  ],
+  "by_symbol": [
+    {
+      "symbol": "GBPJPY_HIST",
+      "number_of_trades": 64,
+      "net_profit": 33398.0,
+      "win_rate": 0.359375,
+      "profit_factor": 1.2729085293108238,
+      "expectancy": 521.84375,
+      "average_win": 6772.869565217391,
+      "average_loss": -3059.45
+    }
+  ]
+}

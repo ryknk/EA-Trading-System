@@ -1783,11 +1783,16 @@ Walk Forward（Fold1-5、2020-2024、現行設定・4銘柄合計、`TASKS.md`�
 
 **2026-08-17追記**: 市場レジーム判定ロジック追加に伴う新規`TestMarketRegimeClassifier`でも同じ事象（`TEST_SUITE_PASS`・全アサーションPASSだがTerminal Exit Code 1）を確認した。特定のテスト内容に依存しない再現性が高まり、Script/Runner/Terminal設定側の問題であるという既存の推定をさらに裏付ける。
 
-* [ ] `TEST_SUITE_PASS` にもかかわらずProcess Exit Code 1となる状態を再現する
-* [ ] MT5 Terminal側の終了理由を確認する
-* [ ] Script、Runner、Terminal設定のどこに原因があるか特定する
-* [ ] テスト結果判定方法が誤検知しないことを確認する
-* [ ] 修正後に全MQL5 Script Testを再実行する
+* [x] **`TEST_SUITE_PASS`にもかかわらずProcess Exit Code 1となる根本原因を特定した（2026-09-26実施、ユーザー依頼、Final Holdoutを消費しない領域として選定）。** `Invoke-Mt5Execution`（Win32 `GetExitCodeProcess`で直接取得、PowerShellの`Start-Process`特有の不安定さの影響は受けない）でTerminal64.exeの終了コードを実測し、最小再現ケースまで切り分けた。手順: (1) `TestDecisionApiRules`・`TestMarketRegimeClassifier`単体実行でExitCode=1を再現、`TestTradingRules`はExitCode=0を確認（既存記録どおり）。(2) NaN生成・不正JSON処理をそれぞれ単独の最小スクリプトで試したがExitCode=0で再現せず（当初の疑い先を除外）。(3) `CryptoUtils.mqh`の4関数（Sha256Hex/HmacSha256Hex/JsonEscape/GenerateUuid）をそれぞれ単独で呼び出す最小スクリプトを作り、**全4関数でExitCode=1が再現**した一方、同ファイルを`#include`するだけ（関数呼び出しなし）ではExitCode=0だった。(4) `MarketRegimeClassifier.mqh`側も同様に分解し、`ClassifyTrend`（enum返却）はExitCode=0、`MarketRegimeTrendToString`（string返却）はExitCode=1、`ChoppinessIndex::Calculate`（double返却）はExitCode=0だった。(5) 最終確認として、`mt5/Include/`配下に文字列リテラルを1つ返すだけの最小ヘッダ関数を新規作成し、それを呼び出すだけのスクリプトでもExitCode=1を再現した。
+
+  **根本原因: `#include`されたヘッダファイル内で定義された、string型を返す関数（クラスメンバーかどうかは無関係）を呼び出すと、Terminal64.exeプロセスの終了コードが1になる。** これはコードのバグではなく、MQL5 Terminalの未文書化の癖（あるいは仕様）で、`TestDecisionApiRules`（文字列を返す`CCryptoUtils`のメソッドを使用）・`TestMarketRegimeClassifier`（文字列を返す`MarketRegimeTrendToString`/`MarketRegimeVolatilityToString`を使用）の両方が、ちょうどこの条件に該当していたために発生していた。`TestTradingRules`等の他の全PASSテストは、string返却関数を呼ばない、またはMQL5組み込みの`StringFormat`等（ヘッダファイル内のユーザー定義関数ではない）のみを使うため、この現象に該当しない。
+
+  **安全性・テスト結果判定への影響評価**: `tools/run-mql5-tests.ps1`は各テストの`ExitCode`を`$exitCodes[$test]`に記録しログへ表示するのみで、PASS/FAIL判定自体は監査ログの`TEST_SUITE_PASS`/`TEST_SUITE_FAIL`マーカー検出でのみ行っており、`ExitCode`の値は判定に使用していない（`tools/release-gate.ps1`にも`ExitCode`の参照はない）。**したがって本事象はテスト結果判定の誤検知ではなく、これまでの全PASS判定は正しい。安全性への影響はない。**
+  * [x] `TEST_SUITE_PASS`にもかかわらずProcess Exit Code 1となる状態を再現する
+  * [x] MT5 Terminal側の終了理由を確認する
+  * [x] Script、Runner、Terminal設定のどこに原因があるか特定する（Terminal設定・Runner側ではなく、string型を返すヘッダ内関数呼び出しというMQL5固有の癖）
+  * [x] テスト結果判定方法が誤検知しないことを確認する（`run-mql5-tests.ps1`はExitCodeを判定に使っておらず誤検知はない）
+  * [ ] 修正後に全MQL5 Script Testを再実行する（コード側の修正は不要と判断したため対象外。念のためコメントで本事象への参照を残すかはユーザー判断）
 
 ## 2.3 条件別分析（Entry/Exit）機能
 
@@ -1864,7 +1869,16 @@ Walk Forward（Fold1-5、2020-2024、現行設定・4銘柄合計、`TASKS.md`�
 * [ ] 取引コスト込みで評価する
 * [ ] 期間別・相場環境別の安定性を確認する
 * [x] IS/OOS/Walk Forwardの過学習疑いを自動診断する機能を実装する（2026-08-16実装、`python/analysis/overfitting.py`。`DECISIONS.md` DEC-026参照。実データでの診断実行は未実施）
-* [ ] 実際のIS/OOS/Walk Forward各期間の`performance-summary.json`で過学習疑い診断を実行する
+* [x] **実際のIS/OOS/Walk Forward各期間の`performance-summary.json`で過学習疑い診断を実行する（2026-09-26実施、ユーザー依頼。Final Holdoutを消費しない領域として選定）。** `python.analysis.overfitting`（DEC-026、実データでの実行は初回）を使い、4銘柄（USDJPY/EURJPY/EURUSD/GBPJPY_HIST）それぞれについて、IS期間3年分合算（2017-09〜2019-12、`python.analysis.reports`で3年分の監査ログを結合し単一のperformance-summary.jsonを生成）を基準に、Walk Forward各年（2020-2024、既存の`results/backtests/20260922-114452-cases`のperformance-summary.jsonをそのまま利用）との比較を行った。
+
+  | 銘柄 | 5Fold平均スコア | 総合判定（閾値無視） | 最悪Fold |
+  |---|---:|---|---|
+  | USDJPY | 0.6/10.0 | LOW | FOLD2024（MODERATE、sharpe劣化112.5%） |
+  | EURJPY | 3.8/10.0 | **MODERATE** | FOLD2023（**HIGH**、net_profit劣化350.9%・sharpe劣化652.0%・expectancy劣化630.8%） |
+  | EURUSD | 0.4/10.0 | LOW | FOLD2024（MODERATE、sharpe劣化558.1%） |
+  | GBPJPY | 1.6/10.0 | LOW | FOLD2024（MODERATE、net_profit劣化63.1%） |
+
+  **重要な留保**: 4銘柄・全Foldで`reliability_warning=True`となり、正式な分類は「INSUFFICIENT_DATA」（信頼性が低い）である。診断ツールの最低取引数閾値（30件/期間）に対し、IS期間合算（45〜64件）は満たすが、年次Fold単位（13〜29件）は大半が届いていない。EURJPYのFOLD2020/2021/2023で目立つHIGH判定も、IS期間のexpectancy自体が小さい値（+139円/トレード）のため、そこからの悪化で劣化率（%）の分母が小さく比率が拡大している可能性があり、統計的なアーティファクトの疑いを排除できない。**結論: 深刻な過学習を断定する決定的な証拠は見つからなかったが、年次Fold単位の取引数不足により、明確に「過学習ではない」と証明することもできない。** 生成物は`build/overfitting-check/`（Git管理外）。
 * [ ] production候補Model Artifactを生成する
 * [ ] Model VersionとSHA-256を記録する
 * [ ] Model Artifactと評価Reportを保管する
