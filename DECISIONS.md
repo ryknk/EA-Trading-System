@@ -1216,3 +1216,33 @@ EAの運用資金は、NISA非課税枠（1,800万円）を超えた資産を想
 * 比較レポートの計算処理は`python/analysis/benchmark_comparison.py`として実装した（2026-09-23、出力契約は`contracts/benchmark-comparison-report.schema.json`）。ベンチマークの月末値はネットワークから自動取得せず、利用者が用意したCSVを入力とする（データ提供元のライセンス条件に依存し、取得元とデータを固定して再現性を保つため）。既存のWalk Forward・Final Holdout結果での合否は、ベンチマークデータ未取得のため未判定。
 * 実装時に次の計算上の仮定を固定した。(1) 月・暦年はAsia/Tokyoで区切る（課税年度と円建て月末値に合わせる）。(2) 複数ケース（銘柄×年）の取引は、ケースごとの口座通貨建て損益をそのまま1口座（`--initial-balance`）へ合算する（1口座で複数銘柄を運用する実際の配置に近いが、ケース間で`InpMaxOpenRiskPercent`等の口座全体の制約が効かない近似である）。(3) EAの税は年末に資産から差し引き、翌年以降の収益率はその資産へ掛ける（EAのLotは有効証拠金に比例するため）。(4) 期間末の途中年も、その時点までの利益へ課税する。繰越控除しきれなかった損失は価値ゼロとして扱う（ベンチマーク側も期間末の損失に価値を認めない）。(5) Sharpe比が算出不能な場合は「上回った」と判断できないため不合格とする。
 * Rollback: `git checkout -- docs/release-gate.md docs/operations.md docs/production-readiness-checklist.md contracts/production-release-evidence.schema.json tools/release-gate.ps1`、および本DECと`TASKS.md`の追加項目を削除する。
+
+# DEC-042: Dukascopy tick取得のライセンス上のリスクを認識の上で継続する
+
+**状態:** 採用（2026-09-26、ユーザーの明示的な判断）。
+
+## 背景
+
+TASKS.md 3.1節「データ利用条件とライセンスを確認する」の一環で、Dukascopy Bank SAの公式サイト（`https://www.dukascopy.com/swiss/english/legal-pages/terms-of-use/`）のTerms of Use（TCU）を確認した結果、既に投入済みのDukascopy由来tick（EURUSD検証サンプル、AUDUSD/USDCAD/NZDUSD/GBPUSD/AUDJPY/CADJPYの全期間、`docs/tick-data-pipeline.md`・DEC-036〜040）の取得・保存方法が、TCUの複数の条項に文言上抵触する可能性が判明した。
+
+## 確認したTCUの抵触点
+
+1. **自動化ツールでの取得の禁止**: 「You shall not use or attempt to use any 'scraper,' 'robot,' 'bot,' 'spider,' 'data mining,' 'computer code,' or any other automate device, program, tool, algorithm, process or methodology to access, acquire, copy, or monitor any portion of the WEBSITE ... without the prior express written consent of DUKASCOPY.」——`tools/tick-data/dukascopy-download.mjs`（`dukascopy-node`経由）による自動取得は、この条項に該当する可能性が高い。
+2. **非商用利用限定**: 「you agree to use the WEBSITE solely for your own non-commercial use and benefit」「Such download is licensed to you by DUKASCOPY ONLY for your own personal, non-commercial use」——本プロジェクトは将来的な実取引（商用）を目的とするため、この制約に抵触する可能性がある。
+3. **データベース構築の禁止**: 「The WEBSITE and the information contained therein may not be used to construct a database of any kind. Nor may the WEBSITE be stored (in its entirety or in any part) in databases」——`tick/pipeline/`への永続的な保存、MT5 Custom Symbolへの投入は、この条項が禁じる「データベース構築」に該当する可能性が高い。
+
+## 留保（断定していない点）
+
+* これは`dukascopy.com`という一般公開ウェブサイトに対するTCUであり、実際に`dukascopy-node`がアクセスする配信エンドポイント（historydata系サブドメイン等）がこのTCUの適用範囲に技術的に含まれるかは、公式文書のみからは確定できない（**未確認**）。
+* 同種のツール（`dukascopy-node`等）は広く使われている実績があるが、これはDukascopyが明示的に許可していることを意味しない。
+* Dukascopyへの直接の問い合わせ・許諾確認は行っていない。
+
+## 決定
+
+上記のリスクを認識した上で、ユーザーの明示的な判断により、既存のDukascopy由来tickの利用（分析・検証目的）を継続する。追加のDukascopy取得を行う場合も、本DECに記録したリスクが解消されたわけではないことを前提とする。
+
+## 影響
+
+* 既存のDukascopy由来tick（EURUSD検証サンプル、AUDUSD/USDCAD/NZDUSD/GBPUSD/AUDJPY/CADJPYの全期間データ）はそのまま保持し、削除・巻き戻しは行わない。
+* 将来、本プロジェクトが実際に商用・本番運用へ進む場合（Production Release Gate通過後の実口座運用等）は、Dukascopy由来tickを使った検証結果の位置づけ（あくまで参考・探索目的であり、production判定の直接根拠にはしていないこと、`TASKS.md`各エントリに明記済み）を再確認し、必要であれば正規のライセンス確認・許諾取得を検討すべきである。
+* Rollback: 本DEC自体は事実の記録であり、取り消すべき変更（コード・データ）はない。方針を変更する場合は本DECの上書きで対応する。

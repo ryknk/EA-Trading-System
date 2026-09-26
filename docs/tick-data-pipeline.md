@@ -78,7 +78,7 @@ MT5へ渡す前に`validation.json`と`dataset.json`へ記録する。**error（
 
 | Provider | 用途 | 制約 |
 | --- | --- | --- |
-| `dukascopy` | Dukascopyの無料tick（USDJPY等、2016年以前も可）。要Node.js 18以上と`npm ci --prefix tools/tick-data`。 | Dukascopy側のレート制限（HTTP 429）。短時間に大量のリクエストを送ると弾かれることがある（実測: 過去の連続試験中に、1日分が繰り返しHTTP 429で失敗する状態になった）ため、Node Adapterは1時間ごとに取得して`batch_pause_ms`（既定0、2026-09-23に3,000→500→0の順で引き下げ。下記「速度」参照）待機し、429などは`retry_pause_ms`（既定30000、倍々）で再試行する。ライセンス・利用条件は**未確認**。Bid/Askの取得元・価格はOANDAと同一ではない。 |
+| `dukascopy` | Dukascopyの無料tick（USDJPY等、2016年以前も可）。要Node.js 18以上と`npm ci --prefix tools/tick-data`。 | Dukascopy側のレート制限（HTTP 429）。短時間に大量のリクエストを送ると弾かれることがある（実測: 過去の連続試験中に、1日分が繰り返しHTTP 429で失敗する状態になった）ため、Node Adapterは1時間ごとに取得して`batch_pause_ms`（既定0、2026-09-23に3,000→500→0の順で引き下げ。下記「速度」参照）待機し、429などは`retry_pause_ms`（既定30000、倍々）で再試行する。**ライセンス・利用条件は確認済み（2026-09-26、`DECISIONS.md` DEC-042）で、Terms of Useの複数条項（自動化ツールでの取得禁止・非商用限定・データベース構築禁止）に文言上抵触する可能性が高いと判明している。ユーザーの判断でリスクを認識の上で利用を継続中。** Bid/Askの取得元・価格はOANDAと同一ではない。 |
 | `csvfile` | 取得済みCSV（OANDA証券のMT5標準タブ形式`mt5-tab`、または`header-csv`、zip可）の取込。`source_time`（サーバー時刻の規則）が必須。 | 月単位chunk（`chunk_unit: month`）と`source_pattern`（`{yyyy}`・`{mm}`）でファイルへ対応付ける。DST切替の重複時刻（市場休場中）は復元できない。 |
 | `mock` | 決定的な合成tick。テスト・配線確認専用。 | 市場データとして使わない。 |
 
