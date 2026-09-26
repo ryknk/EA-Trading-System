@@ -1,0 +1,15 @@
+{
+  "_comment": "Dukascopy AUDJPYの全期間プロファイル。JPY建てだが既存FX4銘柄（USDJPY/EURJPY/GBPJPY）とは別のペアで、2022年以降の劣化がJPY建て固有かクロス固有かを切り分けるための追加検証用（ユーザー依頼、2026-09-24）。既存FX4銘柄と同じ2016-09-01を開始日とした（DEC-023のUSDJPY実データ最古日基準）。",
+  "provider": "dukascopy",
+  "symbol": "AUDJPY",
+  "from": "2016-09-01",
+  "to": "2026-08-31",
+  "timezone": "UTC",
+  "chunk_unit": "day",
+  "storage_root": "tick/pipeline",
+  "server_time": { "mode": "ny_close" },
+  "provider_options": { "instrument": "audjpy", "batch_pause_ms": 0, "retry_count": 4, "retry_pause_ms": 30000 },
+  "retry": { "max_attempts": 4, "initial_backoff_seconds": 2, "max_backoff_seconds": 60, "timeout_seconds": 3600 },
+  "validation": { "max_gap_seconds": 14400, "max_price_jump_ratio": 0.05, "max_rejected_ratio": 0.001 },
+  "mt5": { "source_symbol": "AUDJPY", "custom_symbol": "AUDJPY_HIST", "custom_path": "EaTradingSystem\\History" }
+}

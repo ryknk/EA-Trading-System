@@ -1,0 +1,9 @@
+[
+  {
+    "case_name": "tick-quality",
+    "template": "mt5\\test-config\\StrategyTester-TickQuality-M1.ini",
+    "from_date": "2021.01.01",
+    "to_date": "2021.01.05",
+    "symbol": "GBPUSD_HIST"
+  }
+]

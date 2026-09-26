@@ -1,0 +1,9 @@
+[
+  {
+    "symbol": "AUDJPY_HIST",
+    "from_date": "2021.01.01",
+    "case_name": "tick-quality",
+    "to_date": "2021.01.05",
+    "template": "mt5\\test-config\\StrategyTester-TickQuality-M1.ini"
+  }
+]

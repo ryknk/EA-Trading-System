@@ -1,0 +1,14 @@
+{
+  "_comment": "動作確認用の5日分（2020-03-02〜03-06）。JPY建てだが既存FX4銘柄（USDJPY/EURJPY/GBPJPY）とは別のペアで、2022年以降の劣化がJPY建て固有かクロス固有かを切り分けるための追加検証用。取込先は試験用Custom Symbol CADJPY_DUKA_TEST。",
+  "provider": "dukascopy",
+  "symbol": "CADJPY",
+  "from": "2020-03-02",
+  "to": "2020-03-06",
+  "timezone": "UTC",
+  "chunk_unit": "day",
+  "storage_root": "tick/pipeline",
+  "server_time": { "mode": "ny_close" },
+  "provider_options": { "instrument": "cadjpy", "batch_pause_ms": 0, "retry_count": 4, "retry_pause_ms": 30000 },
+  "retry": { "max_attempts": 3, "initial_backoff_seconds": 30, "max_backoff_seconds": 120, "timeout_seconds": 3600 },
+  "mt5": { "source_symbol": "CADJPY", "custom_symbol": "CADJPY_DUKA_TEST", "custom_path": "EaTradingSystem\\History" }
+}

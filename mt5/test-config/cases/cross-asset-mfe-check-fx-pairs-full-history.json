@@ -1,0 +1,26 @@
+{
+  "description": "FXメジャーペア（AUDUSD/USDCAD/NZDUSD/GBPUSD）でのmfe_r検証をIS期間相当まで拡張するconfirmatory測定（2026-09-24実施、ユーザー依頼）。cross-asset-mfe-check-fx-pairs.json（2021-2026、AUDUSD/USDCAD/NZDUSDのみ）に続き、tickをIS期間開始日（既存FX4銘柄と同じ2016-09、DEC-023基準）まで遡って取得済みになったため、AUDUSD/USDCAD/NZDUSDのIS相当期間（2017.09-2019、2020）と、新規追加のGBPUSD全期間（IS〜Final Holdout相当）を測定する。パラメータ調整・Fold1-5への適合には一切使わない初見資産であり、Final Holdoutやproduction判定の根拠にはしない。現行確定設定一式のまま（StrategyTester-Generic-H1.ini、パラメータ変更なし）で、is-period-2017-2019-current-config.json・walk-forward-2020-2024-current-config.jsonと同じ期間分割を使用する。",
+  "cases": [
+    { "case_name": "AUDUSD-IS-2017", "symbol": "AUDUSD_HIST", "from_date": "2017.09.01", "to_date": "2017.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDUSD-IS-2018", "symbol": "AUDUSD_HIST", "from_date": "2018.01.01", "to_date": "2018.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDUSD-IS-2019", "symbol": "AUDUSD_HIST", "from_date": "2019.01.01", "to_date": "2019.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDUSD-WF-2020", "symbol": "AUDUSD_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDCAD-IS-2017", "symbol": "USDCAD_HIST", "from_date": "2017.09.01", "to_date": "2017.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDCAD-IS-2018", "symbol": "USDCAD_HIST", "from_date": "2018.01.01", "to_date": "2018.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDCAD-IS-2019", "symbol": "USDCAD_HIST", "from_date": "2019.01.01", "to_date": "2019.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDCAD-WF-2020", "symbol": "USDCAD_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "NZDUSD-IS-2017", "symbol": "NZDUSD_HIST", "from_date": "2017.09.01", "to_date": "2017.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "NZDUSD-IS-2018", "symbol": "NZDUSD_HIST", "from_date": "2018.01.01", "to_date": "2018.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "NZDUSD-IS-2019", "symbol": "NZDUSD_HIST", "from_date": "2019.01.01", "to_date": "2019.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "NZDUSD-WF-2020", "symbol": "NZDUSD_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPUSD-IS-2017", "symbol": "GBPUSD_HIST", "from_date": "2017.09.01", "to_date": "2017.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPUSD-IS-2018", "symbol": "GBPUSD_HIST", "from_date": "2018.01.01", "to_date": "2018.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPUSD-IS-2019", "symbol": "GBPUSD_HIST", "from_date": "2019.01.01", "to_date": "2019.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPUSD-WF-2020", "symbol": "GBPUSD_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPUSD-WF-2021", "symbol": "GBPUSD_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPUSD-WF-2022", "symbol": "GBPUSD_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPUSD-WF-2023", "symbol": "GBPUSD_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPUSD-WF-2024", "symbol": "GBPUSD_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPUSD-2526", "symbol": "GBPUSD_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" }
+  ]
+}
