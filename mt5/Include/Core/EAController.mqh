@@ -11,6 +11,7 @@
 #include <EaTradingSystem/Trading/PositionExitEvaluator.mqh>
 #include <EaTradingSystem/External/DecisionApiClient.mqh>
 #include <EaTradingSystem/External/MockDecisionProvider.mqh>
+#include <EaTradingSystem/External/HeartbeatApiClient.mqh>
 #include <EaTradingSystem/Logging/TradeLogger.mqh>
 #include <EaTradingSystem/Logging/TradeAnalyticsTracker.mqh>
 #include <EaTradingSystem/Logging/EntryTimingAnalyzer.mqh>
@@ -40,6 +41,9 @@ private:
    CClosedPositionProcessor    m_closed_position_processor;
    CEntryTimingAnalyzer        m_entry_timing_analyzer;
    CBreakoutTimingAnalyzer     m_breakout_timing_analyzer;
+   // EA稼働監視専用。OnTimerからだけ送信し、OnTick（既存ポジション管理・新規候補処理）とは独立させる。
+   CHeartbeatApiClient         m_heartbeat_client;
+   int                         m_heartbeat_consecutive_failures;
    bool                        m_initialized;
    datetime                    m_last_risk_error_log;
    string                      m_last_risk_lock_code;
@@ -219,7 +223,15 @@ public:
             return false;
            }
         }
+      // Heartbeatの初期化失敗（Secret File不在等）は監視欠損としてAWS側Alarmで検知する。
+      // 取引処理の初期化結果には影響させない（Telemetryと同じベストエフォート扱い）。
+      string heartbeat_error;
+      m_heartbeat_consecutive_failures=0;
+      if(!m_heartbeat_client.Initialize(m_config,heartbeat_error))
+         PrintFormat("HEARTBEAT_INIT_FAILED code=%s trading_impact=none",heartbeat_error);
       m_initialized=true;
+      PrintFormat("HEARTBEAT_STATE enabled=%s interval_seconds=%d",
+                  (m_heartbeat_client.Enabled() ? "true" : "false"),m_config.heartbeat_interval_seconds);
       PrintFormat("KILL_SWITCH_STATE emergency_stop=%s strategy_enabled=%s new_orders=%s existing_position_management=true",
                   (m_config.emergency_stop ? "enabled" : "disabled"),
                   (m_config.strategy_enabled ? "enabled" : "disabled"),
@@ -236,6 +248,7 @@ public:
    void Shutdown(void)
      {
       m_initialized=false;
+      m_heartbeat_client.Shutdown();
       m_audit_publisher.Shutdown();
       m_decision_client.Shutdown();
       m_mock_decision_provider.Shutdown();
@@ -244,6 +257,29 @@ public:
       m_position_manager.Shutdown();
       m_strategy.Shutdown();
       m_mean_reversion_strategy.Shutdown();
+     }
+
+   bool HeartbeatEnabled(void) const { return m_heartbeat_client.Enabled(); }
+
+   // Heartbeat送信のみを行う。成否はログ出力だけで、Risk Manager・注文・既存ポジション管理・
+   // Kill Switchの状態を一切変更しない。
+   void OnTimer(void)
+     {
+      if(!m_initialized || !m_heartbeat_client.Enabled())
+         return;
+      string heartbeat_error;
+      const bool kill_switch_active=!CDecisionPolicyRules::IsNewCandidateProcessingAllowed(m_config.emergency_stop,
+                                                                                           m_config.strategy_enabled);
+      if(m_heartbeat_client.Send(TerminalInfoInteger(TERMINAL_CONNECTED)!=0,kill_switch_active,heartbeat_error))
+        {
+         if(m_heartbeat_consecutive_failures>0)
+            PrintFormat("HEARTBEAT_RECOVERED previous_failures=%d",m_heartbeat_consecutive_failures);
+         m_heartbeat_consecutive_failures=0;
+         return;
+        }
+      m_heartbeat_consecutive_failures++;
+      PrintFormat("HEARTBEAT_SEND_FAILED code=%s consecutive_failures=%d trading_impact=none",
+                  heartbeat_error,m_heartbeat_consecutive_failures);
      }
 
    void OnTick(void)

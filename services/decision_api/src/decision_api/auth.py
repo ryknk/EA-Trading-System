@@ -61,7 +61,7 @@ def verify_request(headers: Mapping[str, str] | None, raw_body: bytes,
         raise ApiError(401, "REQUEST_TIMESTAMP_EXPIRED", "request timestamp is outside the allowed window")
 
     body_hash = hashlib.sha256(raw_body).hexdigest()
-    if canonical_path not in {"/v1/trade-decisions", "/v1/trade-events"}:
+    if canonical_path not in {"/v1/trade-decisions", "/v1/trade-events", "/v1/heartbeats"}:
         raise ApiError(401, "INVALID_AUTH_PATH", "signed path is invalid")
     canonical = f"POST\n{canonical_path}\n{timestamp}\n{nonce}\n{body_hash}"
     try:

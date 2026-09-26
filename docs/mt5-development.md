@@ -47,14 +47,14 @@ Phase 12時点でAWS実装は存在するが、AWS accountへのdeploy、実モ�
 
 ## MQL5 VPS移行
 
-1. ローカル端末でCoreEAをコンパイルし、`InpEnableTradeMutations=false`、`InpDecisionApiEnabled=false`、`InpTelemetryEnabled=false` のままチャートへ適用する。
+1. ローカル端末でCoreEAをコンパイルし、`InpEnableTradeMutations=false`、`InpDecisionApiEnabled=false`、`InpTelemetryEnabled=false`、`InpHeartbeatEnabled=false` のままチャートへ適用する。
 2. chart symbol、timeframe、EA input、magic number、AutoTrading、アルゴリズム取引許可を確認する。
-3. Decision APIとTelemetry APIのHTTPS URLをMT5のWebRequest許可リストへ登録する。URLのpath末尾を取り違えない。
+3. Decision API、Telemetry API、Heartbeat APIのHTTPS URLをMT5のWebRequest許可リストへ登録する。URLのpath末尾（`/v1/trade-decisions`、`/v1/trade-events`、`/v1/heartbeats`）を取り違えない。
 4. `MQL5\Files\EaTradingSystem\decision-api-secret.txt` をローカルで読み込めることを確認し、秘密値や署名がJournalへ出ないことを確認する。
 5. チャートとEA環境をMQL5 VPSへ同期する。Python、Web server、AWS SDK、学習modelをVPSへ置かない。
 6. VPS JournalでEA初期化、symbol仕様、UTC時刻、WebRequest、監査ファイルを確認する。
 7. MQL5 VPSへの同期で任意の秘密ファイルが確実に移行される保証はない。VPS上で共有鍵ファイル読込を実機確認できない場合、Decision APIと取引変更を有効化しない。
-8. demoでは最初にDecision・Telemetryだけを有効化し、`InpEnableTradeMutations=false` のまま候補、VETO、監査を確認する。
+8. demoでは最初にHeartbeat・Decision・Telemetryだけを有効化し、VPS上でTimerによるHeartbeatが継続送信されることを確認したうえで、`InpEnableTradeMutations=false` のまま候補、VETO、監査を確認する。
 9. timeout、不正JSON、AWS停止、LLM停止、spread超過、Daily Loss、Drawdown lockを試験した後にだけdemoの取引変更を有効化する。
 
 同期後にローカル側のチャート・設定を変更しても、自動的にVPSへ反映されるとは限らない。変更ごとに再同期し、VPS Journalの再起動・初期化記録を確認する。

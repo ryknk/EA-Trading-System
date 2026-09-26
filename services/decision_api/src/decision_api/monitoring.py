@@ -3,16 +3,28 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import time
 from typing import Any, Mapping
 
 MetricValue = tuple[float | int, str]
 ALLOWED_UNITS = {"Count", "Milliseconds"}
+EXTRA_DIMENSION_NAMES = {"EaId"}
+DIMENSION_VALUE_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 
-def emit_emf(service: str, metrics: Mapping[str, MetricValue], properties: Mapping[str, Any] | None = None) -> None:
-    """1 invocation分のEMFを出力する。監視障害をAPI処理へ波及させない。"""
+def emit_emf(service: str, metrics: Mapping[str, MetricValue], properties: Mapping[str, Any] | None = None,
+             extra_dimensions: Mapping[str, str] | None = None) -> None:
+    """1 invocation分のEMFを出力する。監視障害をAPI処理へ波及させない。
+
+    extra_dimensionsは許可済みの低カーディナリティ名だけを受け付け、呼び出し側で値の集合を制限する。
+    """
     try:
+        dimension_values: dict[str, str] = {}
+        for name, value in (extra_dimensions or {}).items():
+            if name not in EXTRA_DIMENSION_NAMES or not isinstance(value, str) or not DIMENSION_VALUE_RE.fullmatch(value):
+                return
+            dimension_values[name] = value
         if os.environ.get("METRICS_ENABLED", "true").lower() not in {"1", "true", "yes"}:
             return
         environment = os.environ.get("ENVIRONMENT", "unknown")
@@ -23,6 +35,7 @@ def emit_emf(service: str, metrics: Mapping[str, MetricValue], properties: Mappi
         payload: dict[str, Any] = {
             "Environment": environment,
             "Service": service,
+            **dimension_values,
         }
         for name, (value, unit) in metrics.items():
             numeric = float(value)
@@ -41,7 +54,7 @@ def emit_emf(service: str, metrics: Mapping[str, MetricValue], properties: Mappi
             "Timestamp": int(time.time() * 1000),
             "CloudWatchMetrics": [{
                 "Namespace": namespace,
-                "Dimensions": [["Environment", "Service"]],
+                "Dimensions": [["Environment", "Service", *dimension_values]],
                 "Metrics": definitions,
             }],
         }

@@ -68,11 +68,23 @@ try {
     Write-Host "PASS required Japanese documents"
 
     $coreEa = Get-Content -LiteralPath (Join-Path $root "mt5\Experts\CoreEA.mq5") -Raw
-    foreach ($setting in @("InpEnableTradeMutations", "InpDecisionApiEnabled", "InpTelemetryEnabled")) {
+    foreach ($setting in @("InpEnableTradeMutations", "InpDecisionApiEnabled", "InpTelemetryEnabled", "InpHeartbeatEnabled")) {
         Assert-True ($coreEa -match "input bool\s+$setting=false;") "危険な設定の初期値がfalseではありません: $setting"
     }
     Assert-True ($coreEa -match 'input bool\s+InpAuditFileEnabled=true;') "監査ログの初期値がtrueではありません。"
     Write-Host "PASS fail-safe MQL5 defaults"
+
+    # 既存ポジション管理を外部通信より先に実行し、HeartbeatをOnTick（取引経路）から分離していることを静的に確認する。
+    $controller = Get-Content -LiteralPath (Join-Path $root "mt5\Include\Core\EAController.mqh") -Raw
+    $onTimer = [regex]::Match($controller, '(?s)void OnTimer\(void\)(.*?)void OnTick\(void\)').Groups[1].Value
+    $onTick = [regex]::Match($controller, '(?s)void OnTick\(void\)(.*?)void OnTradeTransaction\(').Groups[1].Value
+    Assert-True ($onTimer.Length -gt 0 -and $onTick.Length -gt 0) "EAControllerのOnTimer/OnTickを特定できません。"
+    Assert-True ($onTick -notmatch 'm_heartbeat_client') "HeartbeatがOnTick（取引経路）から呼ばれています。"
+    Assert-True ($onTimer -notmatch 'm_(order_manager|risk_manager|position_manager|position_exit_evaluator|decision_client)') "OnTimerが取引・Risk・ポジション管理を操作しています。"
+    $monitorIndex = $onTick.IndexOf('m_position_manager.Monitor(')
+    $decisionIndex = $onTick.IndexOf('m_decision_client.Decide(')
+    Assert-True ($monitorIndex -ge 0 -and $decisionIndex -gt $monitorIndex) "既存ポジション監視が外部判断APIより先に実行されていません。"
+    Write-Host "PASS existing-position management precedes external calls and heartbeat is isolated"
 
     $sourceRoots = @("mt5", "services", "python", "infra", "contracts", "docs")
     $forbidden = Get-ChildItem -LiteralPath $sourceRoots -Recurse -File -ErrorAction Stop |

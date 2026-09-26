@@ -116,6 +116,10 @@ input string          InpAuditRunId="";
 input bool            InpTelemetryEnabled=false;
 input string          InpTelemetryApiUrl="";
 input int             InpTelemetryTimeoutMs=1500;
+input bool            InpHeartbeatEnabled=false;
+input string          InpHeartbeatApiUrl="";
+input int             InpHeartbeatIntervalSeconds=60;
+input int             InpHeartbeatTimeoutMs=1500;
 input ETesterDecisionMode InpTesterDecisionMode=TESTER_DECISION_FAIL_SAFE;
 input double          InpTesterFixedMlProbability=0.65;
 input bool            InpTesterResetPersistentState=true;
@@ -238,6 +242,10 @@ int OnInit(void)
    config.telemetry_enabled=InpTelemetryEnabled;
    config.telemetry_api_url=InpTelemetryApiUrl;
    config.telemetry_timeout_ms=InpTelemetryTimeoutMs;
+   config.heartbeat_enabled=InpHeartbeatEnabled;
+   config.heartbeat_api_url=InpHeartbeatApiUrl;
+   config.heartbeat_interval_seconds=InpHeartbeatIntervalSeconds;
+   config.heartbeat_timeout_ms=InpHeartbeatTimeoutMs;
    config.tester_decision_mode=(int)InpTesterDecisionMode;
    config.tester_fixed_ml_probability=InpTesterFixedMlProbability;
    config.tester_reset_persistent_state=InpTesterResetPersistentState;
@@ -248,11 +256,16 @@ int OnInit(void)
       PrintFormat("EA_INIT_FAILED code=%s last_error=%d",error,GetLastError());
       return INIT_FAILED;
      }
+   // Heartbeatはティック有無に関係なくEAスレッドの稼働を示すため、OnTickではなくTimerで送信する。
+   if(g_controller.HeartbeatEnabled() && !MQLInfoInteger(MQL_TESTER) &&
+      !EventSetTimer(config.heartbeat_interval_seconds))
+      PrintFormat("HEARTBEAT_TIMER_FAILED last_error=%d trading_impact=none",GetLastError());
    return INIT_SUCCEEDED;
   }
 
 void OnDeinit(const int reason)
   {
+   EventKillTimer();
    g_controller.Shutdown();
    PrintFormat("EA_DEINIT reason=%d",reason);
   }
@@ -260,6 +273,11 @@ void OnDeinit(const int reason)
 void OnTick(void)
   {
    g_controller.OnTick();
+  }
+
+void OnTimer(void)
+  {
+   g_controller.OnTimer();
   }
 
 void OnTradeTransaction(const MqlTradeTransaction &transaction,

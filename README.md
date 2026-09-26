@@ -46,7 +46,7 @@ Python 3.12仮想環境を作成し、`pip install -r infra/requirements-dev.txt
 
 AWS CDK v2（Python）を採用しています。ML設定に加え、明示的に `-c llm_provider=openai -c llm_model=<固定モデルID>` を指定した場合だけLLMを有効化します。OpenAI APIキーは `/ea-trading-system/dev/providers/openai/api-key` のSecureStringへ登録します。秘密値をCDK context、出力、Gitへ保存してはいけません。
 
-Phase 11ではSNS Alert Topicを作成します。`-c alarm_email=<通知先>` を指定した場合は確認メールへの承認後に通知が有効になります。CloudWatch Dashboardは固定費を避けるため既定無効で、必要な環境だけ `-c enable_dashboard=true` を指定します。`-c metrics_enabled=false` でEMF、`-c log_level=WARNING` などでログ量を調整できます。
+Phase 11ではSNS Alert Topicを作成します。`-c alarm_email=<通知先>` を指定した場合は確認メールへの承認後に通知が有効になります。staging/productionでは `alarm_email` が必須で、未指定ならsynthが失敗します（2026-09-26）。EA稼働監視用の `POST /v1/heartbeats` とHeartbeat欠損Alarmもあり、devでは `-c heartbeat_alarm_enabled=true` で有効化します。通知経路の試験手順は [運用](docs/operations.md) を参照してください。CloudWatch Dashboardは固定費を避けるため既定無効で、必要な環境だけ `-c enable_dashboard=true` を指定します。`-c metrics_enabled=false` でEMF、`-c log_level=WARNING` などでログ量を調整できます。
 
 初回deployはモデル・LLM未設定のフェイルセーフVETO状態でdevへ行い、S3 model、SHA-256、SSM SecureString、SNS購読を確認してから設定付きで再deployします。productionへ直接deployしません。詳細は [AWSインフラ](docs/aws-infrastructure.md) と [リリースゲート](docs/release-gate.md) を参照してください。
 

@@ -1269,3 +1269,32 @@ TASKS.md 3.1節「データ利用条件とライセンスを確認する」の�
 * 既存のDukascopy由来tick（EURUSD検証サンプル、AUDUSD/USDCAD/NZDUSD/GBPUSD/AUDJPY/CADJPYの全期間データ）はそのまま保持し、削除・巻き戻しは行わない。
 * 将来、本プロジェクトが実際に商用・本番運用へ進む場合（Production Release Gate通過後の実口座運用等）は、Dukascopy由来tickを使った検証結果の位置づけ（あくまで参考・探索目的であり、production判定の直接根拠にはしていないこと、`TASKS.md`各エントリに明記済み）を再確認し、必要であれば正規のライセンス確認・許諾取得を検討すべきである。
 * Rollback: 本DEC自体は事実の記録であり、取り消すべき変更（コード・データ）はない。方針を変更する場合は本DECの上書きで対応する。
+
+# DEC-043: AWS/EA運用基盤の改善（LLM deadline、Secretキャッシュ、通知必須化、EA Heartbeat）
+
+**状態:** 採用（2026-09-26）。Implemented / Unit Tested / Synthesized。Deployed以降は未検証。
+
+## 背景
+
+「AWS・ML・LLMは補助、MT5側Risk Managerが最終権限」の設計を維持したまま、次の運用上の弱点が残っていた。
+
+1. LLM timeout 3秒はurllibの操作単位timeoutで合計時間を保証せず、前処理で時間を消費した後もLLMを開始していた。EA timeout（4.5秒）後に作られたALLOWが無駄になり、Lambda timeout（5秒）への接近で監視上の区別も難しかった。
+2. リクエストごとにSSM SecureStringを取得しており、レイテンシーとSSM throttlingの影響を受けやすかった。
+3. `alarm_email` 未指定でもAlarmとSNS Topicは作成され、通知先がない状態を検出できなかった。
+4. 独立したEA Heartbeatがなく、無候補時間帯にEA停止・ハングを検知できなかった。
+
+## 決定
+
+* **LLM deadline**: Handler開始から `DECISION_DEADLINE_SECONDS`（4.0秒）以内に応答する。LLM開始時点の残り時間（Lambda残り時間とも比較）が `LLM_TIMEOUT_SECONDS + LLM_DEADLINE_RESERVE_SECONDS`（3.0 + 0.5秒）未満ならLLMを呼ばず `VETO / LLM_INFERENCE_ERROR` とする。providerは合計経過時間も検査する。新しいreason codeは追加せず、API契約とEA側パーサーを変更しない。LLM timeout 3.0秒は維持する（延長にはEA timeout等の同時変更が必要で、実latency分布が未計測のため）。
+* **タイムアウト順序の検証**: LLM + 予備 ≤ deadline < EA 4.5秒 < API Gateway 5秒 ≤ Lambda 5秒を `infra/config.py` の `validate_timeout_budget` でsynth時に検証する。
+* **Secretキャッシュ**: Lambda実行環境内の単純なTTLキャッシュ（既定300秒、0で無効、上限3600秒）とする。失敗・不正値はキャッシュしない。外部キャッシュ（Parameters and Secrets Lambda Extension、ElastiCache等）は、依存と構成を増やすため採用しない。ローテーションは新key ID追加で行い、同一Parameter上書き時の反映遅延（最大TTL）を運用手順に明記する。
+* **通知必須化**: staging/productionは `alarm_email` 未指定・形式不正でsynthを失敗させる。devは柔軟性のため警告に留める。
+* **EA Heartbeat**: 取引判断・Telemetryと別のRoute・Lambda・契約とし、EAは`OnTimer`から送信する。認証・nonceは既存方式を再利用する。停止検知はスケジュール実行Lambdaを置かず、EMF受信件数の欠損をBREACHINGとするCloudWatch Alarmで行う（常時稼働リソース・追加の定期実行費用を避けるため）。EA別dimensionはCDKで明示したEA IDに限定する。devのHeartbeat欠損Alarmは既定無効（EA非稼働時の誤報回避）、staging/productionは必須とする。
+* Heartbeat・Telemetryの失敗は取引判断、Risk Manager、Kill Switch、SL/TP、既存ポジション管理に一切反映しない。
+
+## 影響
+
+* 新規AWSリソース: Heartbeat Lambda、ロググループ、HTTP API Route/Integration、Alarm 2個（常設）＋Heartbeat欠損Alarm（EA数分、staging/production）。NAT、VPC、RDS、EC2は追加しない。
+* EA: 入力 `InpHeartbeatEnabled=false`（既定）、`InpHeartbeatApiUrl`、`InpHeartbeatIntervalSeconds=60`、`InpHeartbeatTimeoutMs=1500` を追加。既定では挙動は変わらない。有効時はWebRequestが最大timeout分EAスレッドを占有する。
+* 未検証: AWS deploy、実通信、Alarm発報・SNS到達、実LLM latency、SSM取得回数削減の実測、Demo・MQL5 VPS上のHeartbeat継続。
+* Rollback: 本変更のコミットをrevertし、deploy済みの場合は直前のcommitで `cdk diff` を確認して再deployする。EAは `InpHeartbeatEnabled=false` で即時無効化できる。

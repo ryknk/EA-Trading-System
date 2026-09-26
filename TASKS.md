@@ -1913,6 +1913,7 @@ Walk Forward（Fold1-5、2020-2024、現行設定・4銘柄合計、`TASKS.md`�
 * [ ] CloudFormation Outputを記録する
 * [ ] Decision API URLを記録する
 * [ ] Telemetry API URLを記録する
+* [ ] Heartbeat API URLを記録する
 * [ ] DynamoDB Tableを記録する
 * [ ] Model Bucketを記録する
 * [ ] SNS Topicを記録する
@@ -1947,8 +1948,10 @@ Walk Forward（Fold1-5、2020-2024、現行設定・4銘柄合計、`TASKS.md`�
 * [ ] ML Error Alarmを試験する
 * [ ] LLM Error Alarmを試験する
 * [ ] DynamoDB System Error Alarmの検証方法を決定する
-* [ ] Alarm通知が実際に到達することを確認する
+* [ ] Alarm通知が実際に到達することを確認する（手順: `docs/operations.md`「Alarm通知経路の試験手順」）
 * [ ] Alarm復旧時の挙動を確認する
+* [ ] Heartbeat欠損Alarmを試験する（EAのHeartbeatを停止し、ALARM・OK両方のSNS通知到達を確認する）
+* [ ] staging/productionで`alarm_email`未指定時にsynthが失敗することを確認する（Unit Tested、2026-09-26）
 * [ ] AWS Budgetsを設定する
 * [ ] 費用異常通知を設定する
 
@@ -1960,7 +1963,10 @@ Walk Forward（Fold1-5、2020-2024、現行設定・4銘柄合計、`TASKS.md`�
 * [ ] DynamoDB Error
 * [ ] S3 Model取得失敗
 * [ ] Model checksum不一致
-* [ ] SSM Parameter取得失敗
+* [ ] SSM Parameter取得失敗（Lambda単体テストで401 Fail Closedを確認済み、2026-09-26。AWS実環境は未実施）
+* [ ] SSM Secretキャッシュの取得回数削減とTTL経過後の再取得を確認する
+* [ ] LLM遅延時にdeadline不足でVETOされ、EA timeout前に応答することを確認する（Unit Tested、2026-09-26）
+* [ ] Heartbeat API障害時にEAの取引処理・既存ポジション管理が継続することを確認する
 * [ ] Network切断
 * [ ] DNS障害
 * [ ] TLS障害
@@ -2128,14 +2134,16 @@ InpEnableTradeMutations = false
 
 # 8. 運用・監視の残タスク
 
-* [ ] 独立した定期EA Heartbeatを設計する
-* [ ] Heartbeatを実装する
-* [ ] 無候補時間帯の死活判定を実装する
+* [x] 独立した定期EA Heartbeatを設計する（2026-09-26、`docs/architecture.md`「EA Heartbeat」、DEC-043）
+* [x] Heartbeatを実装する（2026-09-26、Implemented / Unit Tested / Synthesized。AWS dev実通信・Demo・VPSは未検証）
+* [x] 無候補時間帯の死活判定を実装する（2026-09-26、`OnTimer`送信によりティック・候補の有無に依存しない。未検証）
+* [ ] AWS devでHeartbeat送信・DynamoDB最終時刻更新・欠損Alarm発報を実通信で確認する
+* [ ] MQL5 VPS上でTimerベースHeartbeatが送信され続けることを確認する
 * [ ] MT5 Report Importerの必要性を評価する
 * [ ] 必要ならMT5 Report Importerを実装する
 * [ ] Telemetry自動再送キューの必要性を評価する
 * [ ] 必要なら再送キューを実装する
-* [ ] Secret Rotation手順を作成する
+* [x] Secret Rotation手順を作成する（2026-09-26、`docs/operations.md`「Secretキャッシュとローテーション」。キャッシュTTLによる反映遅延を含む）
 * [ ] Secret Rotationを演習する
 * [ ] Incident Response手順を作成する
 * [ ] 緊急停止と手動決済を演習する

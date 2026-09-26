@@ -16,7 +16,7 @@ LLMは方向を決めず、ML通過済み候補に対する異常環境フィル
 
 `LlmDecisionProvider` をアプリケーション境界とし、初期アダプターにOpenAI Responses APIを実装した。構造化出力は `text.format` のstrict JSON Schemaを使う。公式仕様は [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs) と [Responses API Create](https://developers.openai.com/api/reference/resources/responses/methods/create) を参照する。
 
-providerとmodelの既定値は空であり、明示設定されない限り外部通信しない。modelは可用性・レイテンシ・費用・構造化出力の回帰評価後に固定する。自動的に最新modelへ追従しない。prompt version初期値は `trade-filter-v1`、temperature初期値は0、最大出力160、timeoutは3秒とする。temperature非対応modelでは設定を空にして送信を省略する。
+providerとmodelの既定値は空であり、明示設定されない限り外部通信しない。modelは可用性・レイテンシ・費用・構造化出力の回帰評価後に固定する。自動的に最新modelへ追従しない。prompt version初期値は `trade-filter-v1`、temperature初期値は0、最大出力160、timeoutは3秒とする（2026-09-26以降、通信操作単位だけでなく合計経過時間も3秒で打ち切る。さらにDecision deadline 4.0秒に対し、LLM開始時の残り時間が3.0 + 予備0.5秒未満ならLLMを呼ばずVETOする。詳細は `docs/architecture.md`「タイムアウト予算」）。temperature非対応modelでは設定を空にして送信を省略する。
 
 入力は固定済み方向、symbol、timeframe、観測時刻、spread、RSI、ATR比率、EMA乖離、return、volatility、時刻・曜日、RR、SL/TP距離率、ML勝率・期待return・model versionだけである。口座情報、生ログ、生の注文価格、秘密情報を含めない。
 

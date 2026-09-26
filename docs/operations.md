@@ -52,7 +52,26 @@ deploy後にCloudFormation出力 `OperationsAlertTopicArn` を確認する。`al
 4. リプレイ拒否: 時計ずれや同一nonce再送を確認する。意図しない増加ならkey IDを失効し、共有鍵をローテーションする。
 5. Lambda throttle: 全tick呼出しなど候補生成頻度の異常、予約同時実行数、API Gateway制限を確認する。制限を安易に引き上げず、呼出し元の異常を先に調べる。
 
-VETO件数やRisk拒否件数だけでは通知しない。これらは安全側の通常判断を含むため、DashboardまたはLogs Insightsで比率と理由を日次・週次レビューする。取引候補がない期間はAPI無通信が正常になり得るため、欠損メトリクスだけで障害判定しない。
+6. Heartbeat欠損: EA停止、端末ハング、MT5の切断、VPS停止、WebRequest許可URL・Secret File不備、Heartbeat API障害のいずれかである。まずMT5/VPS上でEAが稼働し既存ポジションのSL/TPが維持されているかを確認する。EAが稼働しているのに欠損する場合はExpertsログの `HEARTBEAT_SEND_FAILED`、Heartbeat LambdaのError/内部エラーAlarm、DynamoDB障害を確認する。Heartbeat障害だけを理由に既存ポジションを決済・EAを停止しない。
+7. Heartbeat内部エラー: DynamoDB・SSM・IAMを確認する。取引判断・Telemetryへの影響はない。
+
+VETO件数やRisk拒否件数だけでは通知しない。これらは安全側の通常判断を含むため、DashboardまたはLogs Insightsで比率と理由を日次・週次レビューする。取引候補がない期間はAPI無通信が正常になり得るため、欠損メトリクスだけで障害判定しない。例外はHeartbeat欠損Alarmで、Heartbeatは候補の有無に関係なく定期送信されるため、欠損をEA停止・ハング・通信断の兆候として扱う。
+
+### Alarm通知経路の試験手順
+
+通知経路はAlarmの状態を一時的に変更して試験できる。AWS環境へ変更を加えるため、実行前に対象account・region・環境を確認し、devから行う。Alarm状態は次回のメトリクス評価で実状態へ戻る。
+
+```powershell
+aws cloudwatch describe-alarms --alarm-name-prefix ea-trading-system-dev- --query "MetricAlarms[].{Name:AlarmName,Actions:AlarmActions,State:StateValue}"
+aws sns list-subscriptions-by-topic --topic-arn <OperationsAlertTopicArn>
+aws cloudwatch set-alarm-state --alarm-name ea-trading-system-dev-lambda-errors --state-value ALARM --state-reason "notification path test"
+```
+
+確認項目は、全Alarmの `AlarmActions` がOperations Topicを指すこと、購読が `PendingConfirmation` でないこと、通知メールに環境名とAlarm名が含まれ秘密情報を含まないこと、次回評価でOKへ戻ることである。Heartbeat欠損Alarmは状態変更ではなく、EAのHeartbeatを実際に止めてALARM・OK両方の通知で確認する。`alarm_email` 未指定のdevでは通知が届かないため、CDK warningとOutput `AlarmEmailSubscriptionConfigured=false` を確認する。
+
+### Secretキャッシュとローテーション
+
+Lambdaは共有鍵とLLM APIキーを最大 `secret_cache_ttl_seconds`（既定300秒）保持する。鍵ローテーションは新しいkey IDのParameterを追加し、EAのkey IDを切り替えて正常性を確認してから旧Parameterを削除する（新しいkey IDはキャッシュされていないため即時反映）。同一Parameterを上書きする緊急時は、TTL経過を待つか、Lambda設定の再deployで実行環境を入れ替える。漏えい時は旧Parameterを削除し、TTL経過までは旧鍵が受理され得ることを前提に、EAの新規注文停止を先に行う。
 
 Dashboardは必要な環境だけ `-c enable_dashboard=true` で有効化する。利用しないDashboardは次回deployで無効化する。CloudWatch、SNS、カスタムメトリクス、ログ取込・保存の実請求を月次で確認し、AWS BudgetsとCost Anomaly Detectionの通知先・上限は本番deploy前に別途設定する。
 
@@ -69,12 +88,12 @@ Productionゲートには `contracts/production-release-evidence.schema.json` �
 1. BrokerのDemo口座を作成し、MT5へログインする。口座番号・パスワードはリポジトリへ保存しない。
 2. `tools/link-mt5.ps1`、`tools/compile-mql5.ps1`、`tools/run-mql5-tests.ps1`を順に実行する。
 3. USDJPY H1チャートへCoreEAを配置し、最初は `InpEnableTradeMutations=false`、`InpDecisionApiEnabled=false`、`InpTelemetryEnabled=false` とする。
-4. MT5のWebRequest許可リストへstagingのDecision APIとTelemetry APIのHTTPS originを追加する。
+4. MT5のWebRequest許可リストへstagingのDecision API、Telemetry API、Heartbeat APIのHTTPS originを追加する。
 5. `MQL5\Files\EaTradingSystem\decision-api-secret.txt`へstaging専用共有鍵を配置する。長期AWS Access Keyは配置しない。
-6. Telemetryだけを有効化し、ローカルJSONLとDynamoDBの `trade_candidate_id` を照合する。
+6. Heartbeatを有効化し（`InpHeartbeatEnabled=true`）、DynamoDBの最終Heartbeat時刻が更新され、EA停止時にHeartbeat欠損Alarmが通知されることを確認する。続いてTelemetryだけを有効化し、ローカルJSONLとDynamoDBの `trade_candidate_id` を照合する。
 7. Decision APIを有効化し、`LLM_SHADOW_MODE=true` のまま、VETO・timeout・期限切れ応答が記録されることを確認する。
 8. `InpEmergencyStop=true` または `InpStrategyEnabled=false` で新規候補処理が止まり、既存ポジション監視が継続することをExpertsログで確認する。
 9. 証跡を保存してから小ロットDemoで `InpEnableTradeMutations=true` とし、注文、SL、TP、約定差、Risk拒否を日次確認する。
 10. MQL5 VPS移行後、端末側EAを二重稼働させない。VPS Journal、EA Journal、ローカル監査、CloudWatchを照合する。
 
-定期Heartbeatは未実装である。production前にTimerベースの低頻度HeartbeatまたはMT5外部監視を追加・検証する。
+定期Heartbeatは2026-09-26に実装した（未検証）。Demo Forward Testの観測モードで `InpHeartbeatEnabled=true`、`InpHeartbeatApiUrl=<HeartbeatApiUrl出力>` を設定し、WebRequest許可リストへ同じURLを登録する。EAを停止してから `heartbeat_stale_minutes` 経過後にHeartbeat欠損AlarmのSNS通知が届き、再開後にOK通知が届くことを確認する。

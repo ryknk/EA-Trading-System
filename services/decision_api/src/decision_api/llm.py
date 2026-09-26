@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -239,6 +240,7 @@ class OpenAiResponsesProvider:
         if self._temperature is not None:
             body["temperature"] = self._temperature
         request_time = _iso_now()
+        started = time.monotonic()
         raw = self._transport.post(
             self.ENDPOINT,
             {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
@@ -247,6 +249,9 @@ class OpenAiResponsesProvider:
             self._timeout_seconds,
         )
         response_time = _iso_now()
+        # urllibのtimeoutは接続・受信の操作単位のため、合計経過時間も上限で打ち切る。
+        if time.monotonic() - started > self._timeout_seconds:
+            raise TimeoutError("LLM provider exceeded the total timeout")
         decision, confidence, reason = parse_llm_decision(_extract_output_text(raw))
         return LlmDecision(decision, confidence, reason, self.provider_name, self._model,
                            self._prompt_version, request_time, response_time)

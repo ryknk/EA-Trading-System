@@ -25,6 +25,9 @@
 - [x] Error handling verified（単体テスト。dev障害注入は未検証）
 - [x] Replay protection verified（単体テスト。dev実通信は未検証）
 - [ ] Monitoring verified（CDK synthのみ。Alarm通知到達は未検証）
+  - 2026-09-26: 全AlarmのSNS接続、staging/productionの`alarm_email`必須化、Heartbeat欠損Alarmを追加しCDK assertionテストでUnit Tested。AWS上のAlarm作成・`set-alarm-state`による通知到達試験は未実施（NOT VERIFIED）
+- [ ] LLM latency budget verified（2026-09-26: タイムアウト予算とdeadline不足時VETOをUnit Tested。実LLM latency分布は未計測）
+- [ ] SSM Secret cache verified（2026-09-26: TTLキャッシュ・失敗非キャッシュをUnit Tested。AWS実環境での取得回数・ローテーション反映は未検証）
 
 ## ML
 
@@ -47,4 +50,4 @@
 - [ ] MQL5 VPS verified
 - [x] Backup / Restore procedure documented（既存operations/release gate）
 - [x] Emergency procedure documented
-- [ ] EA Heartbeat verified（独立した定期Heartbeatは未実装）
+- [ ] EA Heartbeat verified（2026-09-26: EA `OnTimer`送信・`POST /v1/heartbeats`・欠損Alarmを実装し、Lambda単体テスト・MQL5 Scriptテスト・CDK synthで確認。AWS dev実通信、EA停止時のAlarm発報・SNS到達、MQL5 VPS上の動作は未検証）

@@ -2,11 +2,11 @@
 
 ## 結論
 
-Phase 12完了は「ソフトウェア構造と開発検証手順が完成した」ことを意味し、実口座運用の承認を意味しない。現時点ではAWS未配備、実データMLモデル未配備、LLM実疎通未実施、MQL5 VPS秘密ファイル未検証、OOS・Walk Forward・デモ・小額実口座の証跡未作成である。したがってproductionゲートは不合格であり、`InpEnableTradeMutations`、`InpDecisionApiEnabled`、`InpTelemetryEnabled` はfalseを維持する。
+Phase 12完了は「ソフトウェア構造と開発検証手順が完成した」ことを意味し、実口座運用の承認を意味しない。現時点ではAWS未配備、実データMLモデル未配備、LLM実疎通未実施、MQL5 VPS秘密ファイル未検証、OOS・Walk Forward・デモ・小額実口座の証跡未作成である。したがってproductionゲートは不合格であり、`InpEnableTradeMutations`、`InpDecisionApiEnabled`、`InpTelemetryEnabled`、`InpHeartbeatEnabled` はfalseを維持する。
 
 ## 開発ゲート
 
-次を実行すると、必須文書、安全なMQL5初期値、基本的な秘密情報混入、JSON契約、Python・Lambda・CDK全テスト、CDK synth、MetaEditor実コンパイル、MT5 script testを順に検証する。MT5端末は事前に閉じる。
+次を実行すると、必須文書、安全なMQL5初期値（`InpHeartbeatEnabled=false`を含む）、既存ポジション監視が外部判断APIより先に実行されHeartbeatが`OnTick`から分離されていることの静的検査、基本的な秘密情報混入、JSON契約、Python・Lambda・CDK全テスト、CDK synth、MetaEditor実コンパイル、MT5 script testを順に検証する。MT5端末は事前に閉じる。
 
 ```powershell
 .\tools\release-gate.ps1 -Mode Development
@@ -35,7 +35,8 @@ productionでは、開発ゲートに加えて `production-release-evidence.sche
 - ナンピン・マーチンゲール・ロット増加ロジックがないことをレビューする
 - AWS account・region・environment、PITR、RETAIN、ログ保持、SNS、Budgetsを確認する
 - MQL5 VPSで共有鍵ファイルが読めることを実機検証する。検証不能なら外部APIと発注を有効化しない
-- Decision/Telemetry URLをWebRequest許可リストへ登録し、dev・demoでHMAC疎通する
+- Decision/Telemetry/Heartbeat URLをWebRequest許可リストへ登録し、dev・demoでHMAC疎通する
+- Heartbeat欠損AlarmのALARM・OK通知到達と、Heartbeat障害中も既存ポジション管理が継続することを確認する
 - 緊急停止、手動決済、認証失効、モデル切戻し、CDK rollbackを演習する
 - 変更内容、設定差分、テスト結果、承認者、承認時刻を保全する
 - 下記「ベンチマーク受入基準」を満たす
@@ -72,7 +73,7 @@ Demo口座と小額実口座は期間が短いため、この基準の合否に�
 ## フラグ有効化順序
 
 1. devでAWSをdeployし、モデル・LLM・監視を検証する。
-2. demoで `InpDecisionApiEnabled=true`、`InpTelemetryEnabled=true`、`InpEnableTradeMutations=false` とし、判断と監査だけを確認する。
+2. demoで `InpHeartbeatEnabled=true`、`InpDecisionApiEnabled=true`、`InpTelemetryEnabled=true`、`InpEnableTradeMutations=false` とし、稼働監視・判断・監査だけを確認する。
 3. demoで全障害試験後に `InpEnableTradeMutations=true` とする。
 4. 小額実口座で同じ順序を繰り返す。
 5. production証跡が揃った後にだけproduction設定を承認する。

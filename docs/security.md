@@ -22,10 +22,12 @@ MQL5のファイル操作はターミナルのファイルサンドボックス�
 
 鍵ローテーション時は新しいkey IDと共有鍵を追加し、EAを更新・同期して正常性を確認してから旧Parameterを削除する。漏えい時は該当Parameterを直ちに無効化し、EAの新規注文を停止する。
 
+2026-09-26以降、LambdaはSSM SecureStringの値を実行環境のメモリ内に最大 `SECRET_CACHE_TTL_SECONDS`（既定300秒）保持する。値はログ、例外メッセージ、メトリクス、応答へ出力しない。取得失敗と長さ不正の値はキャッシュしない。Parameter削除・上書き後も最大TTL秒は旧値が有効になり得るため、漏えい時はEA側の新規注文停止を先に行い、必要ならLambdaを再deployして実行環境を入れ替える。Heartbeat APIは同じkey ID・共有鍵・nonce保存を使い、署名pathを `/v1/heartbeats` として他APIと区別する。
+
 ## LLM APIキーと送信データ
 
 OpenAI APIキーは `/ea-trading-system/<environment>/providers/openai/api-key` のSSM SecureStringへ保存し、CDK context、Lambda環境変数、ソース、ログへ入れない。用途別・環境別の専用キーを使用し、provider側の利用上限も設定する。漏えい時はprovider側で失効し、新しいキーへローテーションする。
 
 LLMへは口座番号、balance、equity、保有量、API認証情報、生ログ、生のSL/TP価格を送らない。固定方向と集約比率・指標だけを送る。providerへのrequest/response本文や思考過程は保存せず、model、prompt version、時刻、ALLOW/VETO、confidence、短いreasonだけを監査保存する。
 
-Phase 11のCloudWatchメトリクスdimensionは環境名と固定Service名だけにする。key ID、request ID、event ID、候補ID、口座番号、symbol、LLM reasonをdimensionへ含めない。リプレイ拒否は件数だけをメトリクス化し、認証ヘッダー、nonce、署名、共有鍵をログへ出力しない。SNS通知本文にも秘密情報を含めない。
+Phase 11のCloudWatchメトリクスdimensionは環境名と固定Service名だけにする（2026-09-26以降の例外: Heartbeat受信件数だけ、CDKで明示したEA IDに限り `EaId` を付与する。EA IDは秘密情報・口座識別子ではない）。key ID、request ID、event ID、候補ID、口座番号、symbol、LLM reasonをdimensionへ含めない。リプレイ拒否は件数だけをメトリクス化し、認証ヘッダー、nonce、署名、共有鍵をログへ出力しない。SNS通知本文にも秘密情報を含めない。

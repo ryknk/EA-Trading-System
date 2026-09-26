@@ -245,8 +245,19 @@ Strategy Testerだけで `InpTesterDecisionMode` を使用できる。0はフェ
 
 Telemetry失敗は取引判断や既存ポジション管理へ影響しない。ローカルJSONLを先に保存し、AWS欠損時の正本とする。
 
+## Heartbeat設定（2026-09-26追加）
+
+| 設定 | 初期値 | 意味 |
+|---|---:|---|
+| `InpHeartbeatEnabled` | false | EA稼働監視Heartbeatの送信 |
+| `InpHeartbeatApiUrl` | 空 | `/v1/heartbeats`で終わるHTTPS URL（CloudFormation出力 `HeartbeatApiUrl`） |
+| `InpHeartbeatIntervalSeconds` | 60 | 送信間隔（30〜900秒）。`OnTimer`で送信する |
+| `InpHeartbeatTimeoutMs` | 1500 | 送信timeout（100〜5000 ms、かつ間隔の1/10以下） |
+
+key IDと共有鍵ファイルは `InpDecisionApiKeyId`、`InpDecisionApiSecretFile` を共用する。Heartbeatの初期化失敗・送信失敗はログ出力だけで、取引判断、Risk Manager、Kill Switch、既存ポジション管理へ影響しない。Strategy TesterではTimerを設定せず送信しない。Heartbeatは稼働監視、Telemetryは取引・判断イベントの監査であり、互いを代替しない。
+
 **2026-09-07変更: 監査JSONLの保存先を`FILE_COMMON`へ変更した。** 従来はサンドボックス化された`<data folder>\MQL5\Files\<InpAuditLogDirectory>`（Strategy Tester実行時はTester Agent固有のサンドボックス配下）に保存していたが、VM実行でMT5終了後にTester Agentのサンドボックスがcleanupされると、HTM reportは回収できるのに監査JSONLだけ消失する問題があった。`FILE_COMMON`（`Terminal\Common\Files\<InpAuditLogDirectory>`、同一Windowsユーザーの全MT5ターミナルで共有）はTester Agentのサンドボックスの外にあるため影響を受けない。`tools/run-strategy-tester.ps1`はStrategy Tester実行のたびにReport名と同一の値を`InpAuditRunId`へ設定し、`audit-<ReportName>.jsonl`という実行単位で一意なファイル名にする（Common領域が複数ターミナル・複数実行で共有されるため、実行間・ケース間のログ混入を防ぐ目的）。詳細は`docs/backtesting.md`とDECISIONS.md DEC-030を参照。
 
 ## AWS CDK context
 
-`environment`、`ml_model_key`、`ml_model_sha256`、`llm_provider`、`llm_model`、`llm_shadow_mode`、`alarm_email`、`enable_dashboard`、`metrics_enabled`、`log_level` をdeploy時に指定できる。秘密値はcontextへ渡さない。`llm_shadow_mode` は既定でtrueで、有効なLLM VETOを記録するが最終判定へ適用しない。LLM timeout・不正出力・provider errorはShadow ModeでもVETOである。productionではモデルobjectとchecksum、固定LLM model、prompt version、SNS購読、予算通知を証跡へ記録する。
+`environment`、`ml_model_key`、`ml_model_sha256`、`llm_provider`、`llm_model`、`llm_shadow_mode`、`alarm_email`、`enable_dashboard`、`metrics_enabled`、`log_level`、`secret_cache_ttl_seconds`（既定300、0〜3600、0で無効）、`heartbeat_alarm_enabled`（dev既定false、staging/productionは常にtrue）、`heartbeat_stale_minutes`（既定5、2〜60）、`heartbeat_ea_ids`（既定`trend-ea-v1`、カンマ区切り最大10件）をdeploy時に指定できる。staging/productionでは `alarm_email` が必須で、未指定ならsynthが失敗する。LLM timeout（3.0秒）、Decision deadline（4.0秒）、LLM後予備（0.5秒）、API Gateway integration timeout（5秒）は `infra/config.py` の環境設定で管理し、synth時に順序を検証する。秘密値はcontextへ渡さない。`llm_shadow_mode` は既定でtrueで、有効なLLM VETOを記録するが最終判定へ適用しない。LLM timeout・不正出力・provider errorはShadow ModeでもVETOである。productionではモデルobjectとchecksum、固定LLM model、prompt version、SNS購読、予算通知を証跡へ記録する。

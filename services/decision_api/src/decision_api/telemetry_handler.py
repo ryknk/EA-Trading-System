@@ -12,7 +12,7 @@ from typing import Any
 from .auth import verify_request
 from .errors import ApiError, ConditionalWriteFailed
 from .event_validation import parse_and_validate_event
-from .handler import SsmSecretProvider
+from .handler import SsmSecretProvider, _shared_secret_cache
 from .monitoring import emit_emf
 from .repository import DynamoRepository
 
@@ -26,7 +26,7 @@ def _dependencies() -> tuple[DynamoRepository, SsmSecretProvider]:
     import boto3
     if _repository is None:
         _repository = DynamoRepository(boto3.resource("dynamodb").Table(os.environ["TABLE_NAME"]))
-    return _repository, SsmSecretProvider(boto3.client("ssm"), os.environ["ENVIRONMENT"])
+    return _repository, SsmSecretProvider(boto3.client("ssm"), os.environ["ENVIRONMENT"], _shared_secret_cache())
 
 
 def _response(status: int, body: dict[str, Any]) -> dict[str, Any]:

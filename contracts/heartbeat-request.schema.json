@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/v1/heartbeat-request.schema.json",
+  "title": "EaHeartbeatRequestV1",
+  "description": "EA稼働監視専用。状態項目は監視情報であり、取引判断・Risk判定には使用しない。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "heartbeat_id", "ea_id", "timestamp", "symbol", "interval_seconds",
+    "terminal_connected", "trade_mutations_enabled", "kill_switch_active"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "heartbeat_id": {"type": "string", "format": "uuid"},
+    "ea_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$"},
+    "timestamp": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "symbol": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,32}$"},
+    "interval_seconds": {"type": "integer", "minimum": 30, "maximum": 900},
+    "terminal_connected": {"type": "boolean"},
+    "trade_mutations_enabled": {"type": "boolean"},
+    "kill_switch_active": {"type": "boolean"}
+  }
+}

@@ -18,9 +18,9 @@ Phase 13ではMQL5の実コンパイル、Script実行、Python/Lambda/CDK回帰
 
 - アーキテクチャ: CoreEA/Controllerが確定足Strategyを起点にDecision API、Risk Manager、Order Managerへ進み、Position Managerを候補処理より先に実行する。AWSはHTTP API、Decision/Telemetry Lambda、DynamoDB、S3、CloudWatch/SNSをCDKでdev・staging・production分離する。
 - 実装済み: MQL5 Strategy/Risk/Trading/API/監査、HMAC認証・Replay対策、ML線形baselineと校正、LLM構造化VETO、DynamoDB監査、分析指標、IaC、開発release gate。
-- 暫定・未実装: 実市場model artifact、定期Heartbeat、MT5レポートimporter、Shadow効果の統計評価、AWS実環境の障害注入、MQL5 VPS運用証跡。
+- 暫定・未実装: 実市場model artifact、定期Heartbeat（2026-09-26実装、実環境未検証）、MT5レポートimporter、Shadow効果の統計評価、AWS実環境の障害注入、MQL5 VPS運用証跡。
 - テスト状況: 純粋ルールと外部境界の自動テストは整備されている。一方、Broker状態を使う日付・position・margin/order統合、real tickバックテスト、実クラウド経路は未検証である。
-- 本番リスク: 実データ成績と約定再現性が不明、外部依存障害時の実測がない、無候補時の死活監視がない、運用通知と緊急手順が演習されていない。
+- 本番リスク: 実データ成績と約定再現性が不明、外部依存障害時の実測がない、無候補時の死活監視が実環境で未検証（2026-09-26にHeartbeat実装）、運用通知と緊急手順が演習されていない。
 
 ## 2. テスト結果
 
@@ -163,7 +163,7 @@ EAは長期AWS鍵を持たず、失効可能なkey IDとHMAC共有鍵ファイ�
 2. **Final Holdout（2025-01〜2026-08、2026-09-17実施）で、Walk Forward結果から成績が明確に崩れることを確認した**（期待値+290.4円/トレード→-160.2円/トレード、符号反転）。原因分析の結果、特定パラメータの過学習ではなく、戦略コアの実質勝率（トレンドの持続力・伸びしろ）が2023年以降緩やかに悪化し続けていることが判明した（詳細は7/7.5節、`TASKS.md` 2.1.4節）。**ただしIn-Sample期間まで遡ると2018年にも同様の落ち込み（Final Holdout以上に深い）が発生し1年で回復した前例があり、今回が恒久的な構造変化か2018年型の循環的な落ち込みが長引いているだけかは、現時点のデータでは判別できない**（2018年は1年で回復したのに対し今回は既に4年継続しており回復の兆しがない点は懸念材料）。いずれにせよ単純なパラメータ再調整では解決しない可能性が高い。Final Holdoutは一度きりの評価のため既に消費済みで、代替期間は確保されていない。**2026-09-22、tick欠落修正後に再実行し、純利益-28,991円→-18,349円（損失37%縮小）へ変化したが、符号反転・トレンド形状・NO-GO判定は維持されることを確認した（7.5節末尾参照）。**
 3. Demoは未完了で、Risk実データ挙動が不明。
 4. AWS dev実通信と障害注入、Alarm通知到達が未検証。
-5. 独立した定期EA Heartbeatが未実装で、無候補時間帯の死活判定が弱い。
+5. 独立した定期EA Heartbeatは2026-09-26に実装した（`OnTimer`送信、`POST /v1/heartbeats`、欠損Alarm、DEC-043）が、Unit Tested・Synthesizedまでで、AWS実通信・Alarm発報・SNS到達・VPS上の継続送信は未検証。
 6. Kill Switchはコード・純粋ルールのみで、保有position中のSL/TP/安全決済継続を端末で実証していない。
 7. LLM Shadowの効果ログがなく、LLMを本番判断へ適用する根拠がない。
 8. `TestDecisionApiRules`のTerminal exit code 1を調査する必要がある。
