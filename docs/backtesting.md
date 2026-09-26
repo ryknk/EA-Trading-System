@@ -199,7 +199,15 @@ python -m python.analysis.trade_breakdown --input results/backtests/<on-run-id>-
 
 **併用検証結果（2026-09-13実施）**: `InpEnableTrendReversalExit=true`（Activation=1.0/Retrace=0.5/Ticks=5）と`InpEnableEarlyAdverseExit=true`（TriggerR=0.7/Ticks=5）を同時に有効化すると、Baseline比+75,214円（+63.5%）、EarlyAdverseExit単独比でも+12,481円の上乗せとなり、単独設定より併用の方が良い結果だった（SL到達件数325→27件）。ただしFold×銘柄20区分中の改善区分数は10区分で、EarlyAdverseExit単独設定（12〜14区分）より頑健性は低い。詳細は`TASKS.md`セクション2.1.3を参照。
 
-**現時点の判断**: `InpEnableEarlyAdverseExit`は既定`false`のまま維持する。既定の`InpEarlyAdverseExitTriggerR=0.5`はOOSデータ上明確に有害と判明したため、**このままの既定値で有効化しないこと**。TriggerR=0.70〜0.85の範囲でBaselineを上回り、TrendReversalExitとの併用でさらに上乗せが確認されたが、これはFold1-5への複数回のパラメータ適合（9点スイープ＋併用検証）の結果である。**本節の数値はFold1-5への複数回のパラメータ適合であり、Final Holdout（2025-01〜2026-08）での確認前に採用判断をしないこと。** これ以上Fold1-5上での探索は重ねず、全パラメータを固定してFinal Holdoutで一度きりの最終確認を行う計画を優先すべきである。
+**TrendReversalExitを不採用（既定`false`）のまま据え置いた理由**: 併用は集計値（純利益・PF）ではこのセッションで検証した全設定中最良だったが、以下の3点から「併用の方が良い結果だった」ことをそのまま採用理由とはしなかった。
+
+1. **頑健性が単独設定より低い**: 併用の改善区分数はFold×銘柄20区分中10区分にとどまり、実際に採用したEarlyAdverseExit単独設定（TriggerR=0.75、14区分）や0.70（12区分）を下回る。集計値の優位は一部区分での大勝ち・大負けの相殺（分散の拡大）に支えられており、全区分へ一様に効く改善ではない。本プロジェクトでは繰り返し、集計値よりFold単位の改善区分数を頑健性の指標として優先してきた（`TASKS.md`参照）。
+2. **検証時点のTriggerRが現行既定と異なる**: 併用検証で使用した`InpEarlyAdverseExitTriggerR=0.7`は、その後の判断で最終的に採用された`0.75`とは異なる値である。現行既定（TriggerR=0.75）を土台にした併用の再検証は実施していないため、「現行既定＋TrendReversalExit」の組み合わせの効果は未確認のまま。
+3. **Fold1-5への過剰適合回避を優先した**: 併用検証の時点で、Fold1-5に対する開発中の最適化が既に3ラウンド目（ConfirmationTicksスイープ→TriggerR9点スイープ→併用検証）に達していた。ここでさらに「TriggerR=0.75での併用再検証」を追加することは、同一OOSデータへの適合をもう1ラウンド重ねることを意味するため、探索を打ち切りFinal Holdoutへ進む方針を優先し、意図的に見送った。
+
+したがって、TrendReversalExitは「効果がないと判明した」のではなく、**「単独より頑健性が低く、かつ現行既定TriggerRでの再検証を経ていない状態のまま、これ以上Fold1-5上の探索を重ねないという方針のもとで採用を保留した」**候補として扱う。ユーザーの明示指示による採用もEarlyAdverseExit単独（TriggerR=0.75）のみであり、TrendReversalExit自体を既定`true`へ変更する指示・実施はない。Final Holdoutで現行既定一式（TrendReversalExit OFF）を確認した後、余力があればTriggerR=0.75でのTrendReversalExit併用を独立した追加検証として扱うべきである。
+
+**現時点の判断**: `InpEnableEarlyAdverseExit`は既定`true`（TriggerR=0.75、`ConfirmationTicks`=5）へ採用済みである（2026-09-13、ユーザー明示指示、`TASKS.md`参照）。`InpEnableTrendReversalExit`は上記の理由により既定`false`を維持する。**本節の数値はいずれもFold1-5への複数回のパラメータ適合の結果であり、Final Holdout（2025-01〜2026-08）での確認前に、これ以上の採用範囲拡大の判断をしないこと。**
 
 発動したトレードはEA側`CPositionExitEvaluator::EvaluateEarlyAdverseExits`が送出する`EARLY_ADVERSE_EXIT`イベント（`reason_code`固定値`EarlyAdverseConfirmed`、`adverse_r_multiple`、`confirmation_count`）で識別する。
 
