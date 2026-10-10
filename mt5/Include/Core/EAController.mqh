@@ -13,9 +13,9 @@
 #include <EaTradingSystem/External/IDecisionProvider.mqh>
 // 外部連携（Decision API・Tester判断Mock・Heartbeat）は研究ビルドだけに含める（DECISIONS.md DEC-046）。
 #ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
-#include <EaTradingSystem/External/DecisionApiClient.mqh>
-#include <EaTradingSystem/External/MockDecisionProvider.mqh>
-#include <EaTradingSystem/External/HeartbeatApiClient.mqh>
+#include <EaTradingSystemResearch/External/DecisionApiClient.mqh>
+#include <EaTradingSystemResearch/External/MockDecisionProvider.mqh>
+#include <EaTradingSystemResearch/External/HeartbeatApiClient.mqh>
 #endif
 #include <EaTradingSystem/Logging/TradeLogger.mqh>
 #include <EaTradingSystem/Logging/TradeAnalyticsTracker.mqh>
@@ -25,7 +25,7 @@
 // 研究計測（Entry/Breakout Timing比較）は研究ビルドだけに含める。製品中核はこのincludeなしでコンパイルできる
 // （docs/product-separation.md 2.3節、DECISIONS.md DEC-045）。
 #ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
-#include <EaTradingSystem/Research/TimingAnalysisHook.mqh>
+#include <EaTradingSystemResearch/Research/TimingAnalysisHook.mqh>
 #endif
 
 class CEAController

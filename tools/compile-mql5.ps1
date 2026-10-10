@@ -31,7 +31,9 @@ $targets = @(
     @{ Name = "TestBreakoutTimingAnalyzer"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestBreakoutTimingAnalyzer.mq5" },
     @{ Name = "TestTradeAnalyticsTracker"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestTradeAnalyticsTracker.mq5" },
     @{ Name = "TestHeartbeatRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestHeartbeatRules.mq5" },
-    @{ Name = "TestProductBuildWithoutResearch"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestProductBuildWithoutResearch.mq5" }
+    @{ Name = "TestProductBuildWithoutResearch"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestProductBuildWithoutResearch.mq5" },
+    @{ Name = "TestMockDecisionProvider"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestMockDecisionProvider.mq5" },
+    @{ Name = "TestTimingAnalysisPayload"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestTimingAnalysisPayload.mq5" }
 )
 
 foreach ($target in $targets) {

@@ -5,7 +5,7 @@
 #include <EaTradingSystem/Logging/TradeLogger.mqh>
 // Telemetry送信は研究ビルドだけに含める。製品ビルドはローカル監査記録のみ（DECISIONS.md DEC-046）。
 #ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
-#include <EaTradingSystem/External/TelemetryApiClient.mqh>
+#include <EaTradingSystemResearch/External/TelemetryApiClient.mqh>
 #endif
 
 // ローカルAudit記録とTelemetry送信の調停に責務を限定する。

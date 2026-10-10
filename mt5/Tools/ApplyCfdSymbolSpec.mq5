@@ -15,8 +15,8 @@ input string InpOutputPrefix = "cfd-spec";   // MQL5\Files\EaTradingSystem\Diagn
 input string InpRebuildFromMonth = "";       // 空以外なら、適用後に指定月範囲のバーをtickから再生成する（yyyy.mm）
 input string InpRebuildToMonth   = "";       // 再生成の終了月（この月を含む）
 
-#include <EaTradingSystem\Diagnostics\SymbolSpecDump.mqh>
-#include <EaTradingSystem\Diagnostics\SymbolBarRebuild.mqh>
+#include <EaTradingSystemResearch\Diagnostics\SymbolSpecDump.mqh>
+#include <EaTradingSystemResearch\Diagnostics\SymbolBarRebuild.mqh>
 
 struct SCfdSpec
   {

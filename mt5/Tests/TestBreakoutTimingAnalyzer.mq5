@@ -1,7 +1,7 @@
 #property strict
 #property script_show_inputs
 
-#include <EaTradingSystem/Logging/BreakoutTimingAnalyzer.mqh>
+#include <EaTradingSystemResearch/Logging/BreakoutTimingAnalyzer.mqh>
 
 int g_failures=0;
 

@@ -3,7 +3,7 @@
 
 #include <EaTradingSystem/Core/Config.mqh>
 #include <EaTradingSystem/Strategy/TrendFollowingRules.mqh>
-#include <EaTradingSystem/Logging/EntryTimingAnalyzer.mqh>
+#include <EaTradingSystemResearch/Logging/EntryTimingAnalyzer.mqh>
 
 // 分析専用のBreakout Timing比較機能。ブレイクアウトはSetupとTriggerが同一の価格事象
 // （レンジ突破）であり、CEntryTimingAnalyzer（プルバック専用）が検証する「Trigger成立を待つ」

@@ -16,6 +16,8 @@ if (-not (Test-Path -LiteralPath $mql5)) {
 
 $links = @(
     @{ Path = Join-Path $mql5 "Include\EaTradingSystem"; Target = Join-Path $repoMt5 "Include" },
+    # 研究ビルド専用のInclude（研究計測・外部連携・診断）。製品と別のルート名で参照する（DEC-047）。
+    @{ Path = Join-Path $mql5 "Include\EaTradingSystemResearch"; Target = Join-Path $repoMt5 "Include" },
     @{ Path = Join-Path $mql5 "Experts\EaTradingSystem"; Target = Join-Path $repoMt5 "Experts" },
     @{ Path = Join-Path $mql5 "Scripts\EaTradingSystemTests"; Target = Join-Path $repoMt5 "Tests" },
     @{ Path = Join-Path $mql5 "Scripts\EaTradingSystemTools"; Target = Join-Path $repoMt5 "Tools" }

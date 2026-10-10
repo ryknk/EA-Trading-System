@@ -21,7 +21,7 @@ $terminal = Join-Path $InstallPath "terminal64.exe"
 $configDir = Join-Path $repoRoot "mt5\test-config"
 $logRelativeName = "MQL5\logs\" + (Get-Date -Format "yyyyMMdd") + ".log"
 $log = Join-Path $TerminalData $logRelativeName
-$tests = @("TestTrendFollowingRules", "TestMarketRegimeClassifier", "TestPositionSizer", "TestRiskGuards", "TestTradingRules", "TestDecisionApiRules", "TestAuditRules", "TestAuditPayloadBuilder", "TestProductionSafetyRules", "TestEntryTimingAnalyzer", "TestBreakoutTimingAnalyzer", "TestTradeAnalyticsTracker", "TestHeartbeatRules", "TestProductBuildWithoutResearch")
+$tests = @("TestTrendFollowingRules", "TestMarketRegimeClassifier", "TestPositionSizer", "TestRiskGuards", "TestTradingRules", "TestDecisionApiRules", "TestAuditRules", "TestAuditPayloadBuilder", "TestProductionSafetyRules", "TestEntryTimingAnalyzer", "TestBreakoutTimingAnalyzer", "TestTradeAnalyticsTracker", "TestHeartbeatRules", "TestProductBuildWithoutResearch", "TestMockDecisionProvider", "TestTimingAnalysisPayload")
 
 $vmSettingsFullPath = ""
 $vmTerminalDataPath = $null

@@ -9,8 +9,8 @@
 #include <EaTradingSystem/Core/Config.mqh>
 #include <EaTradingSystem/Logging/AuditPayloadBuilder.mqh>
 #include <EaTradingSystem/Logging/AuditEventPublisher.mqh>
-#include <EaTradingSystem/Logging/EntryTimingAnalyzer.mqh>
-#include <EaTradingSystem/Logging/BreakoutTimingAnalyzer.mqh>
+#include <EaTradingSystemResearch/Logging/EntryTimingAnalyzer.mqh>
+#include <EaTradingSystemResearch/Logging/BreakoutTimingAnalyzer.mqh>
 
 // 研究計測イベントのPayload。AuditPayloadBuilderから本文を変更せずに移設した（JSONフィールド名・値・型は不変）。
 class CTimingAnalysisPayloadBuilder : public CAuditPayloadBuilder

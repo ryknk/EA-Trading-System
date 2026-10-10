@@ -10,7 +10,7 @@ input string InpFromMonth = "2024.03"; // 処理開始月（yyyy.mm）
 input string InpToMonth   = "2024.03"; // 処理終了月（yyyy.mm、この月を含む）
 input bool   InpApply     = false;     // true = CustomTicksReplaceで書き戻す
 
-#include <EaTradingSystem\Diagnostics\SymbolBarRebuild.mqh>
+#include <EaTradingSystemResearch\Diagnostics\SymbolBarRebuild.mqh>
 
 void OnStart()
   {
