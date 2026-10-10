@@ -451,7 +451,26 @@ Secret混入が判明した場合、単に最新Commitから削除するだけ�
 
 ---
 
-# 14. 文書管理
+# 14. 製品リポジトリ（submodule）の運用
+
+製品EAのソースの正本は `ryknk/EA-Product` であり、本リポジトリの `product/` にsubmoduleとして取り込む（`DECISIONS.md` DEC-047）。
+
+```powershell
+# 新規clone
+git clone --recurse-submodules https://github.com/ryknk/EA-Trading-System.git
+# 既存cloneでの初期化・記録commitへの同期
+git submodule update --init
+```
+
+* 製品EAの変更は製品リポジトリで行い、製品側の `dev` から `main` へPull Requestでマージする。開発基盤の `product/` 内で直接コミットしない。
+* 開発基盤で新しい製品commitを検証する場合は、`git -C product fetch` と `git -C product checkout <commit>` の後、開発基盤で `git add product` してsubmodule参照の更新をコミットする。コミットメッセージに製品commitと検証内容を記載する。
+* Strategy Testerの `manifest.json` には製品commit・未コミット変更の有無・ソースハッシュ・実行したex5のSHA-256が記録される。`provenance.product.dirty=true` の結果は証跡に使わない。
+* `tools/release-gate.ps1` は、製品submoduleが開発基盤に記録したcommitと一致しない場合に失敗する。
+* 製品EAのex5は製品リポジトリでGit管理しない。
+
+---
+
+# 15. 文書管理
 
 変更内容に応じて次を更新する。
 

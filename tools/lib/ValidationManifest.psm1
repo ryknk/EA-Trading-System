@@ -246,7 +246,9 @@ function Get-ExpertIdentity {
     param(
         [string]$Expert,
         [Parameter(Mandatory)][string]$ProductSourceRoot,
-        [string]$TerminalData = ""
+        [string]$TerminalData = "",
+        # 研究ビルド（CoreEA）のように製品外のソースも使うEAのため、開発基盤側のmt5等を追加で探索する。
+        [string[]]$AdditionalSourceRoots = @()
     )
     $identity = [ordered]@{
         ea_version                   = $null
@@ -255,13 +257,18 @@ function Get-ExpertIdentity {
     }
     if ([string]::IsNullOrWhiteSpace($Expert)) { return $identity }
     $expertLeaf = Split-Path -Leaf $Expert
-    $identity.ea_version = Get-MqlPropertyVersion (Join-Path $ProductSourceRoot "Experts\$expertLeaf.mq5")
+    $sourceRoots = @($ProductSourceRoot) + @($AdditionalSourceRoots | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    foreach ($sourceRoot in $sourceRoots) {
+        $identity.ea_version = Get-MqlPropertyVersion (Join-Path $sourceRoot "Experts\$expertLeaf.mq5")
+        if ($identity.ea_version) { break }
+    }
     if ([string]::IsNullOrEmpty($TerminalData)) { return $identity }
 
     $ex5 = Join-Path $TerminalData "MQL5\Experts\$Expert.ex5"
     $identity.expert_ex5_sha256 = Get-FileSha256OrNull $ex5
     if ($identity.expert_ex5_sha256) {
-        $newestSource = Get-ChildItem -LiteralPath @((Join-Path $ProductSourceRoot "Experts"), (Join-Path $ProductSourceRoot "Include")) -Recurse -File -ErrorAction SilentlyContinue |
+        $sourceDirectories = foreach ($sourceRoot in $sourceRoots) { (Join-Path $sourceRoot "Experts"); (Join-Path $sourceRoot "Include") }
+        $newestSource = Get-ChildItem -LiteralPath @($sourceDirectories) -Recurse -File -ErrorAction SilentlyContinue |
             Where-Object { $_.Extension -in @(".mq5", ".mqh") } |
             Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
         if ($newestSource) {

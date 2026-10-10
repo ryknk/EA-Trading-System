@@ -2228,11 +2228,14 @@ Strategy Tester・MQL5単体テスト実行中にホストの対話デスクト�
 * [ ] 製品ビルドの試験運用でのEA停止・ハング検知方法を決める（Heartbeatがないため。VPS Journal確認、MQL5プッシュ通知等）
 * [ ] 本番証跡（`production-release-evidence.schema.json`・`release-gate.ps1 -Mode Production`）を製品ビルド用に見直す（現在はML・LLM・AWSの項目を必須にしている）
 * [ ] 製品ビルドの成績一致を他の銘柄・期間（Walk Forward全Fold等）でも確認する
-* [ ] Kill Switch規則（`External/IDecisionProvider.mqh`）と `External/CryptoUtils.mqh` の配置を製品リポジトリ作成時に見直す
+* [x] Kill Switch規則（`External/IDecisionProvider.mqh`）と `External/CryptoUtils.mqh` の配置を製品リポジトリ作成時に見直す（2026-10-11、通信を伴わない規則・型のため製品リポジトリに置いた。通信を伴う外部連携は開発基盤の `EaTradingSystemResearch` ルートに残した。DEC-047）
 * [x] 研究計測（Entry/Breakout Timing）を製品中核のincludeから分離する（2026-10-10、DEC-045。USDJPY_HIST 2021年の3ケースで変更前後の成績・監査イベントの完全一致を確認）
-* [ ] 研究計測の入力（`InpEnableEntryTimingAnalysis`等）を製品EAから外す（製品リポジトリ作成時）
-* [ ] `link-mt5.ps1`・`compile-mql5.ps1`・`run-mql5-tests.ps1`・`release-gate.ps1` が製品ソースのルートを引数で受け取れるようにする
-* [ ] `EA-Product` リポジトリ作成・履歴付き移行・submodule化（ユーザー承認後）
+* [x] 研究計測の入力（`InpEnableEntryTimingAnalysis`等）を製品EAから外す（`EAEntryPoint.mqh` の `#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD` 内にあり、製品ビルドの入力には存在しない。DEC-046）
+* [x] `link-mt5.ps1`・`compile-mql5.ps1`・`run-mql5-tests.ps1`・`release-gate.ps1` を製品submodule（`product/`）に対応させる（2026-10-11、DEC-047）
+* [x] `EA-Product` リポジトリ作成・履歴付き移行・submodule化（2026-10-11、ユーザー承認済み。`ryknk/EA-Product` private、DEC-047）
+* [ ] 製品リポジトリ `ryknk/EA-Product` のブランチ保護（`main` への直接push禁止等）をGitHub上で設定する（ユーザー操作）
+* [ ] VM実行モード（`-ExecutionMode VM`）を分離後の構成で確認する（VM側の製品submodule・ジャンクション設定が必要）
+* [ ] 分離前後の一致を他の銘柄・期間（Walk Forward全Fold等）でも確認する
 * [ ] 本番証跡JSONへ検証manifest（製品commit・ex5 SHA-256）を関連づける
 * [ ] `HANDOFF.md`・`CONTRIBUTING.md` の安定Branch記載（`master`）と実運用（`main`/`dev`）の不一致を解消する
 * [x] `STRATEGY_TESTER_BATCH_COMPLETED` ログで件数1件時に `succeeded=`/`failed=` が空欄になる問題（Windows PowerShell 5.1）を修正する（2026-10-10、`Get-CaseStatusCount`へ集計を移し`@()`で配列化、回帰テスト追加）

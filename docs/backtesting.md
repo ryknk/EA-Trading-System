@@ -61,7 +61,7 @@ CaseFileはJSON配列（または`cases`キーを持つオブジェクト）で�
 
 manifest.json 1.1では、上記に加えて次を自動記録する。取得に失敗しても実行は止めず `null` とする（Strategy Testerの成否判定へ影響させない）。
 
-* `provenance.product`: 製品EAソース（`-ProductSourceRoot`、既定 `mt5/`）のGit commit・branch・remote URL（資格情報を除去）・未コミット変更の有無（`dirty`）・ソースハッシュ（`Experts`・`Include`配下の`.mq5`/`.mqh`の内容ハッシュ。作業ツリー上のバイト列で計算するため、改行コード（`core.autocrlf`）が異なる環境間では同じcommitでも値が変わる）。`compile-mql5.ps1` はGit管理下のex5を再生成するため、ソースが未変更でもコンパイル後は `dirty=true` になり得る（ソースの同一性は `source_tree_sha256` で確認する）
+* `provenance.product`: 製品EAソース（`-ProductSourceRoot`、既定 `product/mt5`＝製品リポジトリのsubmodule、DEC-047）のGit commit・branch・remote URL（資格情報を除去）・未コミット変更の有無（`dirty`）・ソースハッシュ（`Experts`・`Include`配下の`.mq5`/`.mqh`の内容ハッシュ。作業ツリー上のバイト列で計算するため、改行コード（`core.autocrlf`）が異なる環境間では同じcommitでも値が変わる）。`compile-mql5.ps1` はGit管理下のex5を再生成するため、ソースが未変更でもコンパイル後は `dirty=true` になり得る（ソースの同一性は `source_tree_sha256` で確認する）
 * `provenance.platform`: 検証基盤（本リポジトリ）のcommit・branch・`dirty`
 * `provenance.mt5.terminal_file_version`: `terminal64.exe` のファイルバージョン（Host実行時のみ）
 * ケースごとの `ea_version`（`#property version`）、`expert_ex5_sha256`（実行したex5、Host実行時のみ）、`expert_ex5_older_than_source`（ex5が製品ソースより古い場合true。更新時刻比較による参考値）、`tester_ini_sha256`（Symbol・期間・Run ID置換後の実効設定）

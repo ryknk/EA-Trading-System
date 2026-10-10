@@ -18,10 +18,19 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Import-Module (Join-Path $PSScriptRoot "lib\Mt5ExecutionBackend.psm1") -Force
 $terminal = Join-Path $InstallPath "terminal64.exe"
-$configDir = Join-Path $repoRoot "mt5\test-config"
 $logRelativeName = "MQL5\logs\" + (Get-Date -Format "yyyyMMdd") + ".log"
 $log = Join-Path $TerminalData $logRelativeName
-$tests = @("TestTrendFollowingRules", "TestMarketRegimeClassifier", "TestPositionSizer", "TestRiskGuards", "TestTradingRules", "TestDecisionApiRules", "TestAuditRules", "TestAuditPayloadBuilder", "TestProductionSafetyRules", "TestEntryTimingAnalyzer", "TestBreakoutTimingAnalyzer", "TestTradeAnalyticsTracker", "TestHeartbeatRules", "TestProductBuildWithoutResearch", "TestMockDecisionProvider", "TestTimingAnalysisPayload")
+# 製品テスト（submodule product/のmt5/test-config）と研究テスト（mt5/test-config）のTest*.iniを列挙する。
+# 製品テストの一覧は製品リポジトリ側だけで管理し、開発基盤では二重管理しない（DECISIONS.md DEC-047）。
+$testConfigs = [ordered]@{}
+foreach ($configDir in @((Join-Path $repoRoot "product\mt5\test-config"), (Join-Path $repoRoot "mt5\test-config"))) {
+    foreach ($configFile in @(Get-ChildItem -LiteralPath $configDir -Filter "Test*.ini" | Sort-Object Name)) {
+        if ($testConfigs.Contains($configFile.BaseName)) { throw "テスト名が製品と研究で重複しています: $($configFile.BaseName)" }
+        $testConfigs[$configFile.BaseName] = $configFile.FullName
+    }
+}
+$tests = @($testConfigs.Keys)
+if ($tests.Count -eq 0) { throw "No test configs found." }
 
 $vmSettingsFullPath = ""
 $vmTerminalDataPath = $null
@@ -49,7 +58,7 @@ $beforeCount = if ($ExecutionMode -eq "VM") {
 
 $exitCodes = @{}
 foreach ($test in $tests) {
-    $config = Join-Path $configDir ($test + ".ini")
+    $config = $testConfigs[$test]
     if ($ExecutionMode -eq "Host") {
         $execResult = Invoke-Mt5Execution -ExecutionMode Host -ExecutablePath $terminal -ConfigFilePath $config -TimeoutSeconds 30 -HostUseIsolatedSession $HostUseIsolatedSession
     } else {

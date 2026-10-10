@@ -1,8 +1,8 @@
 # 開発基盤と製品EAの分離
 
-本書は、本リポジトリを「EAの研究・検証・分析を行う開発基盤」として整理し、販売EA本体を将来の別リポジトリ（仮称 `EA-Product`）へ分離するための現状調査・境界定義・移行計画である。設計判断は `DECISIONS.md` DEC-044。
+本書は、本リポジトリを「EAの研究・検証・分析を行う開発基盤」として整理し、販売EA本体を別リポジトリ `EA-Product` へ分離するための現状調査・境界定義・移行計画と、その実施記録である。設計判断は `DECISIONS.md` DEC-044〜DEC-047。
 
-現時点では**リポジトリ分離は未実施**であり、製品EAのソースは引き続き本リポジトリの `mt5/` にある。本書の「移行手順」は計画であり、実施済みではない。
+**2026-10-11、製品EAのソースを [ryknk/EA-Product](https://github.com/ryknk/EA-Product) へ分離した**（5章）。本リポジトリは `product/` にsubmoduleとして製品の特定commitを取り込む。1章は分離前の調査記録である。
 
 ---
 
@@ -157,7 +157,7 @@ CaseFileの `acceptance_criteria` に合否基準ファイルのパスを指定�
 
 ---
 
-## 3. 移行手順（Phase C、未実施）
+## 3. 移行手順（Phase C、2026-10-11に段階1〜5を実施）
 
 各段階は独立してコミット・検証・切り戻しできる単位とする。段階1〜3は本リポジトリ内で完結し、既存の `dev` / `main` 運用を変えない。
 
@@ -165,9 +165,9 @@ CaseFileの `acceptance_criteria` に合否基準ファイルのパスを指定�
 | --- | --- | --- | --- |
 | 1（**実施済み** 2026-10-10） | 研究計測（`EntryTimingAnalyzer`・`BreakoutTimingAnalyzer`）と監査ペイロード生成の依存を分け、製品中核が研究計測なしでコンパイルできるincludeにする | `compile-mql5.ps1`、`run-mql5-tests.ps1`、既存CaseFileの再実行で成績が変わらないこと（4章） | 該当コミットのrevert |
 | 2（**実施済み** 2026-10-11） | 外部連携を製品へ含めるかを決定し、`DECISIONS.md` へ記録する（含めない。DEC-046）。製品ビルド `ProductEA` を追加する | 製品ビルドと研究ビルド（常時許可Mock）の成績・監査イベントの一致（4.2節） | 該当コミットのrevert |
-| 3 | `link-mt5.ps1`・`compile-mql5.ps1`・`run-mql5-tests.ps1`・`release-gate.ps1` が製品ソースのルートを引数で受け取れるようにする（既定は現行の `mt5/`） | 既定引数で従来どおり動くこと、別パス指定で同じ結果になること | revert |
-| 4 | `EA-Product` リポジトリを作成し、`mt5/Experts/CoreEA.mq5`・製品中核の `mt5/Include`・製品テストを `git filter-repo` 等で履歴付きで移す（**ユーザー承認が必要**） | 製品リポジトリ単独でコンパイル・テストが通ること | 製品リポジトリを破棄（本リポジトリは未変更） |
-| 5 | 本リポジトリへsubmodule `product/` を追加し、junction元を `product/mt5` へ切り替える。旧 `mt5/` の製品ファイルを削除する（**ユーザー承認が必要**） | 開発ゲート一式、代表CaseFile（例: Walk Forward）の再実行で成績・ex5ハッシュが段階4前と一致すること | submoduleの削除と旧ファイルの復元（revert） |
+| 3（**実施済み** 2026-10-11） | `link-mt5.ps1`・`compile-mql5.ps1`・`run-mql5-tests.ps1`・`release-gate.ps1` を製品submoduleに対応させる（5.2節） | 既定引数で従来どおり動くこと、別パス指定で同じ結果になること | revert |
+| 4（**実施済み** 2026-10-11、ユーザー承認済み） | `EA-Product` リポジトリを作成し、`mt5/Experts/ProductEA.mq5`・製品中核の `mt5/Include`・製品テストを `git filter-branch` で履歴付きで移す | 製品リポジトリ単独でコンパイル・テストが通ること | 製品リポジトリを破棄（本リポジトリは未変更） |
+| 5（**実施済み** 2026-10-11、ユーザー承認済み） | 本リポジトリへsubmodule `product/` を追加し、junction元を `product/mt5` へ切り替える。旧 `mt5/` の製品ファイルを削除する | 開発ゲート一式、代表CaseFile（例: Walk Forward）の再実行で成績・ex5ハッシュが段階4前と一致すること | submoduleの削除と旧ファイルの復元（revert） |
 | 6 | 製品リリースごとに、manifestの `provenance.product.commit`・`expert_ex5_sha256` と本番証跡を関連づける（本番証跡スキーマへの追加を検討） | `release-gate.ps1 -Mode Production` の回帰テスト | revert |
 
 ### 3.1 リスク
@@ -227,3 +227,56 @@ VM実行モードでの新規項目の記録は未確認（NOT VERIFIED）。VM�
 | EURUSD_HIST | 29 | 28,365 | 1.472 | 47 / 0 | 一致 |
 
 この結果は、これまで研究ビルドの常時許可Mockで取得してきた成績が、製品ビルドの判断経路と同じであることを2銘柄・1年で確認したものであり、性能評価ではない。他の銘柄・期間は未確認（NOT VERIFIED）。
+
+---
+
+## 5. 製品リポジトリの分離（段階3〜5、2026-10-11実施、DEC-047）
+
+### 5.1 分離条件と判定
+
+| 条件 | 結果 |
+| --- | --- |
+| 製品ビルドのinclude閉包が研究ルート（`EaTradingSystemResearch`）を `#ifdef` 外で参照しない | 満たす（静的解析、`TestProductBuildWithoutResearch`） |
+| 製品テストが研究ファイルに依存しない | 満たす（`TestProductionSafetyRules`・`TestAuditPayloadBuilder` の研究部分を `TestMockDecisionProvider`・`TestTimingAnalysisPayload` へ分離） |
+| 分離前の変更がコミット済みで、履歴付きで抽出できる | 満たす（ユーザー承認のうえ `2ae9fec`・`4b9d01c` をコミット） |
+| GitHubリポジトリ作成・push権限 | 満たす（`ryknk` アカウント、`repo` スコープ、ユーザー承認） |
+| 未マージのブランチが製品ファイルを変更していない | 満たす（`feature/mt5-vm-execution-backend` はdevへマージ済み） |
+
+### 5.2 実施内容
+
+* 製品リポジトリ: [ryknk/EA-Product](https://github.com/ryknk/EA-Product)（private、`main`・`dev`）。
+* 履歴: `git filter-branch --index-filter` で製品ファイル62件（`ProductEA.mq5`、Include 41件、製品テスト10件とその起動設定）の履歴だけを抽出した。パスを変えていないため、ファイルごとの履歴が残る（元の78コミット中、製品ファイルを変更した38コミット）。各コミットに `Source-Commit: ryknk/EA-Trading-System@<sha>` を追記した。抽出後のファイルは元リポジトリ `4b9d01c` と全件同一blobであることを確認した。元リポジトリの履歴は変更していない。
+* 製品リポジトリに追加: README・CLAUDE.md・`.gitignore`（ex5・ビルドログを管理対象外）、単独利用時の `tools/link-mt5.ps1`・`compile-mql5.ps1`・`run-mql5-tests.ps1`。
+* 開発基盤: 製品ファイル62件と対応するex5を削除し、`product/` にsubmodule（`branch = main`）を追加した。`mt5/` には研究ビルド `CoreEA`、研究用Include（`EaTradingSystemResearch` ルート）、研究テスト、診断ツールが残る。
+* 研究用ファイルの参照は分離前に `EaTradingSystemResearch` ルートへ変更した（`4b9d01c`）。製品の `EAController.mqh`・`AuditEventPublisher.mqh` には研究ビルド用の `#ifdef` ブロックが残るが、製品ビルドではコンパイルされない。
+* ツール: `link-mt5.ps1`（`-Relink` で既存ジャンクションだけを張り替え）、`compile-mql5.ps1`（製品側は `product/tools/compile-mql5.ps1` を呼ぶ）、`run-mql5-tests.ps1`（製品・研究の `Test*.ini` を列挙）、`release-gate.ps1`（静的検査を `product/` に向け、submoduleが記録commitと一致することを検査）、Runner（`-ProductSourceRoot` 既定を `product/mt5` に変更、研究ビルドのEAバージョンを開発基盤側から解決）。
+* 製品ビルドのStrategy Testerテンプレートは `Expert=EaTradingSystemProduct\ProductEA` に変更した。研究ビルドのテンプレート（`Expert=EaTradingSystem\CoreEA`）は変更していない。
+
+### 5.3 検証
+
+| 検証 | 結果 |
+| --- | --- |
+| GitHubからcloneした製品リポジトリだけでコンパイル（MetaEditor `/include` を製品Includeだけの一時ルートに限定） | `ProductEA` と製品テスト10件、計11件が0 errors・0 warnings。同条件で研究ルートを参照するファイルは「not found」で失敗し、開発基盤のファイルへ解決されないことを確認 |
+| 開発基盤からのコンパイル（submodule経由） | 製品11件・研究7件、計18件が0 errors・0 warnings |
+| MQL5実行テスト | 製品10件・研究6件、計16件PASS |
+| Python・Lambda・CDK | 246件PASS |
+| 移行前後のStrategy Tester（USDJPY_HIST・EURUSD_HIST 2021年、製品ビルド2ケース・研究ビルド3ケース） | 分離前 run `20261011-004835` と分離後 run `20261011-005814` で、全5ケースの成績指標と監査イベント（`event_id` 除く）が完全一致 |
+| 分離後のmanifest | `provenance.product` が製品リポジトリ（submodule）のcommit `6046e48`・`dirty=false` を記録。製品ケースのExpertは `EaTradingSystemProduct\ProductEA` |
+
+ソースハッシュ（`source_tree_sha256`）は、分離前が開発基盤の `mt5/Experts`・`mt5/Include` 全体（研究用ファイルを含む）、分離後が製品ファイルだけを対象にするため値は一致しない。同一性はblob照合と上記の結果一致で確認した。ex5のSHA-256も再コンパイルにより変わる。
+
+製品の単独実行スクリプト（`product/tools/run-mql5-tests.ps1`）による単体テスト実行は、開発基盤のジャンクションと同名のため未実施（開発基盤の `run-mql5-tests.ps1` で同じ製品テストを実行済み）。VM実行モードは分離後の構成で未確認（NOT VERIFIED）。
+
+### 5.4 運用手順
+
+* 新規clone: `git clone --recurse-submodules https://github.com/ryknk/EA-Trading-System.git` → `.\tools\link-mt5.ps1`。
+* 既存環境の移行: `git pull` → `git submodule update --init` → MT5終了 → `.\tools\link-mt5.ps1 -Relink` → `.\tools\compile-mql5.ps1`。
+* 製品の変更: 製品リポジトリで変更・コミットし（`dev` → `main` はPull Request）、開発基盤で `git -C product checkout <commit>` → `git add product` → 検証 → コミット。
+* 切り戻し: 開発基盤で分離コミットをrevertし、`git submodule deinit product`、`.\tools\link-mt5.ps1 -Relink`（`Include\EaTradingSystem` を `mt5\Include` へ戻す）、再コンパイル。製品リポジトリはGitHub上に残る（削除は不要。削除する場合はユーザーが操作する）。
+
+### 5.5 残課題
+
+* 製品リポジトリのブランチ保護（`main` への直接push禁止等）はGitHub上でユーザーが設定する。
+* VM実行モード、他の銘柄・期間での前後一致は未確認。
+* 本番証跡JSONとmanifest（製品commit・ex5 SHA-256）の関連づけは未実装。
+* `HANDOFF.md`（Git管理外）は分離前の構成の記述のまま。

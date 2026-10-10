@@ -152,6 +152,13 @@ try {
     Assert-True ($fresh.expert_ex5_older_than_source -eq $false) "ソースより新しいex5は検出しないこと"
     $noTerminal = Get-ExpertIdentity -Expert "Vendor\SampleEA" -ProductSourceRoot $product
     Assert-True ($null -eq $noTerminal.expert_ex5_sha256 -and $noTerminal.ea_version -eq "2.05") "TerminalData未指定（VM実行）はex5を記録しないこと"
+    # 研究ビルドのように製品外（開発基盤側）にあるEAは、追加のソースルートからバージョンを解決すること。
+    $platform = Join-Path $work "platform"
+    New-Item -ItemType Directory -Path (Join-Path $platform "Experts") -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $platform "Experts\ResearchEA.mq5") -Value @('#property strict', '#property version   "3.01"') -Encoding UTF8
+    $researchIdentity = Get-ExpertIdentity -Expert "Vendor\ResearchEA" -ProductSourceRoot $product -AdditionalSourceRoots @($platform)
+    Assert-True ($researchIdentity.ea_version -eq "3.01") "追加のソースルートからEAバージョンを解決すること"
+    Assert-True ($null -eq (Get-ExpertIdentity -Expert "Vendor\ResearchEA" -ProductSourceRoot $product).ea_version) "追加のソースルートがなければ製品外のEAはnullであること"
     Write-Host "PASS Get-ExpertIdentity"
 
     # --- Git識別情報: Git外はnull、Git内はcommitを返し、未コミット変更をdirtyとして検出すること ---

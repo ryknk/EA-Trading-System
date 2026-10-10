@@ -68,17 +68,25 @@ try {
     Write-Host "PASS required Japanese documents"
 
     # 入力と初期値はCoreEA（研究ビルド）・ProductEA（製品ビルド）共通のEAEntryPoint.mqhにある（DEC-046）。
-    $coreEa = Get-Content -LiteralPath (Join-Path $root "mt5\Include\Core\EAEntryPoint.mqh") -Raw
+    # 製品EAの正本はsubmodule product/（ryknk/EA-Product）にある（DEC-047）。ゲートは開発基盤が固定した製品commit
+    # に対して実行する（git submodule statusの先頭が空白＝記録commitと一致、-＝未初期化、+＝不一致）。
+    # Select-Object -First 1でパイプラインを打ち切るとgitの終了コードが-1になるため、出力を全て受け取ってから先頭行を使う。
+    $submoduleOutput = @(& git -C $root submodule status -- product)
+    $submoduleExitCode = $LASTEXITCODE
+    $submoduleStatus = if ($submoduleOutput.Count -gt 0) { [string]$submoduleOutput[0] } else { "" }
+    Assert-True ($submoduleExitCode -eq 0 -and $submoduleStatus -match '^ [0-9a-f]{40} product')"製品submoduleが未初期化、または開発基盤に記録したcommitと一致しません: $submoduleStatus"
+    Write-Host "PASS product submodule pinned: $($submoduleStatus.Trim())"
+    $coreEa =Get-Content -LiteralPath (Join-Path $root "product\mt5\Include\Core\EAEntryPoint.mqh") -Raw
     foreach ($setting in @("InpEnableTradeMutations", "InpDecisionApiEnabled", "InpTelemetryEnabled", "InpHeartbeatEnabled")) {
         Assert-True ($coreEa -match "input bool\s+$setting=false;") "危険な設定の初期値がfalseではありません: $setting"
     }
     Assert-True ($coreEa -match 'input bool\s+InpAuditFileEnabled=true;') "監査ログの初期値がtrueではありません。"
-    $productEa = Get-Content -LiteralPath (Join-Path $root "mt5\Experts\ProductEA.mq5") -Raw
+    $productEa = Get-Content -LiteralPath (Join-Path $root "product\mt5\Experts\ProductEA.mq5") -Raw
     Assert-True ($productEa -notmatch '#define\s+EA_TRADING_SYSTEM_RESEARCH_BUILD') "製品ビルドが研究ビルドのマクロを定義しています。"
     Write-Host "PASS fail-safe MQL5 defaults"
 
     # 既存ポジション管理を外部通信より先に実行し、HeartbeatをOnTick（取引経路）から分離していることを静的に確認する。
-    $controller = Get-Content -LiteralPath (Join-Path $root "mt5\Include\Core\EAController.mqh") -Raw
+    $controller = Get-Content -LiteralPath (Join-Path $root "product\mt5\Include\Core\EAController.mqh") -Raw
     $onTimer = [regex]::Match($controller, '(?s)void OnTimer\(void\)(.*?)void OnTick\(void\)').Groups[1].Value
     $onTick = [regex]::Match($controller, '(?s)void OnTick\(void\)(.*?)void OnTradeTransaction\(').Groups[1].Value
     Assert-True ($onTimer.Length -gt 0 -and $onTick.Length -gt 0) "EAControllerのOnTimer/OnTickを特定できません。"
@@ -92,11 +100,11 @@ try {
     Assert-True ($riskEvaluateIndex -gt $monitorIndex) "既存ポジション監視がRisk Managerの新規注文評価より先に実行されていません。"
     Write-Host "PASS existing-position management precedes external calls and heartbeat is isolated"
 
-    $sourceRoots = @("mt5", "services", "python", "infra", "contracts", "docs")
+    $sourceRoots = @("mt5", "product", "services", "python", "infra", "contracts", "docs")
     $forbidden = Get-ChildItem -LiteralPath $sourceRoots -Recurse -File -ErrorAction Stop |
         Where-Object { $_.Name -in @("decision-api-secret.txt", ".env") }
     Assert-True ($null -eq $forbidden) "秘密情報ファイルがソースツリーに存在します。"
-    $accessKeys = & rg -n -g '!infra/cdk.out/**' 'AKIA[0-9A-Z]{16}' README.md docs contracts mt5 services python infra tools
+    $accessKeys = & rg -n -g '!infra/cdk.out/**' 'AKIA[0-9A-Z]{16}' README.md docs contracts mt5 product services python infra tools
     Assert-True ($LASTEXITCODE -eq 1) "AWS access keyらしき文字列が見つかりました: $accessKeys"
     Write-Host "PASS basic secret scan"
 

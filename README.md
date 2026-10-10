@@ -52,7 +52,7 @@ Phase 11ではSNS Alert Topicを作成します。`-c alarm_email=<通知先>` �
 
 ## MQL5への配置 / VPS移行
 
-`mt5/Experts`、`mt5/Include`、`mt5/Tests` はdirectory junctionでローカルMT5と連携します。VPS移行前にWebRequest許可URL、EA設定、AutoTrading、シンボル仕様、UTC時刻、監査ログ、共有鍵ファイル読込を確認し、チャートとEAをMQL5 VPSへ同期します。PythonやWebサーバーはMQL5 VPSへ配置しません。詳細は [MT5ローカル開発・VPS移行](docs/mt5-development.md) を参照してください。
+製品EA（`ProductEA`）のソースの正本は製品リポジトリ [ryknk/EA-Product](https://github.com/ryknk/EA-Product) で、本リポジトリの `product/` にsubmoduleとして取り込み、検証する製品commitを固定します（`git clone --recurse-submodules`、`DECISIONS.md` DEC-047）。本リポジトリの `mt5/` には研究ビルド `CoreEA`、研究用Include、研究テスト、診断ツールだけを置きます。`product/mt5` と `mt5` はdirectory junctionでローカルMT5と連携します（`tools/link-mt5.ps1`）。VPS移行前にWebRequest許可URL、EA設定、AutoTrading、シンボル仕様、UTC時刻、監査ログ、共有鍵ファイル読込を確認し、チャートとEAをMQL5 VPSへ同期します。PythonやWebサーバーはMQL5 VPSへ配置しません。詳細は [MT5ローカル開発・VPS移行](docs/mt5-development.md) を参照してください。
 
 ## 設定の原則
 

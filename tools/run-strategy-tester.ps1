@@ -38,7 +38,9 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Import-Module (Join-Path $PSScriptRoot "lib\Mt5ExecutionBackend.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\ValidationManifest.psm1") -Force
-if ([string]::IsNullOrEmpty($ProductSourceRoot)) { $ProductSourceRoot = Join-Path $root "mt5" }
+# 製品EAの正本はsubmodule product/（ryknk/EA-Product）にある（DEC-047）。研究ビルドCoreEAは開発基盤のmt5を使う。
+if ([string]::IsNullOrEmpty($ProductSourceRoot)) { $ProductSourceRoot = Join-Path $root "product\mt5" }
+$platformMt5Root = Join-Path $root "mt5"
 
 function Read-IniValue {
     param([string]$Path, [string]$Key)
@@ -411,7 +413,7 @@ foreach ($case in $cases) {
     if ($caseRecord.expert) {
         try {
             $expertIdentity = Get-ExpertIdentity -Expert $caseRecord.expert -ProductSourceRoot $ProductSourceRoot `
-                -TerminalData $(if ($ExecutionMode -eq "Host") { $TerminalData } else { "" })
+                -TerminalData $(if ($ExecutionMode -eq "Host") { $TerminalData } else { "" }) -AdditionalSourceRoots @($platformMt5Root)
             $caseRecord.ea_version = $expertIdentity.ea_version
             $caseRecord.expert_ex5_sha256 = $expertIdentity.expert_ex5_sha256
             $caseRecord.expert_ex5_older_than_source = $expertIdentity.expert_ex5_older_than_source

@@ -1379,3 +1379,28 @@ TASKS.md 3.1節「データ利用条件とライセンスを確認する」の�
 * Release Gateの安全初期値検査の対象を `EAEntryPoint.mqh` に変更し、製品EAが研究マクロを定義しないこと、既存ポジション監視がRisk Managerの新規注文評価より先であることの静的検査を追加した。
 * 製品ビルドでも `InpEnableTradeMutations=false` が既定であり、取引変更の有効化にはユーザーの明示的な許可が必要という運用は変わらない。
 * Rollback: 本変更のコミットをrevertし、`compile-mql5.ps1` で再コンパイルする。
+
+# DEC-047: 製品EAのソースを ryknk/EA-Product へ分離し、開発基盤はsubmoduleで特定commitを検証する
+
+**状態:** 採用・実施（2026-10-11、ユーザー承認）。Implemented / Locally Tested / Pushed（製品リポジトリ）。`docs/product-separation.md` 5章。
+
+## 背景
+
+DEC-044〜DEC-046で、製品ビルド `ProductEA` が研究計測・外部連携なしで完結し、研究ビルドと成績が一致することを確認した。製品コードを両リポジトリで二重管理せず、研究用の変更が販売版へ自動的に混入しない構成にするため、製品EAのソースを独立したリポジトリへ移す。
+
+## 決定
+
+* 製品EAのソースの唯一の正本を `ryknk/EA-Product`（private、`main`・`dev`）とする。対象は製品ビルドと製品テストのinclude閉包から機械的に求めた62件（`ProductEA.mq5`、Include 41件、製品テスト10件と起動設定）。
+* 履歴は `git filter-branch --index-filter` で製品ファイルの履歴だけを抽出して保持する。パスを変えないことでファイルごとの履歴を残し、各コミットに `Source-Commit:` で元commitを記録する。追加ツール（git-filter-repo）は導入しない。元リポジトリの履歴は変更しない。
+* 開発基盤は `product/` にsubmoduleとして取り込み、検証する製品commitを開発基盤の履歴で固定する。`release-gate.ps1` はsubmoduleが記録commitと一致しない場合に失敗する。Strategy Testerのmanifestは製品commit・未コミット変更の有無・実行したex5のSHA-256を記録する（DEC-044）。
+* MT5上の参照名は、製品を `Include\EaTradingSystem`・`Experts\EaTradingSystemProduct`・`Scripts\EaTradingSystemProductTests`、研究を `Include\EaTradingSystemResearch`・`Experts\EaTradingSystem`・`Scripts\EaTradingSystemTests` とする。研究ビルドのStrategy Testerテンプレート（`StrategyTester-*.ini` 83件中81件が `Expert=EaTradingSystem\CoreEA`）を変更しないため、研究側の既存名を維持した。
+* 製品テストのうち研究用Mock・研究計測を検査していた部分は、開発基盤の研究テスト（`TestMockDecisionProvider`・`TestTimingAnalysisPayload`）へ分けた。製品の対象一覧（コンパイル・テスト）は製品リポジトリだけが持ち、開発基盤は製品側のスクリプトとiniを列挙して使う。
+* 製品リポジトリではex5をGit管理しない。製品は単独利用時のリンク・コンパイル・テストスクリプトを持つ。
+* 製品の `EAController.mqh`・`AuditEventPublisher.mqh` に研究ビルド用の `#ifdef` ブロックを残す（研究ビルドが製品中核をそのまま使うため）。製品ビルドではコンパイルされず、製品単独のcloneでも研究ファイルなしでコンパイルできることを確認した。
+
+## 影響
+
+* 分離前（run `20261011-004835`）と分離後（run `20261011-005814`）で、製品ビルド2ケース・研究ビルド3ケースの成績指標と監査イベントが完全一致した。GitHubからcloneした製品リポジトリだけで、製品EAと製品テスト計11件が0 errors・0 warningsでコンパイルできた。
+* 既存環境では `git submodule update --init` と `tools/link-mt5.ps1 -Relink` によるジャンクション張り替えが必要（`-Relink` はジャンクションだけを張り替え、リンク先の内容は削除しない）。
+* VM実行モード、製品リポジトリのブランチ保護、本番証跡とmanifestの関連づけは未対応。
+* Rollback: 開発基盤で分離コミットをrevertし、`git submodule deinit product` の後に `tools/link-mt5.ps1 -Relink` と再コンパイルを行う。製品リポジトリはGitHub上に残る。

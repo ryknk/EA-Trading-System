@@ -127,8 +127,11 @@ Telemetryの失敗によって、次を変更しない。
 主要ディレクトリの責務を維持する。
 
 ```text
+product/   （submodule: ryknk/EA-Product、製品EAの正本）
+  製品EA（ProductEA）、Strategy、Risk、Trading、Logging、製品テスト
+
 mt5/
-  EA、Strategy、Risk、Trading、External、Logging、MQL5テスト
+  研究ビルドCoreEA、研究計測・外部連携・診断（EaTradingSystemResearch）、研究テスト、MT5補助ツール
 
 services/decision_api/
   Decision APIとTelemetry APIのLambdaアプリケーション
@@ -148,6 +151,8 @@ docs/
 tools/
   コンパイル、テスト、Strategy Tester、Release Gate用スクリプト
 ```
+
+製品EAのソースは製品リポジトリだけで変更し、開発基盤から `product/` 内を直接編集・コミットしない。製品の変更は製品リポジトリへコミットした後、開発基盤のsubmodule参照を更新して検証する（`CONTRIBUTING.md`、`DECISIONS.md` DEC-047）。
 
 Strategyから直接発注処理を呼び出さない。
 
