@@ -88,6 +88,12 @@ Strategy Tester系の検証結果は、`tools/run-strategy-tester.ps1 -CaseFile`
 
 ## フラグ有効化順序
 
+試験運用（Demo・小額実口座）は製品ビルド `ProductEA` で行う（2026-10-11、`DECISIONS.md` DEC-046）。`ProductEA` には `InpDecisionApiEnabled`・`InpTelemetryEnabled`・`InpHeartbeatEnabled` が存在しないため、製品の試験運用では `InpEnableTradeMutations=false` での観測 → 障害・Kill Switch試験 → 明示的な許可後の `InpEnableTradeMutations=true` の順とし、手順は `docs/operations.md`「製品ビルドによる試験運用」に従う。
+
+本番証跡（`production-release-evidence.schema.json`、`release-gate.ps1 -Mode Production`）は、ML model・LLM・AWS account等の外部連携を前提とした項目を必須にしており、外部連携を持たない製品ビルドの証跡とは整合していない。製品ビルド用の本番証跡項目は未決定である（`TASKS.md` 11章）。
+
+以下は研究ビルド `CoreEA` でAWS連携を検証する場合の順序である。
+
 1. devでAWSをdeployし、モデル・LLM・監視を検証する。
 2. demoで `InpHeartbeatEnabled=true`、`InpDecisionApiEnabled=true`、`InpTelemetryEnabled=true`、`InpEnableTradeMutations=false` とし、稼働監視・判断・監査だけを確認する。
 3. demoで全障害試験後に `InpEnableTradeMutations=true` とする。

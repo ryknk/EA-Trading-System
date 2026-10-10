@@ -1329,3 +1329,53 @@ TASKS.md 3.1節「データ利用条件とライセンスを確認する」の�
 * `expert_ex5_older_than_source` は更新時刻の比較であり、checkout直後等は誤検出し得る参考値である。
 * 未実施: 製品中核と研究計測のinclude分離、外部連携を製品へ含めるかの決定、製品リポジトリ作成・submodule化、本番証跡JSONとmanifestの関連づけ（`TASKS.md` 11章）。
 * Rollback: 本変更のコミットをrevertする。manifest 1.1の追加フィールドは既存の読み手（summary生成）から参照されていないため、revert後も既存結果の解釈に影響しない。
+
+# DEC-045: 研究計測（Entry/Breakout Timing比較）をコンパイル時マクロで製品中核から切り離す
+
+**状態:** 採用（2026-10-10）。Implemented / Unit Tested / Locally Tested。`docs/product-separation.md` 3章の段階1。
+
+## 背景
+
+`EAController.mqh` と `AuditPayloadBuilder.mqh` が研究計測（`EntryTimingAnalyzer`・`BreakoutTimingAnalyzer`）を直接includeしており、製品中核を研究計測なしでビルドできなかった（DEC-044）。一方、既存のStrategy Testerテンプレート（`StrategyTester-Generic-EntryTiming-H1.ini` 等）とCaseFileは `CoreEA` の研究計測入力を使っている。
+
+## 決定
+
+* 研究計測の初期化・Tick処理・監査記録とPayload生成を `mt5/Include/Research/TimingAnalysisHook.mqh` へ集約する。Payload生成は `AuditPayloadBuilder.mqh` から本文を変えずに移設し、JSONフィールド・値・型・イベント順序を変えない。
+* EAControllerは `EA_TRADING_SYSTEM_RESEARCH_BUILD` 定義時だけ研究フックをincludeする。製品リポジトリへ研究計測のファイルを持ち込まずに済むよう、既定（未定義）を製品ビルドとした。
+* 製品ビルドで研究計測の入力が有効な場合は、黙って無視せず初期化を拒否する（分析が行われたと誤認させないため）。
+* 現行の `CoreEA.mq5` はマクロを定義する研究ビルドのままとし、既存のテンプレート・CaseFile・入力を変更しない。研究計測の入力を製品EAから外すのは製品リポジトリ作成時とする。
+* 研究フックの差し替えに仮想関数のインターフェースや別EAは導入しない（現時点で研究計測は1種類の組で、抽象化の必要がないため）。
+
+## 影響
+
+* `CoreEA` の挙動は不変。USDJPY_HIST 2021年の3ケース（既定・Entry Timing有効・Breakout Timing有効）で、変更前後の成績指標と監査イベント（`event_id` 除く）が完全一致した（`docs/product-separation.md` 4.1節）。他の銘柄・期間は未確認。
+* ex5は再コンパイルにより変わる。EAバージョン（1.13）は挙動不変のため変更していない。
+* 新規テスト `TestProductBuildWithoutResearch`（コンパイル・実行テストへ追加）。研究計測のincludeを一時的に製品側へ戻すと失敗することを確認済み。
+* 本番ゲートの証跡は、製品リポジトリ作成後の製品ビルドで取得する（現行CoreEAは研究ビルドである）。
+* Rollback: 本変更のコミットをrevertし、`compile-mql5.ps1` で再コンパイルする。
+
+# DEC-046: 製品EAは外部連携を含めずMQL5内で新規注文まで判断し、試験運用は製品ビルドで行う
+
+**状態:** 採用（2026-10-11、ユーザー決定）。Implemented / Locally Tested。`docs/product-separation.md` 3章の段階2。
+
+## 背景
+
+現行EAは、Decision API無効時（既定）に全候補を `DECISION_API_DISABLED` で拒否するため、AWSなしでは新規注文しない。一方、Strategy Testerテンプレート82件中81件は `InpTesterDecisionMode=1`（`TESTER_DECISION_ALWAYS_ALLOW`）であり、IS・OOS・Walk Forward・Final Holdoutの成績は外部フィルタなしのルールベース戦略の成績だった。本番候補MLモデルはなく、LLMは実通信していない。販売製品が販売者のAWSへ依存すると、顧客ごとの鍵管理・費用・障害対応・顧客データ送信が必要になり、販売者サーバーが取引ごとの判断を返す形態の規制上の位置づけは未確認である。
+
+## 決定
+
+* 製品EA（販売・試験運用）は、Decision API・ML/LLM、Telemetry、Heartbeat、Tester判断Mockを含めない。新規注文はローカルの戦略・フィルタ・Risk Manager（最終権限）・`InpEnableTradeMutations`・`OrderCheck` で判断する。
+* 外部判断の工程は、実行時の設定で飛ばすのではなく、製品ビルドではコンパイルされない（`EA_TRADING_SYSTEM_RESEARCH_BUILD` 未定義）。外部の失敗・timeout・不正応答を許可へ変換する経路は作らない。研究ビルドは従来どおり外部判断の無効・障害時に新規注文を拒否する。
+* `OrderManager.Submit` の外部許可引数とその検証規則は変更しない。製品ビルドはEAControllerで外部判断工程がないことを表す定数を渡す（研究ビルドと発注層の規則を共有し、変更範囲を最小化するため）。
+* 入力・設定組み立て・イベント処理を `mt5/Include/Core/EAEntryPoint.mqh` に共通化し、`ProductEA.mq5`（製品）と `CoreEA.mq5`（研究）が共有する。入力定義を二重管理しない。`CoreEA` と既存テンプレート・CaseFileは変更しない。
+* 試験運用（Demo・小額実口座）とゲート証跡は製品ビルドで取得する（ユーザー決定）。
+* ML・LLMは研究ビルドで研究を続ける。製品へ入れる場合は、OOS・Walk Forwardで改善を示した後、AWS経由ではなくEA内推論（MQL5のONNX等、実現性未確認）を別途検討する。
+
+## 影響
+
+* 研究ビルドの挙動は不変（段階1の3ケースと成績・監査イベントが完全一致）。製品ビルドは研究ビルドの常時許可Mockと、USDJPY・EURUSD 2021年で成績指標と監査イベント（`EXTERNAL_DECISION` と外部判断由来の `request_id` を除く）が完全一致した。
+* 製品ビルドにはHeartbeatがないため、EA停止のAWS Alarmによる自動検知はない（代替手段は未決定）。
+* 本番証跡のスキーマと `release-gate.ps1 -Mode Production` はML・LLM・AWSの項目を必須にしており、製品ビルドの証跡と整合しない（見直しは未実施）。
+* Release Gateの安全初期値検査の対象を `EAEntryPoint.mqh` に変更し、製品EAが研究マクロを定義しないこと、既存ポジション監視がRisk Managerの新規注文評価より先であることの静的検査を追加した。
+* 製品ビルドでも `InpEnableTradeMutations=false` が既定であり、取引変更の有効化にはユーザーの明示的な許可が必要という運用は変わらない。
+* Rollback: 本変更のコミットをrevertし、`compile-mql5.ps1` で再コンパイルする。

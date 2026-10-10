@@ -61,7 +61,7 @@ CaseFileはJSON配列（または`cases`キーを持つオブジェクト）で�
 
 manifest.json 1.1では、上記に加えて次を自動記録する。取得に失敗しても実行は止めず `null` とする（Strategy Testerの成否判定へ影響させない）。
 
-* `provenance.product`: 製品EAソース（`-ProductSourceRoot`、既定 `mt5/`）のGit commit・branch・remote URL（資格情報を除去）・未コミット変更の有無（`dirty`）・ソースハッシュ（`Experts`・`Include`配下の`.mq5`/`.mqh`の内容ハッシュ）
+* `provenance.product`: 製品EAソース（`-ProductSourceRoot`、既定 `mt5/`）のGit commit・branch・remote URL（資格情報を除去）・未コミット変更の有無（`dirty`）・ソースハッシュ（`Experts`・`Include`配下の`.mq5`/`.mqh`の内容ハッシュ。作業ツリー上のバイト列で計算するため、改行コード（`core.autocrlf`）が異なる環境間では同じcommitでも値が変わる）。`compile-mql5.ps1` はGit管理下のex5を再生成するため、ソースが未変更でもコンパイル後は `dirty=true` になり得る（ソースの同一性は `source_tree_sha256` で確認する）
 * `provenance.platform`: 検証基盤（本リポジトリ）のcommit・branch・`dirty`
 * `provenance.mt5.terminal_file_version`: `terminal64.exe` のファイルバージョン（Host実行時のみ）
 * ケースごとの `ea_version`（`#property version`）、`expert_ex5_sha256`（実行したex5、Host実行時のみ）、`expert_ex5_older_than_source`（ex5が製品ソースより古い場合true。更新時刻比較による参考値）、`tester_ini_sha256`（Symbol・期間・Run ID置換後の実効設定）
@@ -254,6 +254,8 @@ python -m python.analysis.trade_breakdown --input results/backtests/<on-run-id>-
 
 ## Entry Timing比較分析（2026-08-22実装）
 
+研究ビルド専用（2026-10-10、`DECISIONS.md` DEC-045）: 本分析は `EA_TRADING_SYSTEM_RESEARCH_BUILD` を定義したEA（現行の `CoreEA.mq5`）だけで動作し、`mt5/Include/Research/TimingAnalysisHook.mqh` 経由で監査ログへ記録する。製品ビルドで有効化すると初期化を拒否する。
+
 `InpEnableEntryTimingAnalysis`（既定値`false`）を`true`にすると、EA側`CEntryTimingAnalyzer`（`mt5/Include/Logging/EntryTimingAnalyzer.mqh`）が、同一のプルバックSetupについて次の4方式を**実注文なしのShadow Trade**として並行シミュレートする。
 
 ```text
@@ -281,6 +283,8 @@ python -m python.analysis.entry_timing `
 出力は `entry-timing-report.json`（JSON契約は `contracts/entry-timing-report.schema.json` を正とする）、`entry-timing-report.md`、`entry-timing-setups.csv`、`entry-timing-trades.csv`である。レポートの`variants`はVariant別（IMMEDIATE/WAIT_1_BAR/WAIT_2_BARS/WAIT_TRIGGER）にTrades・Win Rate・Profit Factor・Expectancy・Net Profit・Max Drawdown（すべてR倍数）・平均MFE/MAE・価格推移チェックポイント平均を集計する。Max Drawdownは基準値100R（アカウント資金とは無関係な相対指標）からの累積R下落幅であり、Variant間の相対比較専用。`pre_entry_excursion`はSetup成立からEntryまでの逆行・順行の平均・中央値とTrigger成立率を要約する。`InpEnableEntryTimingAnalysis=false`のバックテストでは対象イベントが存在せず、`setups_observed=0`・全Variant`trades=0`として返る。
 
 ## Breakout Timing比較分析（2026-09-05実装）
+
+研究ビルド専用（2026-10-10、`DECISIONS.md` DEC-045）: 本分析は `EA_TRADING_SYSTEM_RESEARCH_BUILD` を定義したEA（現行の `CoreEA.mq5`）だけで動作し、`mt5/Include/Research/TimingAnalysisHook.mqh` 経由で監査ログへ記録する。製品ビルドで有効化すると初期化を拒否する。
 
 Entry Timing比較分析はプルバックパターンのみを対象とし、ブレイクアウトパターンは「SetupとTriggerが同一の価格事象（レンジ突破）であり、両者の間に待機できる中間状態が存在しない」ため対象外としていた。しかし実トレードの大半（Fold1〜5・4銘柄の実績で85.6%）はブレイクアウトが占めており、ブレイクアウト成立直後の反転（ダマシ）による損失がタイミングの問題か、Setup/Trigger条件自体の精度の問題かを切り分けるため、ブレイクアウト専用の比較分析を別途実装した。
 

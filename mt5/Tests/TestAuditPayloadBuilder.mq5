@@ -1,6 +1,7 @@
 #property strict
 
 #include <EaTradingSystem/Logging/AuditPayloadBuilder.mqh>
+#include <EaTradingSystem/Research/TimingAnalysisHook.mqh>
 
 int g_failures=0;
 
@@ -36,7 +37,7 @@ void OnStart(void)
    setup.pre_entry_mae_time=sample;
    setup.trigger_found=true;
    setup.trigger_wait_bars=3;
-   const string setup_payload=CAuditPayloadBuilder::BuildEntryTimingSetupPayload(setup);
+   const string setup_payload=CTimingAnalysisPayloadBuilder::BuildEntryTimingSetupPayload(setup);
    AssertTrue(StringFind(setup_payload,"\"direction\":\"BUY\"")>=0,"entry timing setup payload has direction");
    AssertTrue(StringFind(setup_payload,"\"trigger_found\":true")>=0,"entry timing setup payload has trigger_found");
    AssertTrue(StringFind(setup_payload,"\"trigger_wait_bars\":3")>=0,"entry timing setup payload has trigger_wait_bars");
@@ -50,7 +51,7 @@ void OnStart(void)
    trade.exit_reason="TP";
    trade.checkpoint_valid[0]=true;
    trade.checkpoint_r[0]=0.5;
-   const string trade_payload=CAuditPayloadBuilder::BuildEntryTimingTradePayload(trade);
+   const string trade_payload=CTimingAnalysisPayloadBuilder::BuildEntryTimingTradePayload(trade);
    AssertTrue(StringFind(trade_payload,"\"variant\":\"WAIT_1_BAR\"")>=0,"entry timing trade payload has variant");
    AssertTrue(StringFind(trade_payload,"\"exit_reason\":\"TP\"")>=0,"entry timing trade payload has exit_reason");
    AssertTrue(StringFind(trade_payload,"\"checkpoint_r\":{\"bars_1\":0.5000000000}")>=0,
@@ -72,7 +73,7 @@ void OnStart(void)
    breakout_setup.confirm_1_bar_held=true;
    breakout_setup.confirm_2_bars_held=false;
    breakout_setup.confirm_3_bars_held=false;
-   const string breakout_setup_payload=CAuditPayloadBuilder::BuildBreakoutTimingSetupPayload(breakout_setup);
+   const string breakout_setup_payload=CTimingAnalysisPayloadBuilder::BuildBreakoutTimingSetupPayload(breakout_setup);
    AssertTrue(StringFind(breakout_setup_payload,"\"breakout_level_high\":150.5000000000")>=0,
               "breakout timing setup payload has breakout_level_high");
    AssertTrue(StringFind(breakout_setup_payload,"\"confirm_1_bar_held\":true")>=0,
@@ -89,7 +90,7 @@ void OnStart(void)
    breakout_trade.exit_reason="SL";
    breakout_trade.checkpoint_valid[1]=true;
    breakout_trade.checkpoint_r[1]=-1.0;
-   const string breakout_trade_payload=CAuditPayloadBuilder::BuildBreakoutTimingTradePayload(breakout_trade);
+   const string breakout_trade_payload=CTimingAnalysisPayloadBuilder::BuildBreakoutTimingTradePayload(breakout_trade);
    AssertTrue(StringFind(breakout_trade_payload,"\"variant\":\"CONFIRM_2_BARS\"")>=0,
               "breakout timing trade payload has variant");
    AssertTrue(StringFind(breakout_trade_payload,"\"exit_reason\":\"SL\"")>=0,

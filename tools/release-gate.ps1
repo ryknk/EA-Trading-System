@@ -67,11 +67,14 @@ try {
     }
     Write-Host "PASS required Japanese documents"
 
-    $coreEa = Get-Content -LiteralPath (Join-Path $root "mt5\Experts\CoreEA.mq5") -Raw
+    # 入力と初期値はCoreEA（研究ビルド）・ProductEA（製品ビルド）共通のEAEntryPoint.mqhにある（DEC-046）。
+    $coreEa = Get-Content -LiteralPath (Join-Path $root "mt5\Include\Core\EAEntryPoint.mqh") -Raw
     foreach ($setting in @("InpEnableTradeMutations", "InpDecisionApiEnabled", "InpTelemetryEnabled", "InpHeartbeatEnabled")) {
         Assert-True ($coreEa -match "input bool\s+$setting=false;") "危険な設定の初期値がfalseではありません: $setting"
     }
     Assert-True ($coreEa -match 'input bool\s+InpAuditFileEnabled=true;') "監査ログの初期値がtrueではありません。"
+    $productEa = Get-Content -LiteralPath (Join-Path $root "mt5\Experts\ProductEA.mq5") -Raw
+    Assert-True ($productEa -notmatch '#define\s+EA_TRADING_SYSTEM_RESEARCH_BUILD') "製品ビルドが研究ビルドのマクロを定義しています。"
     Write-Host "PASS fail-safe MQL5 defaults"
 
     # 既存ポジション管理を外部通信より先に実行し、HeartbeatをOnTick（取引経路）から分離していることを静的に確認する。
@@ -84,6 +87,9 @@ try {
     $monitorIndex = $onTick.IndexOf('m_position_manager.Monitor(')
     $decisionIndex = $onTick.IndexOf('m_decision_client.Decide(')
     Assert-True ($monitorIndex -ge 0 -and $decisionIndex -gt $monitorIndex) "既存ポジション監視が外部判断APIより先に実行されていません。"
+    # 製品ビルドは外部判断を持たないため、Risk Managerの新規注文評価より先に既存ポジション監視が実行されることも確認する。
+    $riskEvaluateIndex = $onTick.IndexOf('m_risk_manager.Evaluate(')
+    Assert-True ($riskEvaluateIndex -gt $monitorIndex) "既存ポジション監視がRisk Managerの新規注文評価より先に実行されていません。"
     Write-Host "PASS existing-position management precedes external calls and heartbeat is isolated"
 
     $sourceRoots = @("mt5", "services", "python", "infra", "contracts", "docs")

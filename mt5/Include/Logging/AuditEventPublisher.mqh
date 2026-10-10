@@ -3,7 +3,10 @@
 
 #include <EaTradingSystem/Core/Config.mqh>
 #include <EaTradingSystem/Logging/TradeLogger.mqh>
+// Telemetry送信は研究ビルドだけに含める。製品ビルドはローカル監査記録のみ（DECISIONS.md DEC-046）。
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
 #include <EaTradingSystem/External/TelemetryApiClient.mqh>
+#endif
 
 // ローカルAudit記録とTelemetry送信の調停に責務を限定する。
 //   1) ローカルAuditイベントを記録する
@@ -14,7 +17,9 @@ class CAuditEventPublisher
   {
 private:
    CTradeLogger        m_trade_logger;
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
    CTelemetryApiClient m_telemetry_client;
+#endif
    SEaConfig           m_config;
 
 public:
@@ -26,14 +31,18 @@ public:
          PrintFormat("AUDIT_LOGGER_INIT_FAILED code=%s terminal_logging=true",audit_error);
       else if(StringLen(audit_error)>0)
          PrintFormat("AUDIT_LOGGER_INIT_WARNING code=%s terminal_logging=true",audit_error);
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
       string telemetry_error;
       if(!m_telemetry_client.Initialize(m_config,telemetry_error))
          PrintFormat("TELEMETRY_INIT_FAILED code=%s trading_impact=none",telemetry_error);
+#endif
      }
 
    void Shutdown(void)
      {
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
       m_telemetry_client.Shutdown();
+#endif
       m_trade_logger.Shutdown();
      }
 
@@ -50,6 +59,7 @@ public:
          PrintFormat("AUDIT_LOCAL_WRITE_FAILED type=%s candidate_id=%s code=%s",event_type,candidate_id,error);
          return;
         }
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
       if(send_remote && m_telemetry_client.Enabled())
         {
          string telemetry_error;
@@ -57,6 +67,7 @@ public:
             PrintFormat("TELEMETRY_UPLOAD_FAILED event_id=%s candidate_id=%s type=%s code=%s trading_impact=none",
                         event_id,candidate_id,event_type,telemetry_error);
         }
+#endif
      }
   };
 

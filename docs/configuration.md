@@ -214,7 +214,18 @@ IS/OOS/Walk Forwardの個別検証時は、同一の`.set`/`.ini`から`InpStrat
 | `InpMeanReversionMaxHoldingBars` | 10 | 時間切れ決済が発動する経過バー数の上限（entry_timeframe換算）。2026-08-26、Fold1〜6 Trainスイープで20本が最悪と判明したため10本へ変更（詳細はTASKS.md参照） |
 | `InpMeanReversionMagicNumber` | 26072002 | レンジ戦略ポジション識別用のMagic Number（`InpMagicNumber`とは別値が必須） |
 
-## Decision API・ML設定
+## 製品ビルドと研究ビルドの入力（2026-10-11追加、`DECISIONS.md` DEC-045・DEC-046）
+
+入力は `mt5/Include/Core/EAEntryPoint.mqh` に一元化し、`ProductEA.mq5`（製品ビルド）と `CoreEA.mq5`（研究ビルド）が共有する。次の入力は研究ビルドだけに存在し、製品ビルドにはない。
+
+* Entry/Breakout Timing分析: `InpEnableEntryTimingAnalysis`、`InpEntryTimingMaxWaitBars`、`InpEntryTimingMaxHoldingBars`、`InpEnableBreakoutTimingAnalysis`、`InpBreakoutTimingMaxHoldingBars`
+* Decision API・ML: `InpDecisionApi*`、`InpDecisionMaxClockSkewSeconds`、`InpDecisionMaxTtlSeconds`、`InpMlMinWinProbability`、`InpMlMinExpectedReturn`
+* Telemetry・Heartbeat: `InpTelemetry*`、`InpHeartbeat*`
+* Strategy Testerの外部判断Mock: `InpTesterDecisionMode`、`InpTesterFixedMlProbability`
+
+製品ビルドは外部判断の工程を持たず、新規注文をローカルの戦略・フィルタ・Risk Manager・`OrderCheck` で判断する。研究ビルドは従来どおり、Decision API無効・障害時に新規注文を拒否する。製品ビルドのStrategy Testerテンプレートは `mt5/test-config/StrategyTester-Product-H1.ini`。
+
+## Decision API・ML設定（研究ビルドのみ）
 
 | 設定 | 初期値 | 意味 |
 |---|---:|---|
@@ -232,7 +243,7 @@ URLはMT5のWebRequest許可リストへ登録する。API無効、timeout、HTT
 
 Strategy Testerだけで `InpTesterDecisionMode` を使用できる。0はフェイルセーフVETO、1は常時ALLOW、2は常時VETO、3は固定ML確率、4はERROR、5はtimeout相当である。通常端末で0以外を指定すると初期化を拒否する。`InpTesterFixedMlProbability` の既定値は0.65である。
 
-## 監査・Telemetry設定
+## 監査・Telemetry設定（Telemetryは研究ビルドのみ）
 
 | 設定 | 初期値 | 意味 |
 |---|---:|---|
@@ -245,7 +256,7 @@ Strategy Testerだけで `InpTesterDecisionMode` を使用できる。0はフェ
 
 Telemetry失敗は取引判断や既存ポジション管理へ影響しない。ローカルJSONLを先に保存し、AWS欠損時の正本とする。
 
-## Heartbeat設定（2026-09-26追加）
+## Heartbeat設定（2026-09-26追加、研究ビルドのみ）
 
 | 設定 | 初期値 | 意味 |
 |---|---:|---|

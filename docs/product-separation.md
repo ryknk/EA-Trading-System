@@ -29,6 +29,8 @@
 
 ### 1.2 依存関係
 
+以下は調査時点の構成である。研究計測の依存は段階1（2026-10-10）で分離した（3章、DEC-045）。
+
 ```text
 CoreEA.mq5
   └─ Core/EAController.mqh
@@ -67,8 +69,8 @@ Python・AWS・CDKはMQL5ソースへ依存しない。両者の接点は次の2
 
 | 結合箇所 | 内容 | 分離時の扱い |
 | --- | --- | --- |
-| `EAController.mqh` のinclude | 製品中核と、外部連携・研究計測（Entry/Breakout Timing）を同一EAへ静的に結合 | 製品から研究計測・外部連携を外すにはinclude構造の変更が必要（2.3節） |
-| `AuditPayloadBuilder.mqh` | 監査ペイロード生成が研究計測クラスへ依存 | 研究計測イベントの生成を研究側へ移す |
+| `EAController.mqh` のinclude | 製品中核と、外部連携・研究計測（Entry/Breakout Timing）を同一EAへ静的に結合 研究計測は段階1で `EA_TRADING_SYSTEM_RESEARCH_BUILD` 定義時だけincludeする構造へ変更済み。外部連携は未対応（2.3節） |
+| `AuditPayloadBuilder.mqh` | 監査ペイロード生成が研究計測クラスへ依存 | 段階1で `Research/TimingAnalysisHook.mqh` へ移設済み |
 | `tools/link-mt5.ps1` | junctionの参照元が `mt5/` 固定 | 製品checkoutを参照元に指定できるようにする |
 | `tools/compile-mql5.ps1`・`run-mql5-tests.ps1` | 対象EA・テストの一覧が固定で、製品テストと研究テストが混在 | 製品テストは製品リポジトリへ移し、両方で実行する |
 | `tools/release-gate.ps1`・`python/tests/test_documentation.py` | `mt5/Experts/CoreEA.mq5`・`EAController.mqh` を直接読み、安全初期値と呼出順序を静的検査 | 製品リポジトリにも同じ検査を置き、開発基盤側は製品パスを引数で受け取る |
@@ -117,7 +119,19 @@ Python・AWS・CDKはMQL5ソースへ依存しない。両者の接点は次の2
 * 製品ビルド: 製品リポジトリのEAそのもの。性能・安全ゲートの証跡はこのビルドだけで取得する（manifestの `expert_ex5_sha256` と製品リリースのex5ハッシュの一致で確認する）。
 * 研究ビルド: Entry/Breakout Timing分析等の研究計測やShadow Mode用の外部連携を含むEA。探索的分析にだけ使い、ゲート証跡には使わない。
 
-外部連携（Decision API・Telemetry・Heartbeat）を製品へ含めるかは**未決定**である（含めない場合、製品はAWSへ依存しない。含める場合も既定無効と安全側の失敗時挙動を維持する）。
+段階1（2026-10-10、DEC-045）で、研究計測の取り込みを `#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD` で切り替える構造にした。
+
+* `mt5/Include/Research/TimingAnalysisHook.mqh`: Entry/Breakout Timing分析器の初期化・Tick処理・監査記録と、そのPayload生成（`CTimingAnalysisPayloadBuilder`）。EAControllerから研究計測への入口はこれだけである。
+* マクロ未定義（製品ビルド）: EA中核は研究計測なしでコンパイルされる。`InpEnableEntryTimingAnalysis` または `InpEnableBreakoutTimingAnalysis` をtrueにすると、黙って無視せず初期化を拒否する（`RESEARCH_BUILD_REQUIRED`）。`mt5/Tests/TestProductBuildWithoutResearch.mq5` がinclude経路に研究計測が含まれないことを検査する。
+* 現行の `CoreEA.mq5` はマクロを定義する研究ビルドのままである（既存テンプレート・CaseFileの挙動を変えないため）。研究計測の入力（`InpEnableEntryTimingAnalysis` 等）も `CoreEA.mq5` と `Config.mqh` に残っている。製品EAから外すのは製品リポジトリ作成時（段階4）とする。
+
+段階2（2026-10-11、DEC-046）で、外部連携（Decision API・ML/LLM、Telemetry、Heartbeat、Tester判断Mock）を製品へ**含めない**ことを決定し、同じマクロで研究ビルドだけに含める構造にした。
+
+* 製品ビルド `mt5/Experts/ProductEA.mq5` を追加した。入力・設定組み立て・イベント処理は `mt5/Include/Core/EAEntryPoint.mqh` に移し、`CoreEA.mq5`（研究ビルド）と共有する（研究専用の入力は `#ifdef` 内）。
+* 製品ビルドは外部判断の工程を持たず、候補はローカル検査の後、Risk Manager（最終権限）・`InpEnableTradeMutations`・`OrderCheck` で判断される。外部の失敗を許可へ変換するのではなく、工程がコンパイルされない。研究ビルドは従来どおりDecision API無効・障害時に新規注文を拒否する。
+* 製品ビルドは監査JSONLをローカルへ記録するだけで、Telemetry送信・Heartbeatを行わない。
+* **試験運用（Demo・小額実口座）は製品ビルドで行う**（ユーザー決定、2026-10-11）。ゲート証跡も製品ビルドで取得する。製品ビルドのStrategy Testerテンプレートは `mt5/test-config/StrategyTester-Product-H1.ini`。
+* Kill Switch判定 `CDecisionPolicyRules` は通信を伴わない規則だが `External/IDecisionProvider.mqh` にあるため、製品ビルドもこのヘッダだけをincludeしている。汎用ユーティリティ `External/CryptoUtils.mqh`（UUID・JSONエスケープ）も監査ログが使う。製品リポジトリ作成時に配置を見直す。
 
 ### 2.4 検証レイヤーと合否区分
 
@@ -149,8 +163,8 @@ CaseFileの `acceptance_criteria` に合否基準ファイルのパスを指定�
 
 | 段階 | 作業 | 検証 | 切り戻し |
 | --- | --- | --- | --- |
-| 1 | 研究計測（`EntryTimingAnalyzer`・`BreakoutTimingAnalyzer`）と監査ペイロード生成の依存を分け、製品中核が研究計測なしでコンパイルできるincludeにする | `compile-mql5.ps1`、`run-mql5-tests.ps1`、既存CaseFileの再実行で成績が変わらないこと | 該当コミットのrevert |
-| 2 | 外部連携を製品へ含めるかを決定し、`DECISIONS.md` へ記録する | — | — |
+| 1（**実施済み** 2026-10-10） | 研究計測（`EntryTimingAnalyzer`・`BreakoutTimingAnalyzer`）と監査ペイロード生成の依存を分け、製品中核が研究計測なしでコンパイルできるincludeにする | `compile-mql5.ps1`、`run-mql5-tests.ps1`、既存CaseFileの再実行で成績が変わらないこと（4章） | 該当コミットのrevert |
+| 2（**実施済み** 2026-10-11） | 外部連携を製品へ含めるかを決定し、`DECISIONS.md` へ記録する（含めない。DEC-046）。製品ビルド `ProductEA` を追加する | 製品ビルドと研究ビルド（常時許可Mock）の成績・監査イベントの一致（4.2節） | 該当コミットのrevert |
 | 3 | `link-mt5.ps1`・`compile-mql5.ps1`・`run-mql5-tests.ps1`・`release-gate.ps1` が製品ソースのルートを引数で受け取れるようにする（既定は現行の `mt5/`） | 既定引数で従来どおり動くこと、別パス指定で同じ結果になること | revert |
 | 4 | `EA-Product` リポジトリを作成し、`mt5/Experts/CoreEA.mq5`・製品中核の `mt5/Include`・製品テストを `git filter-repo` 等で履歴付きで移す（**ユーザー承認が必要**） | 製品リポジトリ単独でコンパイル・テストが通ること | 製品リポジトリを破棄（本リポジトリは未変更） |
 | 5 | 本リポジトリへsubmodule `product/` を追加し、junction元を `product/mt5` へ切り替える。旧 `mt5/` の製品ファイルを削除する（**ユーザー承認が必要**） | 開発ゲート一式、代表CaseFile（例: Walk Forward）の再実行で成績・ex5ハッシュが段階4前と一致すること | submoduleの削除と旧ファイルの復元（revert） |
@@ -175,3 +189,41 @@ CaseFileの `acceptance_criteria` に合否基準ファイルのパスを指定�
 | 監査JSONL→分析CLI→成績指標の回帰テスト、Runnerと分析出力のキー契約テスト | Unit Tested |
 
 VM実行モードでの新規項目の記録は未確認（NOT VERIFIED）。VM実行時はex5がVM側にあるため `expert_ex5_sha256` とMT5端末バージョンを記録しない。
+
+### 4.1 段階1（研究計測のinclude分離、2026-10-10）
+
+| 内容 | 状態 |
+| --- | --- |
+| `Research/TimingAnalysisHook.mqh` への研究計測の集約、`AuditPayloadBuilder.mqh` から研究計測依存の除去、EAControllerの `#ifdef` 切替 | Implemented / Locally Tested |
+| 製品ビルド検査 `TestProductBuildWithoutResearch`（研究計測のincludeを一時的に戻すと失敗することを確認） | Unit Tested |
+| 変更前後の成績・監査イベントの一致 | Locally Tested（下表） |
+
+変更前（HEAD 795a9d8の製品ソース、run `20261010-222848`）と変更後（run `20261010-223352`）で、USDJPY_HIST 2021年の3ケースを同じテンプレートで実行し、`performance-summary.json` の全指標と、監査JSONLの全イベント（実行ごとに変わる `event_id` を除く）が完全一致した。ex5のSHA-256は前後で異なり、別バイナリで実行したことを確認している。
+
+| ケース | テンプレート | 取引数 | 純損益 | PF | 研究計測イベント | 結果 |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| BASE | `StrategyTester-Generic-H1.ini` | 28 | 23,799 | 1.448 | なし | 一致 |
+| ENTRYTIMING | `StrategyTester-Generic-EntryTiming-H1.ini` | 28 | 23,799 | 1.448 | ENTRY_TIMING 1,357件 | 一致 |
+| BREAKOUTTIMING | `StrategyTester-Generic-BreakoutTiming-H1.ini` | 28 | 23,799 | 1.448 | BREAKOUT_TIMING 691件 | 一致 |
+
+この数値は不変性の確認のための1銘柄・1年の結果であり、性能評価ではない。他の銘柄・期間での一致は未確認（NOT VERIFIED）。
+
+### 4.2 段階2（外部連携を製品から除外、2026-10-11）
+
+| 内容 | 状態 |
+| --- | --- |
+| `EAEntryPoint.mqh` への入口の共通化、`ProductEA.mq5` 追加、EAController・AuditEventPublisherの外部連携を研究ビルド限定に変更 | Implemented / Locally Tested |
+| `TestProductBuildWithoutResearch` に外部連携4モジュールの非混入検査を追加 | Unit Tested（追加した外部連携の検査について、混入時に失敗することの確認は未実施。仕組みは段階1で確認済み） |
+| Release Gateの静的検査を入口ファイルへ変更し、製品EAが研究マクロを定義しないこと、既存ポジション監視がRisk Managerの新規注文評価より先であることを追加 | Implemented（開発ゲートで実行） |
+
+検証（USDJPY_HIST・EURUSD_HIST、2021年）:
+
+* 研究ビルド不変: 段階1の3ケース（run `20261010-223352`）と変更後（run `20261011-002041`）で、成績指標・監査イベント（`event_id` 除く）が完全一致した。
+* 製品ビルド: `ProductEA`（`StrategyTester-Product-H1.ini`）と、研究ビルド `CoreEA`（`StrategyTester-Generic-H1.ini`、Tester判断Mock常時許可）で、成績指標が完全一致し、監査イベントも研究ビルドだけが出力する `EXTERNAL_DECISION` と外部判断由来の `request_id` を除いて完全一致した（run `20261011-002041`・`20261011-002333`）。製品ビルドの `EXTERNAL_DECISION` は0件。
+
+| 銘柄 | 取引数 | 純損益 | PF | `EXTERNAL_DECISION`（研究/製品） | 結果 |
+| --- | ---: | ---: | ---: | --- | --- |
+| USDJPY_HIST | 28 | 23,799 | 1.448 | 48 / 0 | 一致 |
+| EURUSD_HIST | 29 | 28,365 | 1.472 | 47 / 0 | 一致 |
+
+この結果は、これまで研究ビルドの常時許可Mockで取得してきた成績が、製品ビルドの判断経路と同じであることを2銘柄・1年で確認したものであり、性能評価ではない。他の銘柄・期間は未確認（NOT VERIFIED）。

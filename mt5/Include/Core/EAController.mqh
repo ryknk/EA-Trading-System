@@ -9,16 +9,24 @@
 #include <EaTradingSystem/Trading/OrderManager.mqh>
 #include <EaTradingSystem/Trading/PositionManager.mqh>
 #include <EaTradingSystem/Trading/PositionExitEvaluator.mqh>
+// Kill Switch判定（CDecisionPolicyRules）は通信を伴わない規則であり、製品ビルドでも使う。
+#include <EaTradingSystem/External/IDecisionProvider.mqh>
+// 外部連携（Decision API・Tester判断Mock・Heartbeat）は研究ビルドだけに含める（DECISIONS.md DEC-046）。
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
 #include <EaTradingSystem/External/DecisionApiClient.mqh>
 #include <EaTradingSystem/External/MockDecisionProvider.mqh>
 #include <EaTradingSystem/External/HeartbeatApiClient.mqh>
+#endif
 #include <EaTradingSystem/Logging/TradeLogger.mqh>
 #include <EaTradingSystem/Logging/TradeAnalyticsTracker.mqh>
-#include <EaTradingSystem/Logging/EntryTimingAnalyzer.mqh>
-#include <EaTradingSystem/Logging/BreakoutTimingAnalyzer.mqh>
 #include <EaTradingSystem/Logging/AuditPayloadBuilder.mqh>
 #include <EaTradingSystem/Logging/AuditEventPublisher.mqh>
 #include <EaTradingSystem/Core/ClosedPositionProcessor.mqh>
+// 研究計測（Entry/Breakout Timing比較）は研究ビルドだけに含める。製品中核はこのincludeなしでコンパイルできる
+// （docs/product-separation.md 2.3節、DECISIONS.md DEC-045）。
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
+#include <EaTradingSystem/Research/TimingAnalysisHook.mqh>
+#endif
 
 class CEAController
   {
@@ -34,16 +42,21 @@ private:
    COrderManager               m_order_manager;
    CPositionManager            m_position_manager;
    CPositionExitEvaluator      m_position_exit_evaluator;
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
    CDecisionApiClient          m_decision_client;
    CMockDecisionProvider       m_mock_decision_provider;
+#endif
    CAuditEventPublisher        m_audit_publisher;
    CTradeAnalyticsTracker      m_analytics_tracker;
    CClosedPositionProcessor    m_closed_position_processor;
-   CEntryTimingAnalyzer        m_entry_timing_analyzer;
-   CBreakoutTimingAnalyzer     m_breakout_timing_analyzer;
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
+   CTimingAnalysisHook         m_timing_analysis;
+#endif
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
    // EA稼働監視専用。OnTimerからだけ送信し、OnTick（既存ポジション管理・新規候補処理）とは独立させる。
    CHeartbeatApiClient         m_heartbeat_client;
    int                         m_heartbeat_consecutive_failures;
+#endif
    bool                        m_initialized;
    datetime                    m_last_risk_error_log;
    string                      m_last_risk_lock_code;
@@ -74,31 +87,6 @@ private:
       // Telemetry transport failures never call this helper, avoiding recursive
       // reporting while still persisting operational component failures.
       Audit("SYSTEM_ERROR","system","",m_config.symbol,payload,true);
-     }
-
-   // Entry Timing分析（分析専用、実注文なし）の完了イベントを監査ログへ記録する。
-   // Telemetryへは送らない（バー単位で発生しうる高頻度データのためローカル監査のみ）。
-   void AuditEntryTimingEvents(const SEntryTimingSetupEvent &setups[],const SEntryTimingTradeEvent &trades[])
-     {
-      for(int index=0; index<ArraySize(setups); index++)
-         Audit("ENTRY_TIMING_SETUP",setups[index].setup_id,"",m_config.symbol,
-               CAuditPayloadBuilder::BuildEntryTimingSetupPayload(setups[index]),false);
-      for(int index=0; index<ArraySize(trades); index++)
-         Audit("ENTRY_TIMING_TRADE",trades[index].setup_id,"",m_config.symbol,
-               CAuditPayloadBuilder::BuildEntryTimingTradePayload(trades[index]),false);
-     }
-
-   // Breakout Timing分析（分析専用、実注文なし）の完了イベントを監査ログへ記録する。
-   // Telemetryへは送らない（バー単位で発生しうる高頻度データのためローカル監査のみ、
-   // AuditEntryTimingEventsと同じ方針）。
-   void AuditBreakoutTimingEvents(const SBreakoutTimingSetupEvent &setups[],const SBreakoutTimingTradeEvent &trades[])
-     {
-      for(int index=0; index<ArraySize(setups); index++)
-         Audit("BREAKOUT_TIMING_SETUP",setups[index].setup_id,"",m_config.symbol,
-               CAuditPayloadBuilder::BuildBreakoutTimingSetupPayload(setups[index]),false);
-      for(int index=0; index<ArraySize(trades); index++)
-         Audit("BREAKOUT_TIMING_TRADE",trades[index].setup_id,"",m_config.symbol,
-               CAuditPayloadBuilder::BuildBreakoutTimingTradePayload(trades[index]),false);
      }
 
    string DealEntryName(const ENUM_DEAL_ENTRY entry)
@@ -192,22 +180,39 @@ public:
         }
       m_position_exit_evaluator.Initialize(m_config,GetPointer(m_strategy),GetPointer(m_mean_reversion_strategy),
                                             GetPointer(m_position_manager),GetPointer(m_audit_publisher));
-      if(!m_entry_timing_analyzer.Initialize(m_config,error))
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
+      if(!m_timing_analysis.Initialize(m_config,error))
         {
          m_strategy.Shutdown();
          return false;
         }
-      if(!m_breakout_timing_analyzer.Initialize(m_config,error))
+#else
+      // 製品ビルドでは研究計測を含まない。有効化された入力を黙って無視せず初期化を拒否する。
+      if(m_config.enable_entry_timing_analysis || m_config.enable_breakout_timing_analysis)
         {
+         error="RESEARCH_BUILD_REQUIRED: timing analysis is not available in the product build";
          m_strategy.Shutdown();
          return false;
         }
+#endif
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
       const bool use_mock=(MQLInfoInteger(MQL_TESTER) && m_config.tester_decision_mode!=TESTER_DECISION_FAIL_SAFE);
       if(!(use_mock ? m_mock_decision_provider.Initialize(m_config,error) : m_decision_client.Initialize(m_config,error)))
         {
          m_strategy.Shutdown();
          return false;
         }
+#else
+      // 製品ビルドは外部連携を含まない。設定で有効化されていれば黙って無視せず初期化を拒否する
+      // （製品の入力には存在しないため、通常は到達しない防御）。
+      if(m_config.decision_api_enabled || m_config.telemetry_enabled || m_config.heartbeat_enabled ||
+         m_config.tester_decision_mode!=TESTER_DECISION_FAIL_SAFE)
+        {
+         error="RESEARCH_BUILD_REQUIRED: external services are not available in the product build";
+         m_strategy.Shutdown();
+         return false;
+        }
+#endif
       if(m_config.enable_mean_reversion_strategy)
         {
          if(!m_mean_reversion_strategy.Initialize(m_config,error))
@@ -223,15 +228,17 @@ public:
             return false;
            }
         }
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
       // Heartbeatの初期化失敗（Secret File不在等）は監視欠損としてAWS側Alarmで検知する。
       // 取引処理の初期化結果には影響させない（Telemetryと同じベストエフォート扱い）。
       string heartbeat_error;
       m_heartbeat_consecutive_failures=0;
       if(!m_heartbeat_client.Initialize(m_config,heartbeat_error))
          PrintFormat("HEARTBEAT_INIT_FAILED code=%s trading_impact=none",heartbeat_error);
+#endif
       m_initialized=true;
       PrintFormat("HEARTBEAT_STATE enabled=%s interval_seconds=%d",
-                  (m_heartbeat_client.Enabled() ? "true" : "false"),m_config.heartbeat_interval_seconds);
+                  (HeartbeatEnabled() ? "true" : "false"),m_config.heartbeat_interval_seconds);
       PrintFormat("KILL_SWITCH_STATE emergency_stop=%s strategy_enabled=%s new_orders=%s existing_position_management=true",
                   (m_config.emergency_stop ? "enabled" : "disabled"),
                   (m_config.strategy_enabled ? "enabled" : "disabled"),
@@ -248,23 +255,33 @@ public:
    void Shutdown(void)
      {
       m_initialized=false;
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
       m_heartbeat_client.Shutdown();
+#endif
       m_audit_publisher.Shutdown();
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
       m_decision_client.Shutdown();
       m_mock_decision_provider.Shutdown();
-      m_entry_timing_analyzer.Shutdown();
-      m_breakout_timing_analyzer.Shutdown();
+#endif
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
+      m_timing_analysis.Shutdown();
+#endif
       m_position_manager.Shutdown();
       m_strategy.Shutdown();
       m_mean_reversion_strategy.Shutdown();
      }
 
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
    bool HeartbeatEnabled(void) const { return m_heartbeat_client.Enabled(); }
+#else
+   bool HeartbeatEnabled(void) const { return false; }
+#endif
 
    // Heartbeat送信のみを行う。成否はログ出力だけで、Risk Manager・注文・既存ポジション管理・
    // Kill Switchの状態を一切変更しない。
    void OnTimer(void)
      {
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
       if(!m_initialized || !m_heartbeat_client.Enabled())
          return;
       string heartbeat_error;
@@ -280,6 +297,7 @@ public:
       m_heartbeat_consecutive_failures++;
       PrintFormat("HEARTBEAT_SEND_FAILED code=%s consecutive_failures=%d trading_impact=none",
                   heartbeat_error,m_heartbeat_consecutive_failures);
+#endif
      }
 
    void OnTick(void)
@@ -308,19 +326,12 @@ public:
         }
       // 分析専用のMFE/MAE追跡。既存ポジション管理の判断・発注には一切影響しない。
       m_analytics_tracker.Update();
-      // 分析専用。Entry Timing比較（Setup成立時即時/1本待ち/2本待ち/Trigger待ち）をShadow Tradeとして
-      // 並行シミュレートする。実注文は一切発生しない。InpEnableEntryTimingAnalysis=false（既定）では即return。
-      SEntryTimingSetupEvent entry_timing_setups[];
-      SEntryTimingTradeEvent entry_timing_trades[];
-      m_entry_timing_analyzer.OnTick(entry_timing_setups,entry_timing_trades);
-      AuditEntryTimingEvents(entry_timing_setups,entry_timing_trades);
-      // 分析専用。ブレイクアウトTiming比較（即時Entry/1〜3本後のブレイクアウトレベル維持確認）を
-      // Shadow Tradeとして並行シミュレートする。実注文は一切発生しない。
-      // InpEnableBreakoutTimingAnalysis=false（既定）では即return。
-      SBreakoutTimingSetupEvent breakout_timing_setups[];
-      SBreakoutTimingTradeEvent breakout_timing_trades[];
-      m_breakout_timing_analyzer.OnTick(breakout_timing_setups,breakout_timing_trades);
-      AuditBreakoutTimingEvents(breakout_timing_setups,breakout_timing_trades);
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
+      // 分析専用（研究ビルドのみ）。Entry Timing比較（Setup成立時即時/1本待ち/2本待ち/Trigger待ち）と
+      // ブレイクアウトTiming比較（即時Entry/1〜3本後のブレイクアウトレベル維持確認）をShadow Tradeとして
+      // 並行シミュレートする。実注文は一切発生しない。各分析の入力がfalse（既定）では即return。
+      m_timing_analysis.OnTick(m_audit_publisher,m_config.symbol);
+#endif
       // 分析専用。前Tickで決済検知しキューへ積んだポジションの履歴を確定させる。
       m_closed_position_processor.ProcessPending();
       // 既存ポジション管理の一部。エントリー根拠（トレンド/ADX）が消失した保有ポジションを
@@ -486,6 +497,7 @@ public:
       candidate_payload+="\"reason\":"+JString(result.reason)+"}";
       Audit("CANDIDATE",result.trade_candidate_id,"",result.symbol,candidate_payload,false);
 
+#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD
       SExternalDecision external_decision;
       const bool use_mock=(MQLInfoInteger(MQL_TESTER) && m_config.tester_decision_mode!=TESTER_DECISION_FAIL_SAFE);
       const bool external_ok=(use_mock ? m_mock_decision_provider.Decide(result,external_decision) :
@@ -522,6 +534,15 @@ public:
                   TimeToString(external_decision.response_time,TIME_DATE|TIME_SECONDS),
                   TimeToString(external_decision.expires_at,TIME_DATE|TIME_SECONDS),external_decision.reason);
 
+      const string request_id=external_decision.request_id;
+      const bool external_approved=(external_decision.status==EXTERNAL_DECISION_ALLOW);
+#else
+      // 製品ビルドは外部判断の工程を持たない（DECISIONS.md DEC-046）。外部の失敗を許可へ変換するのではなく、
+      // 工程自体がコンパイルされない。新規注文の可否はこの後のRisk Manager（最終権限）・取引変更許可・
+      // OrderCheckで判断する。研究ビルドで外部判断が無効・失敗した場合は、上の分岐で従来どおり拒否する。
+      const string request_id="";
+      const bool external_approved=true;
+#endif
       // Risk is deliberately recalculated after external latency using the latest account and market state.
       SRiskDecision risk_decision;
       const bool risk_ok=m_risk_manager.Evaluate(result,risk_decision);
@@ -538,7 +559,7 @@ public:
       risk_payload+="\"open_risk_rate\":"+JNumber(risk_decision.open_risk_rate)+",";
       risk_payload+="\"margin_level\":"+JNumber(risk_decision.margin_level)+",";
       risk_payload+="\"adaptive_risk_multiplier\":"+JNumber(risk_decision.adaptive_risk_multiplier)+"}";
-      Audit("RISK_DECISION",result.trade_candidate_id,external_decision.request_id,result.symbol,risk_payload,true);
+      Audit("RISK_DECISION",result.trade_candidate_id,request_id,result.symbol,risk_payload,true);
       if(!risk_ok || risk_decision.status!=RISK_DECISION_APPROVED)
         {
          PrintFormat("RISK_REJECTED id=%s code=%s daily_loss=%.6f drawdown=%.6f reason=%s",
@@ -550,7 +571,6 @@ public:
                   result.trade_candidate_id,risk_decision.volume,risk_decision.risk_budget,
                   risk_decision.estimated_stop_loss,risk_decision.required_margin,risk_decision.reason);
 
-      const bool external_approved=(external_decision.status==EXTERNAL_DECISION_ALLOW);
       SOrderResult order_result;
       const bool order_ok=m_order_manager.Submit(result,risk_decision,external_approved,order_result);
       string order_payload="{";
@@ -565,7 +585,7 @@ public:
       order_payload+="\"requested_volume\":"+JNumber(order_result.requested_volume)+",";
       order_payload+="\"confirmed_volume\":"+JNumber(order_result.confirmed_volume)+",";
       order_payload+="\"slippage_points\":"+JNumber(order_result.slippage_points)+"}";
-      Audit("ORDER_SUBMISSION",result.trade_candidate_id,external_decision.request_id,result.symbol,order_payload,true);
+      Audit("ORDER_SUBMISSION",result.trade_candidate_id,request_id,result.symbol,order_payload,true);
       if(!order_ok || order_result.status!=ORDER_SUBMISSION_ACCEPTED)
         {
          PrintFormat("ORDER_BLOCKED id=%s code=%s reason=%s",result.trade_candidate_id,

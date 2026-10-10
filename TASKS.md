@@ -2224,8 +2224,13 @@ Strategy Tester・MQL5単体テスト実行中にホストの対話デスクト�
 * [ ] VM実行モードでmanifest 1.1が出力されることを確認する
 * [ ] 合否基準（数値）を検証実績から決定し、基準ファイルとしてコミットする（結果を見る前に固定する）
 * [ ] 主要CaseFile（Walk Forward等）へ `validation_layer` を付与する（既存CaseFileの変更のため、付与方針を決めてから行う）
-* [ ] 外部連携（Decision API・Telemetry・Heartbeat）を製品EAへ含めるかを決定する
-* [ ] 研究計測（Entry/Breakout Timing）を製品中核のincludeから分離する（成績不変を既存CaseFileで確認）
+* [x] 外部連携（Decision API・Telemetry・Heartbeat）を製品EAへ含めるかを決定する（2026-10-11、含めない。DEC-046。製品ビルド `ProductEA` を追加し、研究ビルドとの成績一致を2銘柄で確認）
+* [ ] 製品ビルドの試験運用でのEA停止・ハング検知方法を決める（Heartbeatがないため。VPS Journal確認、MQL5プッシュ通知等）
+* [ ] 本番証跡（`production-release-evidence.schema.json`・`release-gate.ps1 -Mode Production`）を製品ビルド用に見直す（現在はML・LLM・AWSの項目を必須にしている）
+* [ ] 製品ビルドの成績一致を他の銘柄・期間（Walk Forward全Fold等）でも確認する
+* [ ] Kill Switch規則（`External/IDecisionProvider.mqh`）と `External/CryptoUtils.mqh` の配置を製品リポジトリ作成時に見直す
+* [x] 研究計測（Entry/Breakout Timing）を製品中核のincludeから分離する（2026-10-10、DEC-045。USDJPY_HIST 2021年の3ケースで変更前後の成績・監査イベントの完全一致を確認）
+* [ ] 研究計測の入力（`InpEnableEntryTimingAnalysis`等）を製品EAから外す（製品リポジトリ作成時）
 * [ ] `link-mt5.ps1`・`compile-mql5.ps1`・`run-mql5-tests.ps1`・`release-gate.ps1` が製品ソースのルートを引数で受け取れるようにする
 * [ ] `EA-Product` リポジトリ作成・履歴付き移行・submodule化（ユーザー承認後）
 * [ ] 本番証跡JSONへ検証manifest（製品commit・ex5 SHA-256）を関連づける

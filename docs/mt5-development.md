@@ -47,7 +47,7 @@ Phase 12時点でAWS実装は存在するが、AWS accountへのdeploy、実モ�
 
 ## MQL5 VPS移行
 
-1. ローカル端末でCoreEAをコンパイルし、`InpEnableTradeMutations=false`、`InpDecisionApiEnabled=false`、`InpTelemetryEnabled=false`、`InpHeartbeatEnabled=false` のままチャートへ適用する。
+1. ローカル端末でEAをコンパイルし、`InpEnableTradeMutations=false` のままチャートへ適用する。試験運用は製品ビルド `ProductEA` で行い、2〜4と7のAWS連携手順は不要である（`docs/operations.md`「製品ビルドによる試験運用」、`DECISIONS.md` DEC-046）。研究ビルド `CoreEA` でAWS連携を検証する場合は `InpDecisionApiEnabled=false`、`InpTelemetryEnabled=false`、`InpHeartbeatEnabled=false` から始める。
 2. chart symbol、timeframe、EA input、magic number、AutoTrading、アルゴリズム取引許可を確認する。
 3. Decision API、Telemetry API、Heartbeat APIのHTTPS URLをMT5のWebRequest許可リストへ登録する。URLのpath末尾（`/v1/trade-decisions`、`/v1/trade-events`、`/v1/heartbeats`）を取り違えない。
 4. `MQL5\Files\EaTradingSystem\decision-api-secret.txt` をローカルで読み込めることを確認し、秘密値や署名がJournalへ出ないことを確認する。
