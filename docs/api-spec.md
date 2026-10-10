@@ -50,3 +50,11 @@ ML通過後のLLM ALLOWは `decision=ALLOW`、`reason_code=APPROVED`、`llm.stat
 要求の正本は `contracts/trade-event-request.schema.json`、応答の正本は `contracts/trade-event-response.schema.json` とする。イベント型は `CANDIDATE`、`EXTERNAL_DECISION`、`RISK_DECISION`、`ORDER_SUBMISSION`、`DEAL`、`POSITION_SNAPSHOT`、`TRADE_CLOSED`、`ACCOUNT_SNAPSHOT`、`SYSTEM_ERROR` の9種で、型ごとにpayloadの必須・許可項目を固定する。未知項目、欠落、重複キー、非有限数、制御文字、不正ticket、不正時刻は拒否する。
 
 保存成功はHTTP 200の `ACCEPTED`、同じevent ID・同じ本文hashの再送はHTTP 200の `DUPLICATE` とする。同じevent IDで本文が異なる場合は409、認証不正は401、入力不正は400、保存障害は500である。EA側はこのAPIをベストエフォート監査として扱い、どの応答も発注・決済・リスク削減の可否へ反映しない。
+
+## EA Heartbeat API v1（2026-09-26追加）
+
+`POST /v1/heartbeats` はEA稼働監視専用で、取引判断APIと同じ認証ヘッダー・HMAC-SHA256・UUIDv4 nonce・時刻差検証を使用する。署名の第2行は `/v1/heartbeats`、`Idempotency-Key` は本文の `heartbeat_id` と一致させ、本文timestampと署名timestampも一致させる。本文上限は2 KiBである。
+
+要求の正本は `contracts/heartbeat-request.schema.json`、応答の正本は `contracts/heartbeat-response.schema.json` とする。要求は `schema_version`、`heartbeat_id`、`ea_id`、`timestamp`（UTC）、`symbol`、`interval_seconds`（30〜900）、`terminal_connected`、`trade_mutations_enabled`、`kill_switch_active` だけを持つ。状態項目は監視情報であり、サーバーは取引判断に使用しない。
+
+最終Heartbeatを更新した場合はHTTP 200 `ACCEPTED`、保存済みより古い時刻の場合はHTTP 200 `STALE` を返す。認証不正は401、nonce再利用は409、入力不正は400、保存障害は500である。EA側はどの応答も発注・決済・Risk判定・Kill Switchへ反映しない。

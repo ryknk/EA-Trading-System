@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/v1/heartbeat-response.schema.json",
+  "title": "EaHeartbeatResponseV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "heartbeat_id", "status"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "heartbeat_id": {"type": "string", "format": "uuid"},
+    "status": {"enum": ["ACCEPTED", "STALE"]}
+  }
+}

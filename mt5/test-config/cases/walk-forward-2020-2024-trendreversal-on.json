@@ -1,0 +1,25 @@
+{
+  "description": "TrendReversalExit併用検証（ユーザー依頼、2026-09-26実施）。docs/backtesting.md「TrendReversalExitを不採用のまま据え置いた理由」に記載の計画（Final Holdoutで現行既定一式を確認した後、余力があればTriggerR=0.75でのTrendReversalExit併用を独立した追加検証として扱う）に基づく。現行既定（InpEnableEarlyAdverseExit=true・TriggerR=0.75・ConfirmationTicks=5、walk-forward-2020-2024-current-config.jsonと同一、テンプレートで明示せずコード既定値をそのまま使用）に、InpEnableTrendReversalExit=true（Activation=1.0/Retrace=0.5/Ticks=5）を追加したStrategyTester-Generic-TrendReversalOn-H1.iniを使用する。walk-forward-2020-2024-current-config.json（TrendReversalExit OFF、現行Final Holdoutの元になった設定と同一）と比較する。",
+  "cases": [
+    { "case_name": "USDJPY-WF-2020-TR", "symbol": "USDJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "USDJPY-WF-2021-TR", "symbol": "USDJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "USDJPY-WF-2022-TR", "symbol": "USDJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "USDJPY-WF-2023-TR", "symbol": "USDJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "USDJPY-WF-2024-TR", "symbol": "USDJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "EURJPY-WF-2020-TR", "symbol": "EURJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "EURJPY-WF-2021-TR", "symbol": "EURJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "EURJPY-WF-2022-TR", "symbol": "EURJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "EURJPY-WF-2023-TR", "symbol": "EURJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "EURJPY-WF-2024-TR", "symbol": "EURJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "EURUSD-WF-2020-TR", "symbol": "EURUSD_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "EURUSD-WF-2021-TR", "symbol": "EURUSD_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "EURUSD-WF-2022-TR", "symbol": "EURUSD_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "EURUSD-WF-2023-TR", "symbol": "EURUSD_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "EURUSD-WF-2024-TR", "symbol": "EURUSD_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "GBPJPY-WF-2020-TR", "symbol": "GBPJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "GBPJPY-WF-2021-TR", "symbol": "GBPJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "GBPJPY-WF-2022-TR", "symbol": "GBPJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "GBPJPY-WF-2023-TR", "symbol": "GBPJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" },
+    { "case_name": "GBPJPY-WF-2024-TR", "symbol": "GBPJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-TrendReversalOn-H1.ini" }
+  ]
+}

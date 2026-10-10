@@ -1,0 +1,11 @@
+{
+  "name": "ea-trading-system-tick-data",
+  "version": "1.0.0",
+  "private": true,
+  "description": "tickデータ取得用のNode.js Adapter（dukascopy-node）。処理本体はpython/tickdataにある。",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "dukascopy-node": "1.50.0"
+  }
+}

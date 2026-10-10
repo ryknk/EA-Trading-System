@@ -1,0 +1,15 @@
+{
+  "_comment": "Dukascopy USDCADの追加期間プロファイル（2016-09-01〜2019-12-31）。既存のUSDCAD_HIST（2020-01-01〜2026-08-31投入済み）へ追記し、既存FX4銘柄（USDJPY等）と同じ2016-09開始のIn-Sample相当期間まで遡る（ユーザー依頼、2026-09-23）。取込は-AllowExistingSymbolで既存USDCAD_HISTへ追記する。",
+  "provider": "dukascopy",
+  "symbol": "USDCAD",
+  "from": "2016-09-01",
+  "to": "2019-12-31",
+  "timezone": "UTC",
+  "chunk_unit": "day",
+  "storage_root": "tick/pipeline",
+  "server_time": { "mode": "ny_close" },
+  "provider_options": { "instrument": "usdcad", "batch_pause_ms": 0, "retry_count": 4, "retry_pause_ms": 30000 },
+  "retry": { "max_attempts": 4, "initial_backoff_seconds": 2, "max_backoff_seconds": 60, "timeout_seconds": 3600 },
+  "validation": { "max_gap_seconds": 14400, "max_price_jump_ratio": 0.05, "max_rejected_ratio": 0.001 },
+  "mt5": { "source_symbol": "USDCAD", "custom_symbol": "USDCAD_HIST", "custom_path": "EaTradingSystem\\History" }
+}

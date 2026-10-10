@@ -1,0 +1,9 @@
+{
+  "description": "Final Holdout期間（2025-01〜2026-08）でのEarlyAdverseExit寄与度の原因分析専用。現行確定設定に対しInpEnableEarlyAdverseExitのみfalseへ変更したBaselineを、同一期間・同一4銘柄で計測する（StrategyTester-Generic-EarlyAdverseOff-H1.ini使用）。あくまでFinal Holdout結果が悪化した原因の理解のための測定であり、本比較結果をもってパラメータの採用・不採用を決定しない（Final Holdoutは一度きりの評価のため）。",
+  "cases": [
+    { "case_name": "USDJPY-FINALHOLDOUT-EAOFF", "symbol": "USDJPY_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseOff-H1.ini" },
+    { "case_name": "EURJPY-FINALHOLDOUT-EAOFF", "symbol": "EURJPY_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseOff-H1.ini" },
+    { "case_name": "EURUSD-FINALHOLDOUT-EAOFF", "symbol": "EURUSD_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseOff-H1.ini" },
+    { "case_name": "GBPJPY-FINALHOLDOUT-EAOFF", "symbol": "GBPJPY_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-EarlyAdverseOff-H1.ini" }
+  ]
+}

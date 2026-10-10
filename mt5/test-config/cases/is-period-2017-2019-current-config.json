@@ -1,0 +1,17 @@
+{
+  "description": "mfe_r全期間推移の原因分析用追加測定。現行確定設定一式（Config.mqhのSetDefaultConfig()、2026-09-17時点）をそのまま使い、In-Sample期間の前半（2017-09〜2019-12、4銘柄）を再測定する。2020年分は既存のWalk Forward再測定（walk-forward-2020-2024-current-config.json）で取得済みのため対象外。「トレンドの伸びしろ縮小」が恒久的な構造変化か循環的な現象かを、IS期間まで遡って切り分ける目的。パラメータ変更は行わない（StrategyTester-Generic-H1.ini使用）。",
+  "cases": [
+    { "case_name": "USDJPY-IS-2017", "symbol": "USDJPY_HIST", "from_date": "2017.09.01", "to_date": "2017.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDJPY-IS-2018", "symbol": "USDJPY_HIST", "from_date": "2018.01.01", "to_date": "2018.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDJPY-IS-2019", "symbol": "USDJPY_HIST", "from_date": "2019.01.01", "to_date": "2019.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURJPY-IS-2017", "symbol": "EURJPY_HIST", "from_date": "2017.09.01", "to_date": "2017.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURJPY-IS-2018", "symbol": "EURJPY_HIST", "from_date": "2018.01.01", "to_date": "2018.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURJPY-IS-2019", "symbol": "EURJPY_HIST", "from_date": "2019.01.01", "to_date": "2019.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURUSD-IS-2017", "symbol": "EURUSD_HIST", "from_date": "2017.09.01", "to_date": "2017.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURUSD-IS-2018", "symbol": "EURUSD_HIST", "from_date": "2018.01.01", "to_date": "2018.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "EURUSD-IS-2019", "symbol": "EURUSD_HIST", "from_date": "2019.01.01", "to_date": "2019.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPJPY-IS-2017", "symbol": "GBPJPY_HIST", "from_date": "2017.09.01", "to_date": "2017.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPJPY-IS-2018", "symbol": "GBPJPY_HIST", "from_date": "2018.01.01", "to_date": "2018.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "GBPJPY-IS-2019", "symbol": "GBPJPY_HIST", "from_date": "2019.01.01", "to_date": "2019.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" }
+  ]
+}

@@ -16,6 +16,12 @@
 
 結果は `results/backtests/<run-id>-<Symbol>-<Period>/` へ保存する（`<Symbol>`・`<Period>`はTemplateの`[Tester]`セクションから読み取る。`-Symbol`未指定時は`StrategyTester-USDJPY-H1.ini`の`Symbol=USDJPY_HIST`がそのまま使われるため、`<run-id>-USDJPY_HIST-H1/`となる）。メタデータは `results/backtests/run-metadata.template.json` を複製し、EA・Strategy・Config版と全入力値を記録する。
 
+## tickデータの取得・MT5投入（2026-09-21追加、`DECISIONS.md` DEC-036）
+
+OANDA以外のヒストリカルtick（Dukascopy等）の取得・正規化・検証・MT5 Custom Symbolへの投入は`tools/tick-data.ps1`で行う。取込後のCustom Symbolは、上記の`-CaseFile`ケースの`symbol`に指定すればStrategy Testerで使える。
+
+**2026-09-22: 既存の`*_HIST`10銘柄（OANDA由来）を再投入した**。旧Importerがバッチごとに末尾128 tick（全体で0.641%）を保存していなかったため、元zipから補った（`DECISIONS.md` DEC-037、[tickデータパイプライン](tick-data-pipeline.md)）。**このため、それ以前に得たバックテスト結果（IS・Walk Forward・Final Holdout・他資産確認）は再投入前のtickによる値**だった（バーも再生成されており、結果が微小に変わり得る）。同日、IS期間の一部・Walk Forward・Final Holdoutを再実行して影響を確認した（EA・パラメータは無変更）。IS期間はほぼ無変化（純利益差+0.6%）だったが、Walk Forward（+7.8%）・Final Holdout（損失37%縮小）では無視できない幅の変化があった。ただし年次expectancyのトレンド形状・Final Holdoutでの符号反転・NO-GO判定という中核的な結論は維持された。詳細は`docs/production-readiness-report.md` 7.5節、`TASKS.md` 3.1節を参照。他資産確認（3資産・6資産）は今回は再実行していない。
+
 ## 複数ケース実行（Cross-Asset Validation、OOS、Walk Forward、Stress Test等の共通基盤）
 
 `tools/run-strategy-tester.ps1`は`-CaseFile`を指定すると、複数銘柄・複数期間のケースを同じ1ケース実行処理で順番に実行する汎用Runnerとして動作する（`-CaseFile`未指定時は従来どおりの単体実行）。用途別の専用Runnerは追加せず、Cross-Asset Validation・OOS・Walk Forward・Final Holdout・Stress Testいずれもこの基盤を使う。
@@ -52,7 +58,7 @@ Phase 13の自動試行は初回`account is not specified`で開始できなか�
 
 * 開発・In-Sample: **2017-09〜2020-12**（DEC-025で補正。当初案は2016-09だったが、Strategy Tester起動時のD1/H4インジケーターウォームアップに実データ最古日から約10か月のバッファが必要と判明したため、安全マージンを含めて2017-09へ補正した）
 * OOS / Walk Forward評価: 2021-01〜2024-12
-* Final Holdout: 2025-01〜2026-08（EA・MLモデル・閾値・SL/TP等をすべて固定した後に一度だけ評価する。開発・パラメータ調整・ML閾値調整には一切使用しない）
+* Final Holdout: 2025-01〜2026-08（EA・MLモデル・閾値・SL/TP等をすべて固定した後に一度だけ評価する。開発・パラメータ調整・ML閾値調整には一切使用しない。**2026-09-17実施済み**。4銘柄合計で純利益-28,991円・期待値-160.2円/トレードとなり、Walk Forward（+290.4円/トレード）から明確に悪化した。原因分析の結果、戦略コアの実質勝率が2021年以降緩やかに悪化し続ける構造的トレンドの延長と判明。Final Holdoutは消費済みのため代替期間なし。詳細は`TASKS.md` 2.1.4節、`docs/production-readiness-report.md` 7.5節参照）
 
 **2026-08-16判明: Custom Symbolのバッファ不足による取引数0件の異常。** In-Sample期間（当初案2016-09〜2020-12）でStrategy Testerを実行したところ完走したが、全期間（26,882本のH1確定足）で`SIGNAL_ERROR code=MARKET_DATA_UNAVAILABLE`となり取引が1件も発生しなかった。原因調査の結果、Tester起動時点でD1/H4インジケーターの計算に必要な事前バッファ（実データ最古日からの経過期間）が不足していたことが判明し、テスト実行中に指標が後から回復することもないと確認した。二分探索の結果、必要バッファは実データ最古日（2016-08-31）から約9〜10か月と判明し、In-Sample開始日を2017-09-01へ補正した（DEC-025）。詳細は`results/backtests/20260816-180519-USDJPY-H1/ANOMALY-zero-trades.md`参照。
 
@@ -67,6 +73,32 @@ Walk Forwardは、過去期間で学習・最適化し、直後の未来期間�
 | 5 | 2020-01〜2023-12 | 2024 |
 
 Fold 1の学習期間開始もDEC-025に合わせて2017-09へ補正した。Fold 2以降の学習期間はrule-based Strategyの直接実行対象ではなく将来のML学習パイプライン向けであり、同様のバッファ制約が生じるかは未検証（DEC-025注意点参照）。OOS結果を見た後、同じOOS期間・Final Holdout期間へ再最適化しない。`mt5/test-config/StrategyTester-USDJPY-H1.ini`と`tools/run-strategy-tester.ps1`の既定Symbol/期間は、Final Holdoutを誤って消費しないようIn-Sample期間（`USDJPY_HIST`、2017-09-01〜2020-12-31）へ設定してある。各期間の実行は`-FromDate`/`-ToDate`を明示指定する。ML学習コードは時系列分割・gap・Walk Forwardと0.50/0.55/0.60/0.65/0.70の事前固定閾値比較を出力するが、実市場データでの評価は未実施である。
+
+## 非FX資産（JP225・US30・XAUUSD・US100・US500・US2000）のCustom Symbol仕様設定（2026-09-19、`DECISIONS.md` DEC-033・DEC-035）
+
+接続先Broker（OANDA-Japan MT5 Demo）は全51銘柄がFXのみで、JP225・US30・XAUUSDの実Symbolがない。複製元なしで作成した`JP225_HIST`・`US30_HIST`・`XAUUSD_HIST`は仕様が初期値のままで、現行EAを実行しても取引が成立しなかった（Point=0.0001・契約サイズ100000・Volume 1e-8等のため、`SPREAD_TOO_WIDE`・`TICK_VALUE_UNAVAILABLE`・`INVALID_EXPOSURE_INPUT`で全候補が拒否される）。EA側の不具合ではなく、Custom Symbol側の仕様未設定が原因である。
+
+| 状態 | 内容 |
+| --- | --- |
+| JP225_HIST | 仕様設定・バー再生成・EA動作確認済み（Locally Tested。2021-04〜12でRISK_DECISION承認10件、証拠金も計算される） |
+| US30_HIST | 同上（2021-04〜12で承認19件、`required_margin`約18.5万円）。バー再生成は2020-04〜2026-09の全月・約1.25億tick、失敗0 |
+| XAUUSD_HIST | 同上（2023-07〜12で承認10件、`required_margin`約5.5万円）。バー再生成は2022-06〜2026-09の全月・約2.46億tick、失敗0 |
+| US100_HIST | 仕様設定・動作確認済み（Locally Tested。2021-06〜12で承認14件、`required_margin`約5.4万〜24.2万円。InpMaxSpreadPoints=60。DEC-035） |
+| US500_HIST | 同上（2021-04〜12で承認34件。InpMaxSpreadPoints=20） |
+| US2000_HIST | 同上（2021-04〜12で承認17件。InpMaxSpreadPoints=540） |
+
+**手順（銘柄ごと。すべてMT5停止中に実行する）:**
+
+1. `bases\Custom\ticks\<symbol>`をバックアップする（Digits変更でバー履歴が消えるため。tickは消えない）。
+2. `mt5/Tools/ApplyCfdSymbolSpec.mq5`で仕様を適用する（`InpApply=true`。`InpApply=false`は現状値の出力のみ）。`InpMarginRateOnly=true`はCalcModeと証拠金率のみを設定し、Digitsを変えないためバー履歴は消えない。
+3. Digitsを変えるとバー履歴（`.hcc`）が消えるため、**手順1でtickフォルダとバー履歴の両方をバックアップしておき、適用後にバー履歴のバックアップを戻す**（Digits変更後に元のバー履歴を戻しても動作することを、未使用のUS500_HISTで確認済み）。`RebuildBarsFromTicks`（`ApplyCfdSymbolSpec`の`InpRebuildFromMonth`を含む）は、terminalのtick読み取りAPIが直近月で約1%しか返さない仕様のため、直近月のtickを欠落させる（2026-09-19に3銘柄で発生し、バックアップから復元）ので、使わない。バー履歴のバックアップがない場合は、影響月のバーを`BarsFileTool`の削除モードで削除し、`ExportM1BarsEA`でTesterに全tickから生成させたバーを取り込む（DECISIONS.md DEC-033、TASKS.md参照）。
+4. `mt5/Experts/DiagnoseSymbolSpecEA.mq5`（Strategy Tester内でSymbol仕様と`OrderCalcProfit`/`OrderCalcMargin`を出力）で、Tester内の仕様を確認する。Terminal上の診断（`mt5/Tools/DiagnoseSymbolSpec.mq5`）はカスタム銘柄のTickSize/TickValueが0に見えるため判定に使わない（Tester内の値が正）。
+
+**証拠金計算（Tester、実測）:** CFD（2）は数量×契約サイズ×価格×証拠金率で計算される。CFDINDEX（3）・FUTURES（1）は`SYMBOL_MARGIN_INITIAL`（固定額）×証拠金率で、固定額が0だと証拠金が0になる。CFDLEVERAGE（4）は口座レバレッジでも割られる。よって非FX資産はCFD（2）を使う。
+
+**Testerのレバレッジ（2026-09-19判明）:** iniの`Leverage=10`のような数値のみの指定は無視され、Testerは`terminal.ini`に保存された値（実測で1:100）を使う。`Leverage=1:25`のように`1:N`形式で書くと反映される。既存の全テンプレート（77件）は`Leverage=10`だったため、2026-09-19までの全実行が1:100で走っていた（実口座のレバレッジは1:25）。同日、77件を`Leverage=1:25`へ修正し、以降の実行は1:25で走る。Final Holdout（4銘柄・181トレード・-28,991円）とWalk Forward（20ケース・520トレード）を1:25で再実行し、取引数・純損益が完全一致することを確認した（最低の証拠金維持率は低下したがガード150%には抵触せず）。詳細はTASKS.mdを参照。過去の`run-metadata`のtemplate_sha256は修正前のテンプレートのハッシュである。
+
+**注意:** これらの資産は初見資産であり、動作確認以外（パラメータ探索・採用判断・Final Holdoutの代替）の根拠には使わない。仕様値は2026-09-19にOANDA公式ページの原文で照合した（`DECISIONS.md` DEC-033・DEC-035の「原ページとの照合結果」。US100・US500・US2000も同様にDEC-035へ記録。US100の最小取引単位も2021-05-31より前は1.00で、動作確認は2021-06-01以降で行う。US30のVolume Maxは100が正で、`ApplyCfdSymbolSpec.mq5`は訂正済み、実Symbolへは2026-09-19に再適用済み。XAUUSDの取引数量の刻みは原ページに記載なく未確認。US30の最小取引単位は2021-05-31より前は1.00だった。Custom Symbolは変更せず、US30・US100の動作確認は2021-06-01以降で行い、それ以前を含む結果は「当時は発注できなかった数量を含む」と注記する。DEC-033）。`InpMaxSpreadPoints`は非FX資産では専用テンプレートで決める（Pointが正しくなっても、既定値30では全候補が拒否される）。値はFX4銘柄の30 pointsの価格比（0.0227%）を基準価格へ適用して事前に固定した（JP225 110、US30 110、XAUUSD 770 points、`DECISIONS.md` DEC-034）。結果を見て調整しない。ただし全期間のスプレッド分布を確認した結果、JP225の2024年以降とXAUUSDの2025年以降は、Brokerのスプレッド水準の変化により固定値では候補の1〜4割が`SPREAD_TOO_WIDE`で拒否される（US30は全期間で2%以下）。非FX資産の結果には`SPREAD_TOO_WIDE`の割合を併記し、これらの期間を他の期間と単純に比較しない（DEC-034「追加確認」）。
 
 ## Phase 10の共通指標定義
 
@@ -167,7 +199,17 @@ python -m python.analysis.trade_breakdown --input results/backtests/<on-run-id>-
 
 **併用検証結果（2026-09-13実施）**: `InpEnableTrendReversalExit=true`（Activation=1.0/Retrace=0.5/Ticks=5）と`InpEnableEarlyAdverseExit=true`（TriggerR=0.7/Ticks=5）を同時に有効化すると、Baseline比+75,214円（+63.5%）、EarlyAdverseExit単独比でも+12,481円の上乗せとなり、単独設定より併用の方が良い結果だった（SL到達件数325→27件）。ただしFold×銘柄20区分中の改善区分数は10区分で、EarlyAdverseExit単独設定（12〜14区分）より頑健性は低い。詳細は`TASKS.md`セクション2.1.3を参照。
 
-**現時点の判断**: `InpEnableEarlyAdverseExit`は既定`false`のまま維持する。既定の`InpEarlyAdverseExitTriggerR=0.5`はOOSデータ上明確に有害と判明したため、**このままの既定値で有効化しないこと**。TriggerR=0.70〜0.85の範囲でBaselineを上回り、TrendReversalExitとの併用でさらに上乗せが確認されたが、これはFold1-5への複数回のパラメータ適合（9点スイープ＋併用検証）の結果である。**本節の数値はFold1-5への複数回のパラメータ適合であり、Final Holdout（2025-01〜2026-08）での確認前に採用判断をしないこと。** これ以上Fold1-5上での探索は重ねず、全パラメータを固定してFinal Holdoutで一度きりの最終確認を行う計画を優先すべきである。
+**TrendReversalExitを不採用（既定`false`）のまま据え置いた理由**: 併用は集計値（純利益・PF）ではこのセッションで検証した全設定中最良だったが、以下の3点から「併用の方が良い結果だった」ことをそのまま採用理由とはしなかった。
+
+1. **頑健性が単独設定より低い**: 併用の改善区分数はFold×銘柄20区分中10区分にとどまり、実際に採用したEarlyAdverseExit単独設定（TriggerR=0.75、14区分）や0.70（12区分）を下回る。集計値の優位は一部区分での大勝ち・大負けの相殺（分散の拡大）に支えられており、全区分へ一様に効く改善ではない。本プロジェクトでは繰り返し、集計値よりFold単位の改善区分数を頑健性の指標として優先してきた（`TASKS.md`参照）。
+2. **検証時点のTriggerRが現行既定と異なる**: 併用検証で使用した`InpEarlyAdverseExitTriggerR=0.7`は、その後の判断で最終的に採用された`0.75`とは異なる値である。現行既定（TriggerR=0.75）を土台にした併用の再検証は実施していないため、「現行既定＋TrendReversalExit」の組み合わせの効果は未確認のまま。
+3. **Fold1-5への過剰適合回避を優先した**: 併用検証の時点で、Fold1-5に対する開発中の最適化が既に3ラウンド目（ConfirmationTicksスイープ→TriggerR9点スイープ→併用検証）に達していた。ここでさらに「TriggerR=0.75での併用再検証」を追加することは、同一OOSデータへの適合をもう1ラウンド重ねることを意味するため、探索を打ち切りFinal Holdoutへ進む方針を優先し、意図的に見送った。
+
+したがって、TrendReversalExitは「効果がないと判明した」のではなく、**「単独より頑健性が低く、かつ現行既定TriggerRでの再検証を経ていない状態のまま、これ以上Fold1-5上の探索を重ねないという方針のもとで採用を保留した」**候補として扱う。ユーザーの明示指示による採用もEarlyAdverseExit単独（TriggerR=0.75）のみであり、TrendReversalExit自体を既定`true`へ変更する指示・実施はない。Final Holdoutで現行既定一式（TrendReversalExit OFF）を確認した後、余力があればTriggerR=0.75でのTrendReversalExit併用を独立した追加検証として扱うべきである。
+
+**現時点の判断**: `InpEnableEarlyAdverseExit`は既定`true`（TriggerR=0.75、`ConfirmationTicks`=5）へ採用済みである（2026-09-13、ユーザー明示指示、`TASKS.md`参照）。`InpEnableTrendReversalExit`は上記の理由により既定`false`を維持する。**本節の数値はいずれもFold1-5への複数回のパラメータ適合の結果であり、Final Holdout（2025-01〜2026-08）での確認前に、これ以上の採用範囲拡大の判断をしないこと。**
+
+**独立追加検証の結果（2026-09-26実施）**: 上記の計画（Final Holdout確認後、TriggerR=0.75での併用を独立した追加検証として扱う）に基づき、現行既定（TriggerR=0.75）を土台に`InpEnableTrendReversalExit=true`を追加してFold1-5・4銘柄で再検証した（`results/backtests/20260926-145345-cases`、Baseline=`results/backtests/20260922-114452-cases`）。**懸念どおり、TriggerR=0.7時点の併用検証結果（Baseline比+63.5%）はTriggerR=0.75では再現せず、純利益はむしろ-3.4%悪化した（169,416円→163,721円）。** 改善区分数も10/20と単独設定（14/20）を下回り頑健性も低い。原因はTP到達件数の大幅減少（117件→62件、-47%）で、TrendReversalExit単体の効果自体（151件発動・勝率100%・合計+605,844円、TP取りこぼし0件）は良好だったが、EarlyAdverseExitとの相互作用でTP到達機会自体が失われたと考えられる（詳細因果は未特定）。**結論: TrendReversalExitの追加採用は推奨しない。現行既定（EarlyAdverseExit単独、TrendReversalExit OFF）を維持する。** 詳細は`TASKS.md` 2.1.4節を参照。
 
 発動したトレードはEA側`CPositionExitEvaluator::EvaluateEarlyAdverseExits`が送出する`EARLY_ADVERSE_EXIT`イベント（`reason_code`固定値`EarlyAdverseConfirmed`、`adverse_r_multiple`、`confirmation_count`）で識別する。
 
@@ -273,3 +315,36 @@ python -m python.analysis.cost_sensitivity `
 - `cost_summary`: 総取引コスト・1トレードあたり平均コスト・Spread/Slippage/Commission/Swapそれぞれの合計
 - `performance_with_cost` / `performance_before_cost`: 実績（`net_pnl`）とコスト除外時の推定成績（`pnl_before_cost`）それぞれについて、既存`performance.analyze_performance`と同一定義のTrades・Net Profit・Profit Factor・Win Rate・Expectancy・Max Drawdownを算出（両者の差が大きいほど、コストがエッジを侵食している可能性を示唆する）
 - `cost_tier_breakdown`: `total_cost`の実データ三分位によるLow/Normal/High Cost別の同上指標（固定しきい値はハードコードせず、実際に発生したコスト分布から算出する）
+
+## ベンチマーク比較（2026-09-23実装、`DECISIONS.md` DEC-041）
+
+`python.analysis.benchmark_comparison`は、Release Gateの「ベンチマーク受入基準」（`docs/release-gate.md`）を判定する。EAの決済済み取引と、MSCI ACWI（配当込み・円換算）の月末値を比べ、税引き後CAGRとSharpe比の両方でEAが上回るかを期間ごとに判定する。計算上の仮定（東京時間での月・暦年の区切り、複数ケースの損益合算、課税のタイミング等）はDEC-041を正とする。
+
+ベンチマークの月末値はネットワークから自動取得しない。評価期間の開始前月から終了月までの月末値を、次の形式のCSVで用意する（`level`は指数値またはファンドの基準価額）。
+
+```text
+month,level
+2019-12,123.45
+2020-01,125.67
+```
+
+ファンドの基準価額を使う場合は信託報酬が控除済みのため、`--benchmark-annual-fee 0`を指定する。指数値を使う場合は、代表的な連動ファンドの信託報酬（年率）を指定する。
+
+```powershell
+$env:PYTHONPATH='.'
+python -m python.analysis.benchmark_comparison `
+  --period walk_forward 2020-01 2024-12 `
+  --input walk_forward results/backtests/<walk-forward-run-id>-cases `
+  --period final_holdout 2025-01 2026-08 `
+  --input final_holdout results/backtests/<final-holdout-run-id>-cases `
+  --initial-balance 1000000 `
+  --benchmark-csv <月末値CSV> `
+  --benchmark-source "<データ源>" `
+  --benchmark-retrieved-on <取得日YYYY-MM-DD> `
+  --benchmark-annual-fee <信託報酬（年率）> `
+  --output build/benchmark-comparison
+```
+
+`--input`にディレクトリを指定すると、配下の`trades-normalized.csv`（複数ケース実行の出力）をすべて読み込む。取引CSV・監査JSONLのファイルを直接指定することもできる。評価期間外に決済された取引があるとエラーになる。
+
+出力は`benchmark-comparison.json`（JSON契約は`contracts/benchmark-comparison-report.schema.json`を正とする）と`benchmark-comparison.md`である。全期間で合格した場合だけ`criteria_met`が`true`になり、標準出力へ`BENCHMARK_CRITERIA_MET=true|false`を表示する。

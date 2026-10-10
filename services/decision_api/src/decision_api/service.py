@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import math
 import re
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from .errors import ApiError, ConditionalWriteFailed
 from .llm import LlmDecisionProvider, UnavailableLlmProvider
@@ -29,7 +29,9 @@ class DecisionService:
                  min_win_probability: float = 0.60,
                  min_expected_return: float = 0.0,
                  response_ttl_seconds: int = 30,
-                 llm_shadow_mode: bool = False) -> None:
+                 llm_shadow_mode: bool = False,
+                 remaining_seconds: Callable[[], float] | None = None,
+                 llm_min_remaining_seconds: float = 0.0) -> None:
         self._repository = repository
         self._ml_provider = ml_provider or UnavailableMlProvider()
         self._llm_provider = llm_provider or UnavailableLlmProvider()
@@ -39,6 +41,10 @@ class DecisionService:
         self._min_expected_return = min_expected_return
         self._response_ttl_seconds = response_ttl_seconds
         self._llm_shadow_mode = llm_shadow_mode
+        if not math.isfinite(llm_min_remaining_seconds) or llm_min_remaining_seconds < 0:
+            raise ValueError("LLM deadline is invalid")
+        self._remaining_seconds = remaining_seconds
+        self._llm_min_remaining_seconds = llm_min_remaining_seconds
 
     def decide(self, request: dict[str, Any], body_hash: str,
                now: datetime | None = None) -> dict[str, Any]:
@@ -97,6 +103,10 @@ class DecisionService:
         if ml["status"] == "PASSED":
             llm_started = _iso(datetime.now(timezone.utc))
             try:
+                # EA timeout後に届くALLOWを作らないよう、LLMを完了できる残り時間がない場合は呼び出さずVETOする。
+                if (self._remaining_seconds is not None
+                        and not self._remaining_seconds() >= self._llm_min_remaining_seconds):
+                    raise TimeoutError("insufficient time remains for the LLM call")
                 llm_decision = self._llm_provider.decide(request, ml)
                 if llm_decision.decision not in {"ALLOW", "VETO"}:
                     raise ValueError("LLM decision is invalid")

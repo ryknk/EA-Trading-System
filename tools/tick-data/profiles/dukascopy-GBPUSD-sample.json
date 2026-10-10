@@ -1,0 +1,14 @@
+{
+  "_comment": "動作確認用の5日分（2020-03-02〜03-06）。FX4銘柄（円・ユーロクロス）以外の通貨ペアでのmfe_r検証用に新規追加。取込先は試験用Custom Symbol GBPUSD_DUKA_TEST。",
+  "provider": "dukascopy",
+  "symbol": "GBPUSD",
+  "from": "2020-03-02",
+  "to": "2020-03-06",
+  "timezone": "UTC",
+  "chunk_unit": "day",
+  "storage_root": "tick/pipeline",
+  "server_time": { "mode": "ny_close" },
+  "provider_options": { "instrument": "gbpusd", "batch_pause_ms": 0, "retry_count": 4, "retry_pause_ms": 30000 },
+  "retry": { "max_attempts": 3, "initial_backoff_seconds": 30, "max_backoff_seconds": 120, "timeout_seconds": 3600 },
+  "mt5": { "source_symbol": "GBPUSD", "custom_symbol": "GBPUSD_DUKA_TEST", "custom_path": "EaTradingSystem\\History" }
+}

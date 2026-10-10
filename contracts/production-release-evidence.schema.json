@@ -8,8 +8,9 @@
     "schema_version", "environment", "aws_account_id", "aws_region",
     "ml_model_version", "ml_model_sha256", "llm_provider", "llm_model", "prompt_version",
     "oos_report", "walk_forward_report", "demo_report", "small_real_report",
+    "benchmark_comparison_report",
     "vps_secret_file_verified", "sns_notification_verified", "budgets_verified",
-    "rollback_drill_verified", "approved_at"
+    "rollback_drill_verified", "benchmark_criteria_met", "approved_at"
   ],
   "properties": {
     "schema_version": {"const": "1.0"},
@@ -25,10 +26,12 @@
     "walk_forward_report": {"type": "string", "minLength": 1},
     "demo_report": {"type": "string", "minLength": 1},
     "small_real_report": {"type": "string", "minLength": 1},
+    "benchmark_comparison_report": {"type": "string", "minLength": 1},
     "vps_secret_file_verified": {"const": true},
     "sns_notification_verified": {"const": true},
     "budgets_verified": {"const": true},
     "rollback_drill_verified": {"const": true},
+    "benchmark_criteria_met": {"const": true},
     "approved_at": {"type": "string", "format": "date-time"}
   }
 }

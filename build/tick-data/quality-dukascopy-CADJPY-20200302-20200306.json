@@ -1,0 +1,9 @@
+[
+  {
+    "template": "mt5\\test-config\\StrategyTester-TickQuality-M1.ini",
+    "from_date": "2020.03.04",
+    "symbol": "CADJPY_DUKA_TEST",
+    "to_date": "2020.03.06",
+    "case_name": "tick-quality"
+  }
+]

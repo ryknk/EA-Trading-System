@@ -47,14 +47,14 @@ Phase 12時点でAWS実装は存在するが、AWS accountへのdeploy、実モ�
 
 ## MQL5 VPS移行
 
-1. ローカル端末でCoreEAをコンパイルし、`InpEnableTradeMutations=false`、`InpDecisionApiEnabled=false`、`InpTelemetryEnabled=false` のままチャートへ適用する。
+1. ローカル端末でCoreEAをコンパイルし、`InpEnableTradeMutations=false`、`InpDecisionApiEnabled=false`、`InpTelemetryEnabled=false`、`InpHeartbeatEnabled=false` のままチャートへ適用する。
 2. chart symbol、timeframe、EA input、magic number、AutoTrading、アルゴリズム取引許可を確認する。
-3. Decision APIとTelemetry APIのHTTPS URLをMT5のWebRequest許可リストへ登録する。URLのpath末尾を取り違えない。
+3. Decision API、Telemetry API、Heartbeat APIのHTTPS URLをMT5のWebRequest許可リストへ登録する。URLのpath末尾（`/v1/trade-decisions`、`/v1/trade-events`、`/v1/heartbeats`）を取り違えない。
 4. `MQL5\Files\EaTradingSystem\decision-api-secret.txt` をローカルで読み込めることを確認し、秘密値や署名がJournalへ出ないことを確認する。
 5. チャートとEA環境をMQL5 VPSへ同期する。Python、Web server、AWS SDK、学習modelをVPSへ置かない。
 6. VPS JournalでEA初期化、symbol仕様、UTC時刻、WebRequest、監査ファイルを確認する。
 7. MQL5 VPSへの同期で任意の秘密ファイルが確実に移行される保証はない。VPS上で共有鍵ファイル読込を実機確認できない場合、Decision APIと取引変更を有効化しない。
-8. demoでは最初にDecision・Telemetryだけを有効化し、`InpEnableTradeMutations=false` のまま候補、VETO、監査を確認する。
+8. demoでは最初にHeartbeat・Decision・Telemetryだけを有効化し、VPS上でTimerによるHeartbeatが継続送信されることを確認したうえで、`InpEnableTradeMutations=false` のまま候補、VETO、監査を確認する。
 9. timeout、不正JSON、AWS停止、LLM停止、spread超過、Daily Loss、Drawdown lockを試験した後にだけdemoの取引変更を有効化する。
 
 同期後にローカル側のチャート・設定を変更しても、自動的にVPSへ反映されるとは限らない。変更ごとに再同期し、VPS Journalの再起動・初期化記録を確認する。
@@ -72,6 +72,8 @@ Strategy Tester・MQL5単体テスト実行中、Host実行では既定でtermin
 `tools/run-strategy-tester.ps1`・`tools/run-mql5-tests.ps1`はいずれも`-ExecutionMode Host|VM`を受け付ける（既定`Host`、省略時は従来どおりホスト上で直接実行する）。実際のMT5起動・待機・タイムアウト・終了コード取得・VM実行時の結果ファイル同期は、共通モジュール`tools/lib/Mt5ExecutionBackend.psm1`が担う。
 
 `-ExecutionMode Host`時のみ有効な`-HostUseIsolatedSession $true|$false`（既定`$true`）で、非表示デスクトップ実行と従来の`-WindowStyle Hidden`方式を切り替えられる（後者は画面表示が発生するが動作実績のある方式で、通常は既定のままでよい）。
+
+tickデータ取得・MT5投入パイプライン（`tools/tick-data.ps1`・`tools/reimport-oanda-ticks.ps1`、詳細は[tickデータパイプライン](tick-data-pipeline.md)参照）も同じ`-HostUseIsolatedSession`（既定`$true`）で、ImporterやVerify等のMT5起動を非表示デスクトップ上で行う（VM実行は未対応、ホスト実行のみ）。tick取得・投入は1回の実行でMT5を多数回起動しうるため、既定を非表示デスクトップにしたことで画面表示・フォーカス奪取の繰り返しを避けられる。
 
 VM実行時の接続方式はVM設定ファイルの`connectionType`で選択する（詳細な設計判断は`DECISIONS.md` DEC-029を参照）。
 

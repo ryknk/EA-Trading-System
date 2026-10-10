@@ -72,6 +72,7 @@ class MemoryRepository:
         self.decisions: dict[str, dict] = {}
         self.audits: dict[str, dict] = {}
         self.events: dict[tuple[str, str, str], dict] = {}
+        self.heartbeats: dict[str, dict] = {}
 
     def claim_nonce(self, key_id: str, nonce: str, expires_epoch: int) -> None:
         key = (key_id, nonce)
@@ -99,6 +100,25 @@ class MemoryRepository:
             return False
         self.events[key] = {"body_hash": body_hash, "event": deepcopy(event)}
         return True
+
+    def record_heartbeat(self, source_id: str, heartbeat: dict, heartbeat_epoch: int,
+                         received_at: str, body_hash: str) -> bool:
+        existing = self.heartbeats.get(source_id)
+        if existing and existing["last_heartbeat_epoch"] >= heartbeat_epoch:
+            return False
+        self.heartbeats[source_id] = {
+            "last_heartbeat_epoch": heartbeat_epoch, "last_heartbeat_at": heartbeat["timestamp"],
+            "received_at": received_at, "heartbeat": deepcopy(heartbeat),
+        }
+        return True
+
+
+def heartbeat_dict(timestamp: str = "2025-06-15T15:06:40Z") -> dict:
+    return {
+        "schema_version": "1.0", "heartbeat_id": str(uuid.uuid4()), "ea_id": "trend-ea-v1",
+        "timestamp": timestamp, "symbol": "USDJPY", "interval_seconds": 60,
+        "terminal_connected": True, "trade_mutations_enabled": False, "kill_switch_active": False,
+    }
 
 
 def trade_event(event_type: str = "RISK_DECISION") -> dict:

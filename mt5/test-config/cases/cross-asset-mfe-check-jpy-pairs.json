@@ -1,0 +1,23 @@
+{
+  "description": "JPY建てだが既存FX4銘柄（USDJPY/EURJPY/GBPJPY）とは別のペア（AUDJPY/CADJPY）でmfe_r低下パターンの再現性を確認するconfirmatory測定（2026-09-24〜25実施、ユーザー依頼）。円・ユーロを含まない4ペア（AUDUSD/USDCAD/NZDUSD/GBPUSD）検証で、2022年以降のFX4銘柄の劣化経路が再現しないことが判明した一方、2018年の落ち込みは同時発生していた。EURUSD（FX4銘柄中で唯一JPY非建て）がFinal Holdoutで相対的に健闘していたことも踏まえ、劣化が「円・ユーロクロス固有」なのか「JPY建てそのもの」に起因するのかを切り分ける目的。パラメータ調整・Fold1-5への適合には一切使わない初見資産であり、Final Holdoutやproduction判定の根拠にはしない。is-period-2017-2019-current-config.json・walk-forward-2020-2024-current-config.json・final-holdout-2025-2026.jsonと同じ期間分割・StrategyTester-Generic-H1.iniを使用した。",
+  "cases": [
+    { "case_name": "AUDJPY-IS-2017", "symbol": "AUDJPY_HIST", "from_date": "2017.09.01", "to_date": "2017.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDJPY-IS-2018", "symbol": "AUDJPY_HIST", "from_date": "2018.01.01", "to_date": "2018.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDJPY-IS-2019", "symbol": "AUDJPY_HIST", "from_date": "2019.01.01", "to_date": "2019.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDJPY-WF-2020", "symbol": "AUDJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDJPY-WF-2021", "symbol": "AUDJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDJPY-WF-2022", "symbol": "AUDJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDJPY-WF-2023", "symbol": "AUDJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDJPY-WF-2024", "symbol": "AUDJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDJPY-2526", "symbol": "AUDJPY_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "CADJPY-IS-2017", "symbol": "CADJPY_HIST", "from_date": "2017.09.01", "to_date": "2017.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "CADJPY-IS-2018", "symbol": "CADJPY_HIST", "from_date": "2018.01.01", "to_date": "2018.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "CADJPY-IS-2019", "symbol": "CADJPY_HIST", "from_date": "2019.01.01", "to_date": "2019.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "CADJPY-WF-2020", "symbol": "CADJPY_HIST", "from_date": "2020.01.01", "to_date": "2020.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "CADJPY-WF-2021", "symbol": "CADJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "CADJPY-WF-2022", "symbol": "CADJPY_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "CADJPY-WF-2023", "symbol": "CADJPY_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "CADJPY-WF-2024", "symbol": "CADJPY_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "CADJPY-2526", "symbol": "CADJPY_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" }
+  ]
+}

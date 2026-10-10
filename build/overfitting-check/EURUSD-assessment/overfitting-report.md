@@ -1,0 +1,281 @@
+# 過学習疑い診断レポート
+
+本レポートは過学習を断定するものではなく、疑いを検出する診断である。
+Final Holdout期間は本判定に使用していない。
+
+- 総合判定: **INSUFFICIENT_DATA**
+- 判定信頼性の警告: あり（取引数不足）
+
+## 判定理由
+
+- FOLD2020: 判定スコア 0.0/10.0 → LOW
+- FOLD2021: 判定スコア 0.0/10.0 → LOW
+- FOLD2021: 取引数不足の疑い (IS=45, FOLD2021=29)
+- FOLD2022: 判定スコア 0.0/10.0 → LOW
+- FOLD2023: 判定スコア 0.0/10.0 → LOW
+- FOLD2023: 取引数不足の疑い (IS=45, FOLD2023=29)
+- FOLD2024: 判定スコア 2.0/10.0 → MODERATE
+- FOLD2024/sharpe_ratio: IS=-0.15155880487918516 → -0.9973682799427239 (劣化率558.1%, HIGH)
+- FOLD2024: 取引数不足の疑い (IS=45, FOLD2024=17)
+- Walk Forward総合: 5Fold平均スコア 0.4/10.0 → LOW (最悪Fold: FOLD2024, スコア 2.0)
+- 取引数が閾値(30件)未満の期間があるため、過学習判定の信頼性は低い。判定はINSUFFICIENT_DATAとする。
+
+## 閾値設定
+
+```json
+{
+  "degradation_moderate_rate": 0.3,
+  "degradation_high_rate": 0.5,
+  "score_moderate": 2.0,
+  "score_high": 5.0,
+  "minimum_trade_count": 30,
+  "drawdown_relative_floor": 0.05
+}
+```
+
+## Walk Forward比較
+
+```json
+[
+  {
+    "period": "FOLD2020",
+    "in_sample_trade_count": 45,
+    "comparison_trade_count": 32,
+    "trade_count_sufficient": true,
+    "score": 0.0,
+    "max_score": 10.0,
+    "classification": "LOW",
+    "metric_comparisons": [
+      {
+        "metric": "profit_factor",
+        "in_sample_value": 0.4327692242439666,
+        "comparison_value": 1.1860730593607305,
+        "degradation_rate": -1.7406594390642278,
+        "severity": "LOW"
+      },
+      {
+        "metric": "sharpe_ratio",
+        "in_sample_value": -0.15155880487918516,
+        "comparison_value": 0.56295682403453,
+        "degradation_rate": -4.714444861737264,
+        "severity": "LOW"
+      },
+      {
+        "metric": "expectancy",
+        "in_sample_value": -1485.9555555555555,
+        "comparison_value": 346.375,
+        "degradation_rate": -1.2330991655201293,
+        "severity": "LOW"
+      },
+      {
+        "metric": "net_profit",
+        "in_sample_value": -66868.0,
+        "comparison_value": 11084.0,
+        "degradation_rate": -1.165759406592092,
+        "severity": "LOW"
+      },
+      {
+        "metric": "max_drawdown_rate",
+        "in_sample_value": 0.06623011884349317,
+        "comparison_value": 0.015346851654215581,
+        "degradation_rate": -0.7682798714210167,
+        "severity": "LOW"
+      }
+    ]
+  },
+  {
+    "period": "FOLD2021",
+    "in_sample_trade_count": 45,
+    "comparison_trade_count": 29,
+    "trade_count_sufficient": false,
+    "score": 0.0,
+    "max_score": 10.0,
+    "classification": "LOW",
+    "metric_comparisons": [
+      {
+        "metric": "profit_factor",
+        "in_sample_value": 0.4327692242439666,
+        "comparison_value": 1.4717436136242683,
+        "degradation_rate": -2.400758490152241,
+        "severity": "LOW"
+      },
+      {
+        "metric": "sharpe_ratio",
+        "in_sample_value": -0.15155880487918516,
+        "comparison_value": 0.9745126354581467,
+        "degradation_rate": -7.429930852483152,
+        "severity": "LOW"
+      },
+      {
+        "metric": "expectancy",
+        "in_sample_value": -1485.9555555555555,
+        "comparison_value": 978.1034482758621,
+        "degradation_rate": -1.6582319670457288,
+        "severity": "LOW"
+      },
+      {
+        "metric": "net_profit",
+        "in_sample_value": -66868.0,
+        "comparison_value": 28365.0,
+        "degradation_rate": -1.4241939343183585,
+        "severity": "LOW"
+      },
+      {
+        "metric": "max_drawdown_rate",
+        "in_sample_value": 0.06623011884349317,
+        "comparison_value": 0.01864350277072454,
+        "degradation_rate": -0.7185041625128205,
+        "severity": "LOW"
+      }
+    ]
+  },
+  {
+    "period": "FOLD2022",
+    "in_sample_trade_count": 45,
+    "comparison_trade_count": 34,
+    "trade_count_sufficient": true,
+    "score": 0.0,
+    "max_score": 10.0,
+    "classification": "LOW",
+    "metric_comparisons": [
+      {
+        "metric": "profit_factor",
+        "in_sample_value": 0.4327692242439666,
+        "comparison_value": 1.0159429849257549,
+        "degradation_rate": -1.3475398157079526,
+        "severity": "LOW"
+      },
+      {
+        "metric": "sharpe_ratio",
+        "in_sample_value": -0.15155880487918516,
+        "comparison_value": 0.05058224632049138,
+        "degradation_rate": -1.3337466692272544,
+        "severity": "LOW"
+      },
+      {
+        "metric": "expectancy",
+        "in_sample_value": -1485.9555555555555,
+        "comparison_value": 29.147058823529413,
+        "degradation_rate": -1.019615027323366,
+        "severity": "LOW"
+      },
+      {
+        "metric": "net_profit",
+        "in_sample_value": -66868.0,
+        "comparison_value": 991.0,
+        "degradation_rate": -1.014820242866543,
+        "severity": "LOW"
+      },
+      {
+        "metric": "max_drawdown_rate",
+        "in_sample_value": 0.06623011884349317,
+        "comparison_value": 0.02535609140130745,
+        "degradation_rate": -0.6171516548048807,
+        "severity": "LOW"
+      }
+    ]
+  },
+  {
+    "period": "FOLD2023",
+    "in_sample_trade_count": 45,
+    "comparison_trade_count": 29,
+    "trade_count_sufficient": false,
+    "score": 0.0,
+    "max_score": 10.0,
+    "classification": "LOW",
+    "metric_comparisons": [
+      {
+        "metric": "profit_factor",
+        "in_sample_value": 0.4327692242439666,
+        "comparison_value": 1.1942993129115373,
+        "degradation_rate": -1.759667846062618,
+        "severity": "LOW"
+      },
+      {
+        "metric": "sharpe_ratio",
+        "in_sample_value": -0.15155880487918516,
+        "comparison_value": 0.4223202123629652,
+        "degradation_rate": -3.7865105738964955,
+        "severity": "LOW"
+      },
+      {
+        "metric": "expectancy",
+        "in_sample_value": -1485.9555555555555,
+        "comparison_value": 374.44827586206895,
+        "degradation_rate": -1.251991571660482,
+        "severity": "LOW"
+      },
+      {
+        "metric": "net_profit",
+        "in_sample_value": -66868.0,
+        "comparison_value": 10859.0,
+        "degradation_rate": -1.1623945684034216,
+        "severity": "LOW"
+      },
+      {
+        "metric": "max_drawdown_rate",
+        "in_sample_value": 0.06623011884349317,
+        "comparison_value": 0.022220266175032477,
+        "degradation_rate": -0.6644990743933185,
+        "severity": "LOW"
+      }
+    ]
+  },
+  {
+    "period": "FOLD2024",
+    "in_sample_trade_count": 45,
+    "comparison_trade_count": 17,
+    "trade_count_sufficient": false,
+    "score": 2.0,
+    "max_score": 10.0,
+    "classification": "MODERATE",
+    "metric_comparisons": [
+      {
+        "metric": "profit_factor",
+        "in_sample_value": 0.4327692242439666,
+        "comparison_value": 0.567797136878742,
+        "degradation_rate": -0.31200904563087795,
+        "severity": "LOW"
+      },
+      {
+        "metric": "sharpe_ratio",
+        "in_sample_value": -0.15155880487918516,
+        "comparison_value": -0.9973682799427239,
+        "degradation_rate": 5.580734657664887,
+        "severity": "HIGH"
+      },
+      {
+        "metric": "expectancy",
+        "in_sample_value": -1485.9555555555555,
+        "comparison_value": -1227.1764705882354,
+        "degradation_rate": -0.1741499495054347,
+        "severity": "LOW"
+      },
+      {
+        "metric": "net_profit",
+        "in_sample_value": -66868.0,
+        "comparison_value": -20862.0,
+        "degradation_rate": -0.6880122031464976,
+        "severity": "LOW"
+      },
+      {
+        "metric": "max_drawdown_rate",
+        "in_sample_value": 0.06623011884349317,
+        "comparison_value": 0.021946,
+        "degradation_rate": -0.6686401839039414,
+        "severity": "LOW"
+      }
+    ]
+  }
+]
+```
+
+```json
+{
+  "fold_count": 5,
+  "mean_score": 0.4,
+  "worst_fold": "FOLD2024",
+  "worst_fold_score": 2.0,
+  "classification": "LOW"
+}
+```

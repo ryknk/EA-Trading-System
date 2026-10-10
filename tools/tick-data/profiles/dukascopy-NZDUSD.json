@@ -1,0 +1,15 @@
+{
+  "_comment": "Dukascopy NZDUSDの全期間プロファイル。FX4銘柄（円・ユーロクロス）以外の通貨ペアでのmfe_r検証用。Strategy Tester実行対象は2021-01〜2026-08（Walk Forward〜Final Holdout相当）だが、D1 200EMAウォームアップに実データ最古日から12か月のバッファが必要（DEC-025/DEC-033の知見）なため、取得開始日を2020-01-01とした。",
+  "provider": "dukascopy",
+  "symbol": "NZDUSD",
+  "from": "2020-01-01",
+  "to": "2026-08-31",
+  "timezone": "UTC",
+  "chunk_unit": "day",
+  "storage_root": "tick/pipeline",
+  "server_time": { "mode": "ny_close" },
+  "provider_options": { "instrument": "nzdusd", "batch_pause_ms": 0, "retry_count": 4, "retry_pause_ms": 30000 },
+  "retry": { "max_attempts": 4, "initial_backoff_seconds": 2, "max_backoff_seconds": 60, "timeout_seconds": 3600 },
+  "validation": { "max_gap_seconds": 14400, "max_price_jump_ratio": 0.05, "max_rejected_ratio": 0.001 },
+  "mt5": { "source_symbol": "NZDUSD", "custom_symbol": "NZDUSD_HIST", "custom_path": "EaTradingSystem\\History" }
+}

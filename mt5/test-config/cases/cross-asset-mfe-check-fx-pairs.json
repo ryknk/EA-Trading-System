@@ -1,0 +1,20 @@
+{
+  "description": "mfe_r低下パターンの資産クラス依存性を確認する探索的追加測定（続き）。USDJPY/EURJPY/EURUSD/GBPJPY（すべてJPY/EURクロス）とは異なり、円・ユーロを含まないFXメジャーペア（AUDUSD/USDCAD/NZDUSD）で同じ傾向が見られるかを確認する。cross-asset-mfe-check.json（JP225/US30/XAUUSD）・cross-asset-mfe-check-us-indices.json（US100/US500/US2000）の限界として『FX同士でも円・ユーロを含まない通貨ペアは未確認』（TASKS.md）と記録されていた点に対応する。パラメータ調整・Fold1-5への適合には一切使わない初見資産であり、Final Holdoutやproduction判定の根拠にはしない。tickはDukascopy由来（docs/tick-data-pipeline.md、DECISIONS.md DEC-036/038/039/040）で取得期間は2020-01-01〜2026-08-31、D1 200EMAウォームアップ確保のため2020年分は検証には使わずウォームアップ専用とし、検証対象はFX4銘柄のWalk Forward・Final Holdoutと同じ2021-01-01〜2026-08-31とした。3銘柄ともOANDA-Japan MT5に実銘柄が存在しCustom Symbol仕様は実銘柄から複製されているため（ImportOandaTicks.mq5）、JP225/US30/XAUUSD等で必要だったCustom Symbol仕様の事後修正（DEC-033/034）は不要と判断し、StrategyTester-Generic-H1.iniをそのまま使用した（InpMaxSpreadPoints等はFX4銘柄と同じEA既定値）。他の全パラメータは4銘柄の確定設定と同一。",
+  "cases": [
+    { "case_name": "AUDUSD-2021", "symbol": "AUDUSD_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDUSD-2022", "symbol": "AUDUSD_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDUSD-2023", "symbol": "AUDUSD_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDUSD-2024", "symbol": "AUDUSD_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "AUDUSD-2526", "symbol": "AUDUSD_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDCAD-2021", "symbol": "USDCAD_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDCAD-2022", "symbol": "USDCAD_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDCAD-2023", "symbol": "USDCAD_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDCAD-2024", "symbol": "USDCAD_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "USDCAD-2526", "symbol": "USDCAD_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "NZDUSD-2021", "symbol": "NZDUSD_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "NZDUSD-2022", "symbol": "NZDUSD_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "NZDUSD-2023", "symbol": "NZDUSD_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "NZDUSD-2024", "symbol": "NZDUSD_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" },
+    { "case_name": "NZDUSD-2526", "symbol": "NZDUSD_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini" }
+  ]
+}

@@ -1,0 +1,9 @@
+[
+  {
+    "symbol": "NZDUSD_HIST",
+    "from_date": "2021.01.01",
+    "template": "mt5\\test-config\\StrategyTester-TickQuality-M1.ini",
+    "to_date": "2021.01.05",
+    "case_name": "tick-quality"
+  }
+]

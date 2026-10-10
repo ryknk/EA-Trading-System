@@ -145,6 +145,10 @@ struct SEaConfig
    bool              telemetry_enabled;
    string            telemetry_api_url;
    int               telemetry_timeout_ms;
+   bool              heartbeat_enabled;
+   string            heartbeat_api_url;
+   int               heartbeat_interval_seconds;
+   int               heartbeat_timeout_ms;
    int               tester_decision_mode;
    double            tester_fixed_ml_probability;
    bool              tester_reset_persistent_state;
@@ -288,6 +292,10 @@ void SetDefaultConfig(SEaConfig &config)
    config.telemetry_enabled          = false;
    config.telemetry_api_url          = "";
    config.telemetry_timeout_ms       = 1500;
+   config.heartbeat_enabled          = false;
+   config.heartbeat_api_url          = "";
+   config.heartbeat_interval_seconds = 60;
+   config.heartbeat_timeout_ms       = 1500;
    config.tester_decision_mode       = 0;
    config.tester_fixed_ml_probability = 0.65;
    config.tester_reset_persistent_state = true;
@@ -417,6 +425,11 @@ bool ValidateConfig(const SEaConfig &config,string &error)
      { error="INVALID_ML_THRESHOLD"; return false; }
    if(config.telemetry_timeout_ms<100 || config.telemetry_timeout_ms>5000)
      { error="INVALID_TELEMETRY_TIMEOUT"; return false; }
+   // Heartbeat送信はOnTimer内で同期実行されるため、timeoutを間隔より十分短くしEAスレッドの占有を抑える。
+   if(config.heartbeat_interval_seconds<30 || config.heartbeat_interval_seconds>900 ||
+      config.heartbeat_timeout_ms<100 || config.heartbeat_timeout_ms>5000 ||
+      config.heartbeat_timeout_ms*10>config.heartbeat_interval_seconds*1000)
+     { error="INVALID_HEARTBEAT_TIMING"; return false; }
    if(config.tester_decision_mode<0 || config.tester_decision_mode>5 ||
       config.tester_fixed_ml_probability<0.0 || config.tester_fixed_ml_probability>1.0)
      { error="INVALID_TESTER_DECISION_CONFIG"; return false; }
@@ -461,6 +474,14 @@ bool ValidateConfig(const SEaConfig &config,string &error)
         { error="INVALID_TELEMETRY_API_URL"; return false; }
       if(!IsSafeConfigIdentifier(config.decision_api_key_id) || StringLen(config.decision_api_secret_file)<1)
         { error="TELEMETRY_CREDENTIAL_CONFIG_MISSING"; return false; }
+     }
+   if(config.heartbeat_enabled)
+     {
+      if(StringFind(config.heartbeat_api_url,"https://")!=0 ||
+         StringFind(config.heartbeat_api_url,"/v1/heartbeats")!=StringLen(config.heartbeat_api_url)-14)
+        { error="INVALID_HEARTBEAT_API_URL"; return false; }
+      if(!IsSafeConfigIdentifier(config.decision_api_key_id) || StringLen(config.decision_api_secret_file)<1)
+        { error="HEARTBEAT_CREDENTIAL_CONFIG_MISSING"; return false; }
      }
    return true;
   }

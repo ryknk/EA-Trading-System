@@ -20,7 +20,11 @@ function Assert-True([bool]$Condition, [string]$Message) {
 function Assert-ProductionEvidence([string]$Path) {
     Assert-True (-not [string]::IsNullOrWhiteSpace($Path)) "Productionでは-EvidenceFileが必須です。"
     $resolved = Resolve-Path -LiteralPath $Path -ErrorAction Stop
-    $evidence = Get-Content -LiteralPath $resolved -Raw -Encoding UTF8 | ConvertFrom-Json
+    # PowerShell 7はISO 8601文字列をDateTimeへ自動変換しオフセット情報を失うため、
+    # -DateKind String（7.5以降）で元の文字列のまま読み込む。5.1は元々文字列のまま返す。
+    $convertOptions = @{}
+    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey("DateKind")) { $convertOptions.DateKind = "String" }
+    $evidence = Get-Content -LiteralPath $resolved -Raw -Encoding UTF8 | ConvertFrom-Json @convertOptions
     Assert-True ($evidence.schema_version -eq "1.0" -and $evidence.environment -eq "production") "本番証跡のschema/environmentが不正です。"
     Assert-True ($evidence.aws_account_id -match '^[0-9]{12}$') "AWS account IDが不正です。"
     Assert-True ($evidence.aws_region -match '^[a-z]{2}-[a-z]+-[0-9]$') "AWS regionが不正です。"
@@ -28,18 +32,24 @@ function Assert-ProductionEvidence([string]$Path) {
     foreach ($field in @("ml_model_version", "llm_provider", "llm_model", "prompt_version")) {
         Assert-True ($evidence.$field -match '^[A-Za-z0-9._-]+$') "本番証跡の$fieldが不正です。"
     }
-    foreach ($field in @("vps_secret_file_verified", "sns_notification_verified", "budgets_verified", "rollback_drill_verified")) {
+    foreach ($field in @("vps_secret_file_verified", "sns_notification_verified", "budgets_verified", "rollback_drill_verified", "benchmark_criteria_met")) {
         Assert-True ($evidence.$field -eq $true) "本番ゲート未達: $field"
     }
     $evidenceRoot = Split-Path -Parent $resolved
-    foreach ($field in @("oos_report", "walk_forward_report", "demo_report", "small_real_report")) {
+    foreach ($field in @("oos_report", "walk_forward_report", "demo_report", "small_real_report", "benchmark_comparison_report")) {
         $relative = [string]$evidence.$field
         Assert-True (-not [IO.Path]::IsPathRooted($relative) -and $relative -notmatch '(^|[\\/])\.\.([\\/]|$)') "証跡pathは同じdirectory配下の相対pathにしてください: $field"
         $report = Join-Path $evidenceRoot $relative
         Assert-True (Test-Path -LiteralPath $report -PathType Leaf) "証跡ファイルが見つかりません: $field"
     }
-    $approved = [DateTimeOffset]::Parse($evidence.approved_at)
-    Assert-True ($approved.Offset -eq [TimeSpan]::Zero) "approved_atはUTCで指定してください。"
+    # 文字列以外（-DateKind非対応の7.0〜7.4でDateTime化された値を含む）はUTCか判定できないため拒否する。
+    $approvedText = $evidence.approved_at
+    $approved = [DateTimeOffset]::MinValue
+    $isUtcTimestamp = $approvedText -is [string] -and
+        $approvedText -match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|\+00:00)$' -and
+        [DateTimeOffset]::TryParse($approvedText, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$approved) -and
+        $approved.Offset -eq [TimeSpan]::Zero
+    Assert-True $isUtcTimestamp "approved_atはUTCで指定してください。"
 }
 
 Push-Location $root
@@ -58,11 +68,23 @@ try {
     Write-Host "PASS required Japanese documents"
 
     $coreEa = Get-Content -LiteralPath (Join-Path $root "mt5\Experts\CoreEA.mq5") -Raw
-    foreach ($setting in @("InpEnableTradeMutations", "InpDecisionApiEnabled", "InpTelemetryEnabled")) {
+    foreach ($setting in @("InpEnableTradeMutations", "InpDecisionApiEnabled", "InpTelemetryEnabled", "InpHeartbeatEnabled")) {
         Assert-True ($coreEa -match "input bool\s+$setting=false;") "危険な設定の初期値がfalseではありません: $setting"
     }
     Assert-True ($coreEa -match 'input bool\s+InpAuditFileEnabled=true;') "監査ログの初期値がtrueではありません。"
     Write-Host "PASS fail-safe MQL5 defaults"
+
+    # 既存ポジション管理を外部通信より先に実行し、HeartbeatをOnTick（取引経路）から分離していることを静的に確認する。
+    $controller = Get-Content -LiteralPath (Join-Path $root "mt5\Include\Core\EAController.mqh") -Raw
+    $onTimer = [regex]::Match($controller, '(?s)void OnTimer\(void\)(.*?)void OnTick\(void\)').Groups[1].Value
+    $onTick = [regex]::Match($controller, '(?s)void OnTick\(void\)(.*?)void OnTradeTransaction\(').Groups[1].Value
+    Assert-True ($onTimer.Length -gt 0 -and $onTick.Length -gt 0) "EAControllerのOnTimer/OnTickを特定できません。"
+    Assert-True ($onTick -notmatch 'm_heartbeat_client') "HeartbeatがOnTick（取引経路）から呼ばれています。"
+    Assert-True ($onTimer -notmatch 'm_(order_manager|risk_manager|position_manager|position_exit_evaluator|decision_client)') "OnTimerが取引・Risk・ポジション管理を操作しています。"
+    $monitorIndex = $onTick.IndexOf('m_position_manager.Monitor(')
+    $decisionIndex = $onTick.IndexOf('m_decision_client.Decide(')
+    Assert-True ($monitorIndex -ge 0 -and $decisionIndex -gt $monitorIndex) "既存ポジション監視が外部判断APIより先に実行されていません。"
+    Write-Host "PASS existing-position management precedes external calls and heartbeat is isolated"
 
     $sourceRoots = @("mt5", "services", "python", "infra", "contracts", "docs")
     $forbidden = Get-ChildItem -LiteralPath $sourceRoots -Recurse -File -ErrorAction Stop |

@@ -1,0 +1,54 @@
+STRATEGY_TESTER_BATCH_START total=13 case_file=D:\Dev\EA-Trading-System\mt5\test-config\cases\cross-asset-mfe-check.json
+STRATEGY_TESTER_CASE_START case=JP225-2021 index=1/13 symbol=JP225_HIST from=2021.04.01 to=2021.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\JP225-2021-JP225_HIST-20210401_20211231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\JP225-2021-JP225_HIST-20210401_20211231
+STRATEGY_TESTER_CASE_END case=JP225-2021 index=1/13 status=Succeeded elapsed_seconds=35 remaining=12 eta_seconds=420
+STRATEGY_TESTER_CASE_START case=JP225-2022 index=2/13 symbol=JP225_HIST from=2022.01.01 to=2022.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\JP225-2022-JP225_HIST-20220101_20221231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\JP225-2022-JP225_HIST-20220101_20221231
+STRATEGY_TESTER_CASE_END case=JP225-2022 index=2/13 status=Succeeded elapsed_seconds=44 remaining=11 eta_seconds=434
+STRATEGY_TESTER_CASE_START case=JP225-2023 index=3/13 symbol=JP225_HIST from=2023.01.01 to=2023.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\JP225-2023-JP225_HIST-20230101_20231231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\JP225-2023-JP225_HIST-20230101_20231231
+STRATEGY_TESTER_CASE_END case=JP225-2023 index=3/13 status=Succeeded elapsed_seconds=45 remaining=10 eta_seconds=413
+STRATEGY_TESTER_CASE_START case=JP225-2024 index=4/13 symbol=JP225_HIST from=2024.01.01 to=2024.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\JP225-2024-JP225_HIST-20240101_20241231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\JP225-2024-JP225_HIST-20240101_20241231
+STRATEGY_TESTER_CASE_END case=JP225-2024 index=4/13 status=Succeeded elapsed_seconds=44 remaining=9 eta_seconds=378
+STRATEGY_TESTER_CASE_START case=JP225-2526 index=5/13 symbol=JP225_HIST from=2025.01.01 to=2026.08.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\JP225-2526-JP225_HIST-20250101_20260831\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\JP225-2526-JP225_HIST-20250101_20260831
+STRATEGY_TESTER_CASE_END case=JP225-2526 index=5/13 status=Succeeded elapsed_seconds=69 remaining=8 eta_seconds=379
+STRATEGY_TESTER_CASE_START case=US30-2021 index=6/13 symbol=US30_HIST from=2021.04.01 to=2021.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\US30-2021-US30_HIST-20210401_20211231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\US30-2021-US30_HIST-20210401_20211231
+STRATEGY_TESTER_CASE_END case=US30-2021 index=6/13 status=Succeeded elapsed_seconds=34 remaining=7 eta_seconds=316
+STRATEGY_TESTER_CASE_START case=US30-2022 index=7/13 symbol=US30_HIST from=2022.01.01 to=2022.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\US30-2022-US30_HIST-20220101_20221231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\US30-2022-US30_HIST-20220101_20221231
+STRATEGY_TESTER_CASE_END case=US30-2022 index=7/13 status=Succeeded elapsed_seconds=46 remaining=6 eta_seconds=272
+STRATEGY_TESTER_CASE_START case=US30-2023 index=8/13 symbol=US30_HIST from=2023.01.01 to=2023.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\US30-2023-US30_HIST-20230101_20231231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\US30-2023-US30_HIST-20230101_20231231
+STRATEGY_TESTER_CASE_END case=US30-2023 index=8/13 status=Succeeded elapsed_seconds=43 remaining=5 eta_seconds=225
+STRATEGY_TESTER_CASE_START case=US30-2024 index=9/13 symbol=US30_HIST from=2024.01.01 to=2024.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\US30-2024-US30_HIST-20240101_20241231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\US30-2024-US30_HIST-20240101_20241231
+STRATEGY_TESTER_CASE_END case=US30-2024 index=9/13 status=Succeeded elapsed_seconds=45 remaining=4 eta_seconds=180
+STRATEGY_TESTER_CASE_START case=US30-2526 index=10/13 symbol=US30_HIST from=2025.01.01 to=2026.08.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\US30-2526-US30_HIST-20250101_20260831\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\US30-2526-US30_HIST-20250101_20260831
+STRATEGY_TESTER_CASE_END case=US30-2526 index=10/13 status=Succeeded elapsed_seconds=73 remaining=3 eta_seconds=143
+STRATEGY_TESTER_CASE_START case=XAUUSD-2023 index=11/13 symbol=XAUUSD_HIST from=2023.07.01 to=2023.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\XAUUSD-2023-XAUUSD_HIST-20230701_20231231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\XAUUSD-2023-XAUUSD_HIST-20230701_20231231
+STRATEGY_TESTER_CASE_END case=XAUUSD-2023 index=11/13 status=Succeeded elapsed_seconds=26 remaining=2 eta_seconds=92
+STRATEGY_TESTER_CASE_START case=XAUUSD-2024 index=12/13 symbol=XAUUSD_HIST from=2024.01.01 to=2024.12.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\XAUUSD-2024-XAUUSD_HIST-20240101_20241231\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\XAUUSD-2024-XAUUSD_HIST-20240101_20241231
+STRATEGY_TESTER_CASE_END case=XAUUSD-2024 index=12/13 status=Succeeded elapsed_seconds=48 remaining=1 eta_seconds=46
+STRATEGY_TESTER_CASE_START case=XAUUSD-2526 index=13/13 symbol=XAUUSD_HIST from=2025.01.01 to=2026.08.31
+STRATEGY_TESTER_AUDIT_COPIED count=1 dir=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\XAUUSD-2526-XAUUSD_HIST-20250101_20260831\audit mode=Host
+STRATEGY_TESTER_COMPLETED exit=0 result=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\XAUUSD-2526-XAUUSD_HIST-20250101_20260831
+STRATEGY_TESTER_CASE_END case=XAUUSD-2526 index=13/13 status=Succeeded elapsed_seconds=91 remaining=0 eta_seconds=0
+STRATEGY_TESTER_BATCH_COMPLETED total=13 succeeded=13 failed=0 manifest=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\manifest.json summary=D:\Dev\EA-Trading-System\results\backtests\20260917-230358-cases\summary.csv

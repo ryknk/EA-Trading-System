@@ -1,0 +1,20 @@
+{
+  "description": "mfe_r低下パターンの資産クラス依存性を確認する探索的追加測定の続き（cross-asset-mfe-check.jsonの対象に、DEC-035で仕様を設定した米国株指数3資産US100/US500/US2000を加える）。初見資産であり、パラメータ調整・Fold1-5への適合・production判定・Final Holdoutの代替には一切使わない確認目的のみ。開始日は実データ最古日2020-04-01からDEC-025のウォームアップ制約（12か月）を確保して2021-04-01とした。ただしUS100は最小取引単位が2021-05-31に1.00から0.10へ変わったため（DEC-033/035）、2021年のみ2021-06-01開始とした。InpMaxSpreadPointsはDEC-035の事前固定値（US100=60、US500=20、US2000=540、専用テンプレートStrategyTester-Generic-{US100,US500,US2000}-H1.ini、Leverage 1:25、Genericとの差分はInpMaxSpreadPointsのみ）で、結果を見て調整しない。結果報告にはSPREAD_TOO_WIDE割合を必ず併記する（DEC-034）。US500・US2000の2021年は2021-05-31以前を含むが、最小取引単位・刻みが1のため影響しない（US2000の最大取引数量は同日に500から200へ変更されたが、承認volume最大7.0で上限に届かない）。",
+  "cases": [
+    { "case_name": "US100-2021", "symbol": "US100_HIST", "from_date": "2021.06.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US100-H1.ini" },
+    { "case_name": "US100-2022", "symbol": "US100_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US100-H1.ini" },
+    { "case_name": "US100-2023", "symbol": "US100_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US100-H1.ini" },
+    { "case_name": "US100-2024", "symbol": "US100_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US100-H1.ini" },
+    { "case_name": "US100-2526", "symbol": "US100_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-US100-H1.ini" },
+    { "case_name": "US500-2021", "symbol": "US500_HIST", "from_date": "2021.04.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US500-H1.ini" },
+    { "case_name": "US500-2022", "symbol": "US500_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US500-H1.ini" },
+    { "case_name": "US500-2023", "symbol": "US500_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US500-H1.ini" },
+    { "case_name": "US500-2024", "symbol": "US500_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US500-H1.ini" },
+    { "case_name": "US500-2526", "symbol": "US500_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-US500-H1.ini" },
+    { "case_name": "US2000-2021", "symbol": "US2000_HIST", "from_date": "2021.04.01", "to_date": "2021.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US2000-H1.ini" },
+    { "case_name": "US2000-2022", "symbol": "US2000_HIST", "from_date": "2022.01.01", "to_date": "2022.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US2000-H1.ini" },
+    { "case_name": "US2000-2023", "symbol": "US2000_HIST", "from_date": "2023.01.01", "to_date": "2023.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US2000-H1.ini" },
+    { "case_name": "US2000-2024", "symbol": "US2000_HIST", "from_date": "2024.01.01", "to_date": "2024.12.31", "template": "mt5\\test-config\\StrategyTester-Generic-US2000-H1.ini" },
+    { "case_name": "US2000-2526", "symbol": "US2000_HIST", "from_date": "2025.01.01", "to_date": "2026.08.31", "template": "mt5\\test-config\\StrategyTester-Generic-US2000-H1.ini" }
+  ]
+}

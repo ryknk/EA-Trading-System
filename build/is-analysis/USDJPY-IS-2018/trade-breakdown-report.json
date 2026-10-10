@@ -1,0 +1,614 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-09-17T13:32:30.708127Z",
+  "currency": "ACCOUNT_CURRENCY",
+  "definitions": {
+    "session": "UTCの概算時間帯によるSession区分、Entry時刻基準（DST未考慮の簡略化）",
+    "atr_band": "エントリー時H1 ATRの実データ分位点による帯（区間はデータ依存で固定値ではない）",
+    "adx_band": "エントリー時H1 ADXの実データ分位点による帯",
+    "hold_time_band": "保有時間（時間単位）の実データ分位点による帯",
+    "mfe_band": "MFE（最大含み益、口座通貨、手数料除く）の実データ分位点による帯",
+    "mae_band": "MAE（最大含み損、口座通貨、手数料除く）の実データ分位点による帯",
+    "r_multiple": "net_pnl / risk_budget（RISK_DECISIONで承認されたリスク額）",
+    "market_regime_trend": "EA側CMarketRegimeClassifierによるEntry時点のトレンド判定（TrendUp/TrendDown/Range、判定不能時はUnknown）",
+    "market_regime_volatility": "EA側CMarketRegimeClassifierによるEntry時点のボラティリティ判定（HighVolatility/NormalVolatility/LowVolatility、判定不能時はUnknown）",
+    "close_reason": "決済トリガー（SL/TP/SO/EXPERT/CLIENT等、MT5 DEAL_REASONをそのまま文字列化。EXPERTはEA発注によるEmergency Close等）",
+    "close_session": "UTCの概算時間帯によるSession区分、Exit（決済）時刻基準",
+    "close_weekday": "決済時刻の曜日（UTC基準）",
+    "giveback_ratio": "(mfe - net_pnl) / mfe。MFE到達後、決済までに手放した利益の割合。1.0以上は損益ゼロ以下まで完全反転したことを示す。MFE<=0のトレードはNaN",
+    "giveback_band": "giveback_ratioの実データ分位点による帯",
+    "time_stop_reason_code": "Time Stop（時間切れ決済）で決済された場合の理由コード（MAX_HOLDING_BARS/MAX_HOLDING_BARS_MIN_MFE_NOT_REACHED）。Time Stop以外の決済ではNaN",
+    "time_stop_triggered": "time_stop_reason_codeがNaNでないトレードはTrue。InpEnableTimeStop=falseのバックテストでは常にFalse",
+    "range_exit_reason_code": "レンジ相場逆張り戦略の強制決済で決済された場合の理由コード（RANGE_BREAK/BB_WIDTH_EXPANSION/MEAN_REVERSION_MAX_HOLDING_BARS）。該当しない決済ではNaN",
+    "range_exit_triggered": "range_exit_reason_codeがNaNでないトレードはTrue。InpEnableMeanReversionStrategy=falseのバックテストでは常にFalse",
+    "trend_reversal_reason_code": "トレンド継続反転Exitで決済された場合の理由コード（TrendReversalConfirmed固定）。該当しない決済ではNaN",
+    "trend_reversal_triggered": "trend_reversal_reason_codeがNaNでないトレードはTrue。InpEnableTrendReversalExit=falseのバックテストでは常にFalse",
+    "trend_reversal_trend_direction": "反転Exit発動時点の市場レジームトレンド方向（TrendUp/TrendDown）。該当しない決済ではNaN",
+    "trend_reversal_peak_mfe_r_multiple": "反転Exit発動時点までの含み益ピーク（建値〜当初SL距離を1RとするR倍数）。該当しない決済ではNaN",
+    "trend_reversal_retracement_r_multiple": "反転Exit発動時点でのPeakからの逆行幅（R倍数）。該当しない決済ではNaN",
+    "reached_tp_equivalent_r": "mfe_rがそのトレード自身のTP相当R（candidate_risk_reward_ratio）以上に達したか。SL到達トレードでは「あと一歩でTPだった」の近似指標、反転Exit/初期逆行Exitトレードでは「早期Exitしなければ後にTPへ到達していた可能性」の近似指標",
+    "early_adverse_exit_reason_code": "初期逆行Exitで決済された場合の理由コード（EarlyAdverseConfirmed固定）。該当しない決済ではNaN",
+    "early_adverse_exit_triggered": "early_adverse_exit_reason_codeがNaNでないトレードはTrue。InpEnableEarlyAdverseExit=falseのバックテストでは常にFalse",
+    "early_adverse_exit_adverse_r_multiple": "初期逆行Exit発動時点での建値からの逆行幅（建値〜当初SL距離を1RとするR倍数）。該当しない決済ではNaN"
+  },
+  "reversal_from_profit": {
+    "losing_trades_total": 14,
+    "losing_trades_with_mfe_data": 14,
+    "losing_trades_that_reached_unrealized_profit": 14,
+    "share_of_losing_trades_with_data": 1.0,
+    "average_mfe_before_reversal": 1794.5
+  },
+  "giveback_from_peak_profit": {
+    "trades_with_unrealized_profit": 23,
+    "average_giveback_ratio": 4.168903522681027,
+    "median_giveback_ratio": 2.1965811965811968,
+    "trades_that_fully_reversed_to_breakeven_or_loss": 14,
+    "share_that_fully_reversed": 0.6086956521739131
+  },
+  "time_stop": {
+    "trades_closed_by_time_stop": 0,
+    "net_profit": 0.0,
+    "win_rate": 0.0,
+    "profit_factor": null,
+    "expectancy": 0.0,
+    "average_win": null,
+    "average_loss": null
+  },
+  "range_exit": {
+    "trades_closed_by_range_exit": 0,
+    "net_profit": 0.0,
+    "win_rate": 0.0,
+    "profit_factor": null,
+    "expectancy": 0.0,
+    "average_win": null,
+    "average_loss": null,
+    "by_reason_code": {}
+  },
+  "trend_reversal_exit": {
+    "trades_closed_by_trend_reversal_exit": 0,
+    "net_profit": 0.0,
+    "win_rate": 0.0,
+    "profit_factor": null,
+    "expectancy": 0.0,
+    "average_win": null,
+    "average_loss": null,
+    "average_peak_mfe_r_multiple": null,
+    "average_retracement_r_multiple": null,
+    "trades_that_would_likely_have_reached_tp": 0,
+    "net_pnl_of_trades_that_would_likely_have_reached_tp": null,
+    "by_trend_direction": {}
+  },
+  "early_adverse_exit": {
+    "trades_closed_by_early_adverse_exit": 14,
+    "net_profit": -52898.0,
+    "win_rate": 0.0,
+    "profit_factor": 0.0,
+    "expectancy": -3778.4285714285716,
+    "average_win": null,
+    "average_loss": -3778.4285714285716,
+    "average_adverse_r_multiple": 0.7732892253857143,
+    "trades_that_would_likely_have_reached_tp": 0,
+    "net_pnl_of_trades_that_would_likely_have_reached_tp": null,
+    "by_direction": {
+      "BUY": {
+        "number_of_trades": 7,
+        "net_profit": -26539.0,
+        "win_rate": 0.0,
+        "profit_factor": 0.0,
+        "expectancy": -3791.285714285714,
+        "average_win": null,
+        "average_loss": -3791.285714285714
+      },
+      "SELL": {
+        "number_of_trades": 7,
+        "net_profit": -26359.0,
+        "win_rate": 0.0,
+        "profit_factor": 0.0,
+        "expectancy": -3765.5714285714284,
+        "average_win": null,
+        "average_loss": -3765.5714285714284
+      }
+    }
+  },
+  "breakdowns": {
+    "direction": [
+      {
+        "direction": "BUY",
+        "number_of_trades": 14,
+        "net_profit": 14794.0,
+        "win_rate": 0.5,
+        "profit_factor": 1.5574437620106258,
+        "expectancy": 1056.7142857142858,
+        "average_win": 5904.714285714285,
+        "average_loss": -3791.285714285714
+      },
+      {
+        "direction": "SELL",
+        "number_of_trades": 9,
+        "net_profit": -15719.0,
+        "win_rate": 0.2222222222222222,
+        "profit_factor": 0.4036571948859972,
+        "expectancy": -1746.5555555555557,
+        "average_win": 5320.0,
+        "average_loss": -3765.5714285714284
+      }
+    ],
+    "session": [
+      {
+        "session": "London",
+        "number_of_trades": 3,
+        "net_profit": 2382.0,
+        "win_rate": 0.3333333333333333,
+        "profit_factor": 1.3260333972077745,
+        "expectancy": 794.0,
+        "average_win": 9688.0,
+        "average_loss": -3653.0
+      },
+      {
+        "session": "London_NewYork_Overlap",
+        "number_of_trades": 2,
+        "net_profit": -7556.0,
+        "win_rate": 0.0,
+        "profit_factor": 0.0,
+        "expectancy": -3778.0,
+        "average_win": null,
+        "average_loss": -3778.0
+      },
+      {
+        "session": "NewYork",
+        "number_of_trades": 8,
+        "net_profit": 5510.0,
+        "win_rate": 0.5,
+        "profit_factor": 1.3564036222509703,
+        "expectancy": 688.75,
+        "average_win": 5242.5,
+        "average_loss": -3865.0
+      },
+      {
+        "session": "Tokyo",
+        "number_of_trades": 10,
+        "net_profit": -1261.0,
+        "win_rate": 0.4,
+        "profit_factor": 0.9441442239546421,
+        "expectancy": -126.1,
+        "average_win": 5328.75,
+        "average_loss": -3762.6666666666665
+      }
+    ],
+    "weekday": [
+      {
+        "weekday": "Fri",
+        "number_of_trades": 3,
+        "net_profit": -12154.0,
+        "win_rate": 0.0,
+        "profit_factor": 0.0,
+        "expectancy": -4051.3333333333335,
+        "average_win": null,
+        "average_loss": -4051.3333333333335
+      },
+      {
+        "weekday": "Mon",
+        "number_of_trades": 5,
+        "net_profit": 15601.0,
+        "win_rate": 0.6,
+        "profit_factor": 3.014331826985152,
+        "expectancy": 3120.2,
+        "average_win": 7782.0,
+        "average_loss": -3872.5
+      },
+      {
+        "weekday": "Thu",
+        "number_of_trades": 5,
+        "net_profit": 10462.0,
+        "win_rate": 0.6,
+        "profit_factor": 2.479146048352891,
+        "expectancy": 2092.4,
+        "average_win": 5845.0,
+        "average_loss": -3536.5
+      },
+      {
+        "weekday": "Tue",
+        "number_of_trades": 5,
+        "net_profit": -9678.0,
+        "win_rate": 0.4,
+        "profit_factor": 0.12352834631407354,
+        "expectancy": -1935.6,
+        "average_win": 682.0,
+        "average_loss": -3680.6666666666665
+      },
+      {
+        "weekday": "Wed",
+        "number_of_trades": 5,
+        "net_profit": -5156.0,
+        "win_rate": 0.2,
+        "profit_factor": 0.6535877452297769,
+        "expectancy": -1031.2,
+        "average_win": 9728.0,
+        "average_loss": -3721.0
+      }
+    ],
+    "atr_band": [
+      {
+        "atr_band": "ATR_0.085-0.116",
+        "number_of_trades": 8,
+        "net_profit": 13827.0,
+        "win_rate": 0.5,
+        "profit_factor": 1.931424722128663,
+        "expectancy": 1728.375,
+        "average_win": 7168.0,
+        "average_loss": -3711.25
+      },
+      {
+        "atr_band": "ATR_0.116-0.146",
+        "number_of_trades": 7,
+        "net_profit": -7111.0,
+        "win_rate": 0.2857142857142857,
+        "profit_factor": 0.631935817805383,
+        "expectancy": -1015.8571428571429,
+        "average_win": 6104.5,
+        "average_loss": -3864.0
+      },
+      {
+        "atr_band": "ATR_0.146-0.214",
+        "number_of_trades": 8,
+        "net_profit": -7641.0,
+        "win_rate": 0.375,
+        "profit_factor": 0.5921101798964394,
+        "expectancy": -955.125,
+        "average_win": 3697.3333333333335,
+        "average_loss": -3746.6
+      }
+    ],
+    "adx_band": [
+      {
+        "adx_band": "ADX_40.09-41.92",
+        "number_of_trades": 8,
+        "net_profit": 26821.0,
+        "win_rate": 0.625,
+        "profit_factor": 3.3408099144702392,
+        "expectancy": 3352.625,
+        "average_win": 7655.8,
+        "average_loss": -3819.3333333333335
+      },
+      {
+        "adx_band": "ADX_41.92-45.19",
+        "number_of_trades": 7,
+        "net_profit": -16818.0,
+        "win_rate": 0.2857142857142857,
+        "profit_factor": 0.07501924980750192,
+        "expectancy": -2402.5714285714284,
+        "average_win": 682.0,
+        "average_loss": -3636.4
+      },
+      {
+        "adx_band": "ADX_45.19-58.55",
+        "number_of_trades": 8,
+        "net_profit": -10928.0,
+        "win_rate": 0.25,
+        "profit_factor": 0.5301401668243185,
+        "expectancy": -1366.0,
+        "average_win": 6165.0,
+        "average_loss": -3876.3333333333335
+      }
+    ],
+    "hold_time_band": [
+      {
+        "hold_time_band": "HOLD_H_0.92-5.104",
+        "number_of_trades": 8,
+        "net_profit": -30365.0,
+        "win_rate": 0.0,
+        "profit_factor": 0.0,
+        "expectancy": -3795.625,
+        "average_win": null,
+        "average_loss": -3795.625
+      },
+      {
+        "hold_time_band": "HOLD_H_11.76-35",
+        "number_of_trades": 8,
+        "net_profit": 28959.0,
+        "win_rate": 0.875,
+        "profit_factor": 9.04863813229572,
+        "expectancy": 3619.875,
+        "average_win": 4651.0,
+        "average_loss": -3598.0
+      },
+      {
+        "hold_time_band": "HOLD_H_5.104-11.76",
+        "number_of_trades": 7,
+        "net_profit": 481.0,
+        "win_rate": 0.2857142857142857,
+        "profit_factor": 1.0254026934248746,
+        "expectancy": 68.71428571428571,
+        "average_win": 9708.0,
+        "average_loss": -3787.0
+      }
+    ],
+    "mfe_band": [
+      {
+        "mfe_band": "MFE_114-1694",
+        "number_of_trades": 8,
+        "net_profit": -29871.0,
+        "win_rate": 0.0,
+        "profit_factor": 0.0,
+        "expectancy": -3733.875,
+        "average_win": null,
+        "average_loss": -3733.875
+      },
+      {
+        "mfe_band": "MFE_1694-4105",
+        "number_of_trades": 7,
+        "net_profit": -18065.0,
+        "win_rate": 0.2857142857142857,
+        "profit_factor": 0.07020433372793247,
+        "expectancy": -2580.714285714286,
+        "average_win": 682.0,
+        "average_loss": -3885.8
+      },
+      {
+        "mfe_band": "MFE_4105-9971",
+        "number_of_trades": 8,
+        "net_profit": 47011.0,
+        "win_rate": 0.875,
+        "profit_factor": 14.065869927737632,
+        "expectancy": 5876.375,
+        "average_win": 7229.857142857143,
+        "average_loss": -3598.0
+      }
+    ],
+    "mae_band": [
+      {
+        "mae_band": "MAE_-3279--132",
+        "number_of_trades": 8,
+        "net_profit": 42285.0,
+        "win_rate": 1.0,
+        "profit_factor": null,
+        "expectancy": 5285.625,
+        "average_win": 5285.625,
+        "average_loss": null
+      },
+      {
+        "mae_band": "MAE_-3729--3279",
+        "number_of_trades": 7,
+        "net_profit": -11962.0,
+        "win_rate": 0.14285714285714285,
+        "profit_factor": 0.4474826789838337,
+        "expectancy": -1708.857142857143,
+        "average_win": 9688.0,
+        "average_loss": -3608.3333333333335
+      },
+      {
+        "mae_band": "MAE_-4338--3729",
+        "number_of_trades": 8,
+        "net_profit": -31248.0,
+        "win_rate": 0.0,
+        "profit_factor": 0.0,
+        "expectancy": -3906.0,
+        "average_win": null,
+        "average_loss": -3906.0
+      }
+    ],
+    "market_regime_trend": [
+      {
+        "market_regime_trend": "TrendDown",
+        "number_of_trades": 9,
+        "net_profit": -7516.0,
+        "win_rate": 0.2222222222222222,
+        "profit_factor": 0.7200849130386205,
+        "expectancy": -835.1111111111111,
+        "average_win": 9667.5,
+        "average_loss": -3835.8571428571427
+      },
+      {
+        "market_regime_trend": "TrendUp",
+        "number_of_trades": 14,
+        "net_profit": 6591.0,
+        "win_rate": 0.5,
+        "profit_factor": 1.2530425768802549,
+        "expectancy": 470.7857142857143,
+        "average_win": 4662.571428571428,
+        "average_loss": -3721.0
+      }
+    ],
+    "market_regime_volatility": [
+      {
+        "market_regime_volatility": "HighVolatility",
+        "number_of_trades": 3,
+        "net_profit": -2234.0,
+        "win_rate": 0.6666666666666666,
+        "profit_factor": 0.3790994997220678,
+        "expectancy": -744.6666666666666,
+        "average_win": 682.0,
+        "average_loss": -3598.0
+      },
+      {
+        "market_regime_volatility": "LowVolatility",
+        "number_of_trades": 1,
+        "net_profit": -3780.0,
+        "win_rate": 0.0,
+        "profit_factor": 0.0,
+        "expectancy": -3780.0,
+        "average_win": null,
+        "average_loss": -3780.0
+      },
+      {
+        "market_regime_volatility": "NormalVolatility",
+        "number_of_trades": 19,
+        "net_profit": 5089.0,
+        "win_rate": 0.3684210526315789,
+        "profit_factor": 1.1117970123022847,
+        "expectancy": 267.8421052631579,
+        "average_win": 7229.857142857143,
+        "average_loss": -3793.3333333333335
+      }
+    ],
+    "close_reason": [
+      {
+        "close_reason": "EXPERT",
+        "number_of_trades": 19,
+        "net_profit": -39947.0,
+        "win_rate": 0.2631578947368421,
+        "profit_factor": 0.244829672199327,
+        "expectancy": -2102.4736842105262,
+        "average_win": 2590.2,
+        "average_loss": -3778.4285714285716
+      },
+      {
+        "close_reason": "TP",
+        "number_of_trades": 4,
+        "net_profit": 39022.0,
+        "win_rate": 1.0,
+        "profit_factor": null,
+        "expectancy": 9755.5,
+        "average_win": 9755.5,
+        "average_loss": null
+      }
+    ],
+    "close_session": [
+      {
+        "close_session": "London",
+        "number_of_trades": 7,
+        "net_profit": 23006.0,
+        "win_rate": 0.7142857142857143,
+        "profit_factor": 3.9908996359854396,
+        "expectancy": 3286.5714285714284,
+        "average_win": 6139.6,
+        "average_loss": -3846.0
+      },
+      {
+        "close_session": "London_NewYork_Overlap",
+        "number_of_trades": 3,
+        "net_profit": 4318.0,
+        "win_rate": 0.6666666666666666,
+        "profit_factor": 2.1961218836565095,
+        "expectancy": 1439.3333333333333,
+        "average_win": 3964.0,
+        "average_loss": -3610.0
+      },
+      {
+        "close_session": "NewYork",
+        "number_of_trades": 5,
+        "net_profit": -5902.0,
+        "win_rate": 0.2,
+        "profit_factor": 0.6214239897370109,
+        "expectancy": -1180.4,
+        "average_win": 9688.0,
+        "average_loss": -3897.5
+      },
+      {
+        "close_session": "Tokyo",
+        "number_of_trades": 8,
+        "net_profit": -22347.0,
+        "win_rate": 0.125,
+        "profit_factor": 0.14069830039221717,
+        "expectancy": -2793.375,
+        "average_win": 3659.0,
+        "average_loss": -3715.1428571428573
+      }
+    ],
+    "close_weekday": [
+      {
+        "close_weekday": "Fri",
+        "number_of_trades": 7,
+        "net_profit": 1883.0,
+        "win_rate": 0.42857142857142855,
+        "profit_factor": 1.120304114490161,
+        "expectancy": 269.0,
+        "average_win": 5845.0,
+        "average_loss": -3913.0
+      },
+      {
+        "close_weekday": "Mon",
+        "number_of_trades": 2,
+        "net_profit": 5992.0,
+        "win_rate": 0.5,
+        "profit_factor": 2.621212121212121,
+        "expectancy": 2996.0,
+        "average_win": 9688.0,
+        "average_loss": -3696.0
+      },
+      {
+        "close_weekday": "Thu",
+        "number_of_trades": 1,
+        "net_profit": -3575.0,
+        "win_rate": 0.0,
+        "profit_factor": 0.0,
+        "expectancy": -3575.0,
+        "average_win": null,
+        "average_loss": -3575.0
+      },
+      {
+        "close_weekday": "Tue",
+        "number_of_trades": 5,
+        "net_profit": 2165.0,
+        "win_rate": 0.4,
+        "profit_factor": 1.1883755329330896,
+        "expectancy": 433.0,
+        "average_win": 6829.0,
+        "average_loss": -3831.0
+      },
+      {
+        "close_weekday": "Wed",
+        "number_of_trades": 8,
+        "net_profit": -7390.0,
+        "win_rate": 0.375,
+        "profit_factor": 0.600151498755546,
+        "expectancy": -923.75,
+        "average_win": 3697.3333333333335,
+        "average_loss": -3696.4
+      }
+    ],
+    "giveback_band": [
+      {
+        "giveback_band": "GIVEBACK_-0.0277-0.669",
+        "number_of_trades": 8,
+        "net_profit": 51521.0,
+        "win_rate": 1.0,
+        "profit_factor": null,
+        "expectancy": 6440.125,
+        "average_win": 6440.125,
+        "average_loss": null
+      },
+      {
+        "giveback_band": "GIVEBACK_0.669-3.361",
+        "number_of_trades": 7,
+        "net_profit": -21889.0,
+        "win_rate": 0.14285714285714285,
+        "profit_factor": 0.020231860704534265,
+        "expectancy": -3127.0,
+        "average_win": 452.0,
+        "average_loss": -3723.5
+      },
+      {
+        "giveback_band": "GIVEBACK_3.361-32.67",
+        "number_of_trades": 8,
+        "net_profit": -30557.0,
+        "win_rate": 0.0,
+        "profit_factor": 0.0,
+        "expectancy": -3819.625,
+        "average_win": null,
+        "average_loss": -3819.625
+      }
+    ],
+    "time_stop_reason_code": [],
+    "range_exit_reason_code": [],
+    "trend_reversal_trend_direction": []
+  },
+  "entry_pipeline_funnel": {
+    "total_bars_evaluated": 6194,
+    "reached_final_candidate": 30,
+    "rejected_by_stage": {
+      "market_regime": 5143,
+      "htf_bias": 241,
+      "trend_strength_or_momentum_filter": 493,
+      "setup_or_trigger": 287,
+      "other": 0
+    },
+    "rejection_reason_counts": {
+      "REGIME_NOT_TRENDING": 5143,
+      "RSI_FILTERED": 452,
+      "TREND_NOT_ALIGNED": 241,
+      "ENTRY_PATTERN_NOT_FOUND": 287,
+      "CONFIRMATION_ADX_TOO_LOW": 41
+    }
+  }
+}

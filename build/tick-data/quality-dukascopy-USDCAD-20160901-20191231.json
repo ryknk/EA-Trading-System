@@ -1,0 +1,9 @@
+[
+  {
+    "case_name": "tick-quality",
+    "template": "mt5\\test-config\\StrategyTester-TickQuality-M1.ini",
+    "to_date": "2017.01.05",
+    "symbol": "USDCAD_HIST",
+    "from_date": "2017.01.01"
+  }
+]

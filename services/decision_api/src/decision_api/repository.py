@@ -83,3 +83,28 @@ class DynamoRepository:
             if existing and existing.get("body_hash") == body_hash:
                 return False
             raise ConditionalWriteFailed() from exc
+
+    def record_heartbeat(self, source_id: str, heartbeat: dict[str, Any], heartbeat_epoch: int,
+                         received_at: str, body_hash: str) -> bool:
+        """EA単位の最終Heartbeatを1件だけ保持する。古い時刻のHeartbeatでは上書きしない。"""
+        try:
+            self._table.put_item(
+                Item={
+                    "pk": f"HEARTBEAT#{source_id}", "sk": "LATEST", "entity_type": "HEARTBEAT",
+                    "heartbeat_id": heartbeat["heartbeat_id"], "ea_id": heartbeat["ea_id"],
+                    "symbol": heartbeat["symbol"], "last_heartbeat_at": heartbeat["timestamp"],
+                    "last_heartbeat_epoch": heartbeat_epoch, "received_at": received_at,
+                    "interval_seconds": heartbeat["interval_seconds"],
+                    "terminal_connected": heartbeat["terminal_connected"],
+                    "trade_mutations_enabled": heartbeat["trade_mutations_enabled"],
+                    "kill_switch_active": heartbeat["kill_switch_active"],
+                    "body_hash": body_hash,
+                },
+                ConditionExpression="attribute_not_exists(pk) OR last_heartbeat_epoch < :epoch",
+                ExpressionAttributeValues={":epoch": heartbeat_epoch},
+            )
+            return True
+        except Exception as exc:
+            if getattr(exc, "response", {}).get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return False
+            raise

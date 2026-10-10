@@ -800,3 +800,501 @@ OOS分析（`python.analysis.trade_breakdown`、TASKS.md 2.1.3節）で、トレ
 * 追加: `mt5/Include/Trading/PositionManager.mqh`（`CTrendReversalExitRules`・`CTrendReversalTracker`・`CloseOnTrendReversal`）、`mt5/Include/Trading/PositionExitEvaluator.mqh`（`EvaluateTrendReversalExits`）、`mt5/Include/Strategy/TrendFollowingStrategy.mqh`（`CurrentMarketRegimeTrend`）
 * 変更: `mt5/Include/Core/Config.mqh`・`mt5/Experts/CoreEA.mq5`（設定4件）、`mt5/Include/Core/EAController.mqh`（OnTick呼び出し追加）、`mt5/Include/Logging/TradeLogger.mqh`・`python/analysis/reports.py`（新規イベント`TREND_REVERSAL_EXIT`許可リスト追加）、`python/analysis/trade_breakdown.py`（`trend_reversal_exit_summary`）、`contracts/trade-breakdown-report.schema.json`
 * MQL5コンパイル（13ターゲット、0 errors/0 warnings）・全12 Script Test PASS、Pythonテスト70件PASS確認済み（2026-09-12）。Strategy TesterによるBaseline/ON比較・OOS/Final Holdoutでの効果検証は未実施（NOT VERIFIED、TASKS.md 2.1.3節参照）。
+
+
+# DEC-033: 非FX資産のCustom Symbolは実Symbolを複製せず手動で仕様を設定し、証拠金計算はCFDモードを使う
+
+**状態:** 採用（JP225_HIST・US30_HIST・XAUUSD_HISTの3銘柄とも適用・EA動作確認済み、2026-09-19）
+
+## 背景
+
+DEC-023のCustom Symbol方式を、他資産クラス（JP225・US30・XAUUSD）の追加測定へ流用した（TASKS.md 2.1.4節 追加分析3）。現行EAを同一パラメータのまま実行しても取引が1件も成立しなかった。切り分けの結果（2026-09-19）、EA側の不具合ではなく、Custom Symbolの仕様が未設定であることが原因と確定した。
+
+* 接続先Broker（OANDA-Japan MT5 Demo）の全51銘柄はFXのみで、JP225・US30・XAUUSDの実Symbolが存在しない。複製元がないままCustom Symbolを作成したため、仕様が初期値のままになっていた（Digits=4、Point=0.0001、契約サイズ=100000、Volume Min/Max/Step=1e-8/1e-7/1e-8、利益通貨が銘柄名の切れ端`25_`等）。複製元に指定した銘柄名は、当時のログが残っておらず未確認。
+* JP225・US30の`TICK_VALUE_UNAVAILABLE`: 利益通貨が不正で`OrderCalcProfit`が損益0を返し、フォールバックもTickValue=0のため。
+* XAUUSDの`RISK_STATE_UNAVAILABLE`（reasonは`INVALID_EXPOSURE_INPUT`、`RiskManager.mqh:176`経由の`ExposureGuard.mqh:51`）: 契約サイズ100000のまま1ロット損失が約3.1億円となり、ロットがVolume Max（1e-7）に張り付いた。`PositionSizer::VolumeDigits(1e-8)`が0桁を返し、`NormalizeDouble`で0になったまま`Calculate()`がtrueを返すためと推定（コード解析による推定、volume=0だったことは監査ログのreasonで確認）。
+* `SPREAD_TOO_WIDE`: 実スプレッドの超過ではなく、Point定義の誤り（実際のスプレッドはJP225約6円、XAUUSD約0.3〜5ドル程度）。
+
+## 判断
+
+1. **非FX資産のCustom Symbolは、OANDA証券の公開仕様（`https://www.oanda.jp/indices/lineup`、`https://www.oanda.jp/commodity/lineup`）に基づき、`mt5/Tools/ApplyCfdSymbolSpec.mq5`で明示的に仕様を設定する。** 設定項目はDigits、Tick Size、契約サイズ、Volume Min/Step/Max、通貨、CalcMode、証拠金率。Tick Valueは設定せず、Testerの自動計算に任せる（実Symbol複製で正常動作している`EURUSD_HIST`等と同じ扱い）。
+2. **CalcModeはCFD（`SYMBOL_CALC_MODE_CFD`）とする。** 実験（`mt5/Tools/MarginExperimentSymbols.mq5`で作成した複製銘柄）で、Tester内の証拠金計算が次のとおりであることを確認した（JP225、価格約39,834、口座通貨JPY、レバレッジ100）。CFDINDEX（3）とFUTURES（1）は`SYMBOL_MARGIN_INITIAL`（固定額）×証拠金率で計算され、固定額が0のままだと証拠金が0になる。CFDLEVERAGE（4）は口座レバレッジでも割られ40円になる。CFD（2）は数量×契約サイズ×価格×証拠金率で3,983円となり期待どおりだった。
+3. **仕様値（OANDA公開ページ。2026-09-19に原ページの原文で照合し、US30のVolume Maxを250から100へ訂正した。照合結果は下の「原ページとの照合結果」）:**
+
+| 項目 | JP225_HIST | US30_HIST | XAUUSD_HIST |
+| --- | --- | --- | --- |
+| Digits / Point・Tick Size | 1 / 0.1 | 1 / 0.1 | 3 / 0.001（データは小数2桁） |
+| 契約サイズ | 1 | 1 | 100 |
+| Volume Min / Step / Max | 1 / 1 / 10000 | 0.1 / 0.1 / 100 | 0.01 / 0.01（原ページに記載なし）/ 20 |
+| 利益・証拠金通貨 | JPY | USD | USD |
+| 証拠金率 | 10% | 10% | 5% |
+
+4. **Digitsの変更は、MT5がバー履歴（`bases\Custom\history\<symbol>\*.hcc`）を消去する（2026-09-19実測）。** tick履歴（`bases\Custom\ticks\`）は消えない。適用前にtickフォルダとバー履歴（`.hcc`）の両方をバックアップする。バーの再生成には`mt5/Tools/RebuildBarsFromTicks.mq5`（保持tickを`CustomTicksReplace`で同内容のまま書き戻す）を使えるが、**直近月ではterminalのtick読み取りAPIが実データの約1%しか返さず、そのまま書き戻すとtickが欠落する**（JP225 2026-02〜08、US30 2026-05〜08、XAUUSD 2026-08で発生、tickはバックアップから復元済み）。バー再生成は、実行前に`apply=false`で件数を確認し、tickの`.tkc`サイズを実行前後で比較すること。この件は、tickをバックアップから復元し、バー履歴を修復して解消した。tick欠落の原因は、terminalのtick読み取りAPI（`CopyTicksRange`/`CopyTicks`）が直近月で実データの約1%しか返す元からの仕様を知らずに書き戻したこと、Testerのtick数の残差の原因は、その結果から作り直した誤りのバー履歴（tickのない分足にもバーがあり、Testerが合成tickで補う）であることを、未使用のUS500_HISTでの対照実験で確定した（Digits変更自体は原因ではない）。修復は、Digits変更前のバー履歴のバックアップを戻す方法（US30・XAUUSD、Testerのtick数・候補がSep 17と完全一致）、またはバックアップがない場合に、影響月のバーを`BarsFileTool`（削除モード）で削除し、Testerに全tickから生成させて（`mt5/Experts/ExportM1BarsEA.mq5`）ティックのある分足のバーだけを取り込む方法（JP225、候補97/97一致）による。**以後、Custom SymbolのDigitsを変える場合は、事前にtickフォルダとバー履歴（`.hcc`）の両方をバックアップし、`RebuildBarsFromTicks`は使わないこと**（このスクリプトは、terminalのAPI仕様のため直近月のtickを欠落させる。ヘッダーに警告済み）。詳細はTASKS.md 追加分析3の続き参照。
+
+## 理由
+
+* 仕様が初期値のCustom Symbolでは、Point・契約サイズ・Volume・通貨を前提とするEAのリスク計算・スプレッド判定・証拠金計算が成立しない。EA側にフォールバックを足すと、4銘柄（USDJPY/EURJPY/EURUSD/GBPJPY）の売買ロジックへ影響し得るため、Custom Symbol側を修正する。
+* 複製元がない資産では、Broker実仕様を読み取れないため、公開仕様を明示的に記録する。
+
+## 原ページとの照合結果（2026-09-19、公式ページの原文を確認）
+
+出典: [株価指数CFD取扱銘柄](https://www.oanda.jp/indices/lineup)、[商品CFD取扱銘柄](https://www.oanda.jp/commodity/lineup)、[株価指数CFDの取引数量（Lab）](https://www.oanda.jp/lab-education/beginners/aboutcfd/volume/)、[最小取引単位の引き下げのお知らせ（2021-05-26）](https://www.oanda.jp/info/787)。
+
+| 項目 | JP225 | US30 | XAUUSD |
+|---|---|---|---|
+| 呼値（Tick Size） | 0.1 一致 | 0.1 一致 | 0.001 一致 |
+| 通貨 | JPY 一致 | USD 一致 | USD 一致 |
+| 証拠金率（MT5） | 10% 一致 | 10% 一致 | 5% 一致 |
+| 契約サイズ | 1 一致（数量1＝指数×1。Labページ） | 1 一致（価格が1動くと1ドル） | 100 一致（1ロット＝100） |
+| 最小取引単位 | 1 一致 | 0.1 一致 | 0.01 一致 |
+| 取引数量の刻み | 1.00 一致（お知らせ） | 0.10 一致（お知らせ） | 原ページに記載なし（**未確認**、最小0.01から0.01と仮定） |
+| 最大取引数量 | 10,000 一致 | **100（設定は250で不一致→訂正）** | 20ロット 一致 |
+| 最大建玉数量（Custom Symbolへ未設定） | 25,000 | 250 | 30ロット |
+
+* **US30のVolume Max**: 当初の暫定値250は、最大建玉数量（250）を最大取引数量と取り違えた誤りだった。原ページの最大取引数量は100。`mt5/Tools/ApplyCfdSymbolSpec.mq5`を100へ訂正した。US30_HISTの実Symbolは2026-09-19に再適用し、Volume Maxを100へ変更した（下記）。承認されたvolumeの最大は0.7ロット（`20260919-132411`・`20260919-162553`のUS30実行）で上限に達しておらず、既存の実行結果は影響を受けない。
+* **US30_HISTの再適用（2026-09-19、実施済み）**: 適用前にtickとバー履歴（.hcc）と`symbols.custom.dat`をバックアップ（87ファイル・994,171,918バイト、元と一致）し、`ApplyCfdSymbolSpec`（`InpApply=true`、バー再生成なし）を実行した。変更はVolume Maxの250→100のみ（適用前後の仕様出力の差分はこの1行だけ。Tester内の診断でも100を確認）。バー履歴の全7ファイルはバックアップとSHA-256が一致（同じ値のDigits設定ではバー履歴は消えなかった）、tickの全79ファイルも適用前とSHA-256が一致した。再実行（US30 2021-04〜12、`20260919-200204-cases`）は、RISK_DECISION 33件が全項目（volume・risk_budget・required_margin含む）で適用前（`20260919-162553-cases`）と完全一致した。
+* **時期による仕様の違い（限界）**: US30の最小取引単位は、2021-05-31取引開始より前は1.00だった（同日に0.10へ引き下げ。刻みも0.10単位へ）。Custom Symbolは全期間で0.1のため、2021年5月以前のバックテストの0.1〜0.7ロット（US30 2021-04〜12の実行の一部）は、当時の実Brokerでは発注できなかった数量になる。JP225は同日の変更対象外（従前から最小・刻みとも1.00）。**扱い（2026-09-19決定）**: (1) Custom Symbolは変更しない（1銘柄に1つの仕様しか持てず、時期で切り替えるにはEA本体の変更が必要なため）。(2) US30（およびUS100。同日に最小取引単位が1.00から0.10へ変わった）の動作確認は、2021-06-01以降で行う（DEC-025のウォームアップは満たす）。US30 2021-06-01〜12-31の確認では、承認16件（volume 0.1〜0.7）で、2021-04開始の実行の同期間とRISK_DECISIONの採否・理由が全25件一致した（volumeの差は1件、2021-07-21の0.3と0.2。4〜5月の取引がなく口座残高が異なるためと推定。未検証）。(3) 2021-05-31以前を含む結果は、「当時は発注できなかった数量を含む」と注記する（US30 2021-04〜12の承認19件のうち3件が該当）。他の過去時点の仕様（最大取引数量、証拠金率、契約サイズ）は公開情報で確認できず、**未確認**（照合したのは2026-09-19時点の現行ページ）。
+* **未確認のまま残る項目**: XAUUSDの取引数量の刻み（原ページに記載なし）、最大建玉数量のCustom Symbolへの設定（`SYMBOL_VOLUME_LIMIT`。EAは使用していないため未設定）、スワップ・スプレッド（原ページに記載なし）。
+
+## 影響
+
+* 追加（すべて新規ファイル）: `mt5/Tools/ApplyCfdSymbolSpec.mq5`、`mt5/Tools/RebuildBarsFromTicks.mq5`、`mt5/Tools/DiagnoseSymbolSpec.mq5`、`mt5/Experts/DiagnoseSymbolSpecEA.mq5`、`mt5/Include/Diagnostics/SymbolSpecDump.mqh`、`mt5/Include/Diagnostics/SymbolBarRebuild.mqh`、`mt5/Tools/CheckSymbolHistory.mq5`、`mt5/Tools/MarginExperimentSymbols.mq5`。EA本体（`mt5/Include`の売買・リスク・戦略コード）と、4銘柄の設定・テンプレートは変更していない。
+* JP225_HISTのバックテスト（2021-04〜12、現行パラメータ）で、RISK_DECISIONが承認10件・POSITION_LIMIT拒否15件となり、`TICK_VALUE_UNAVAILABLE`・`SPREAD_TOO_WIDE`・`RISK_STATE_UNAVAILABLE`が解消したことを確認した（`results/backtests/20260919-131018-JP225_HIST-H1`）。承認時の`required_margin`は約13.5万円、保有中の証拠金維持率は約1,140%。US30_HIST（2021-04〜12、`results/backtests/20260919-132411-US30_HIST-H1`）は承認19件・POSITION_LIMIT拒否14件、`required_margin`約18.5万円、保有中の証拠金維持率約543%。XAUUSD_HIST（2023-07〜12、`results/backtests/20260919-132447-XAUUSD_HIST-H1`）は承認10件・POSITION_LIMIT拒否4件、`required_margin`約5.5万円、保有中の証拠金維持率約2,423%。Tester内の`OrderCalcProfit`/`OrderCalcMargin`は、契約サイズ・通貨換算（USDJPY約150円）と整合する値（US30 1ロットSL幅390.6ドルで-58,618円、XAUUSD 1ロットSL幅20.8ドルで-312,568円）だった。これらは動作確認であり、成績評価・採用判断には使わない。
+* **未確認**: 各値のOANDA公式原ページとの照合、JP225のVolume Step（1か0.1か）、US30の契約サイズ／数量の意味、RebuildBarsFromTicks後のtick内容の全期間一致（2024-03のみ件数一致を確認）、`PositionSizer::VolumeDigits`の推定原因。
+* 実験用の複製銘柄（`JP225_XMCFD`・`JP225_XMLEV`・`JP225_XMFUT`・`JP225_XMIDX`）は実験後に削除済み（2026-09-19、`MarginExperimentSymbols`の`InpDelete=true`）。
+* **既知の残課題**: EAは`InpMaxSpreadPoints`（Point単位）を使うため、Pointが正しくなった非FX資産でも既定値30では全候補が拒否される。専用テンプレートで値を決める必要がある（決め方は未決定）。
+* Rollback: `symbols.custom.dat`（`bases\`直下）のバックアップをMT5停止中に戻し、tickバックアップを戻したうえで`RebuildBarsFromTicks`でバーを再生成する。
+
+
+# DEC-034: 非FX資産のInpMaxSpreadPointsは「FXの30 pointsと同じ価格比」で事前に決め、PositionSizerのVolume正規化にゼロ拒否の防御を入れる
+
+**状態:** 採用（2026-09-19）
+
+## 背景
+
+DEC-033でJP225・US30・XAUUSDのCustom Symbolに正しいPointを設定した結果、`InpMaxSpreadPoints`（既定30、Point単位）が非FX資産では合わなくなった（Pointが0.1のJP225で30 points＝3円は、通常のスプレッド5〜10円より狭く、全候補が拒否される）。それまでのテンプレートは、Pointが誤っていた状態で実測値を見て緩めた値（JP225 500000、US30 200000、XAUUSD 60000）で、事実上フィルターを無効化していた。また、`PositionSizer::VolumeDigits`は刻みが1e-8以下だと0桁を返し、`NormalizeDouble`でvolumeが0になったまま`Calculate()`がtrueを返す（初期値のCustom Symbolで実際に発生）。
+
+## 判断
+
+### 1. InpMaxSpreadPointsの決め方
+
+**「FX4銘柄の30 pointsが価格に占める割合の中央値（0.0227%）を、非FX資産の基準価格へ適用し、Point単位へ換算して10 points単位に丸める」とする。** 閾値は、事前にルールで決め、バックテストの結果（損益・勝率・スプレッド超過率）を見て調整しない。
+
+* FX4銘柄の実測: 30 pointsは価格の0.0186〜0.0266%（USDJPY 0.0232%、EURJPY 0.0222%、EURUSD 0.0266%、GBPJPY 0.0186%、中央値0.0227%）で、候補の93.6〜98.3%が通過する。
+* 基準価格は、各資産の候補時の中央値価格を丸めた値（JP225 48,000、US30 49,000、XAUUSD 3,400）。価格水準だけを使い、スプレッドの分布や成績は使わない。
+* 結果: **JP225 110 points（約11円）、US30 110 points（約11ポイント）、XAUUSD 770 points（約0.77ドル）**。`mt5/test-config/StrategyTester-Generic-{JP225,US30,XAUUSD}-H1.ini`へ反映した。
+* 参考（判断には使っていない）: 反映後の短期間実行（JP225 2021-04〜12、US30 2021-04〜12、XAUUSD 2023-07〜12）で、`SPREAD_TOO_WIDE`はJP225 8%（2/25件）、US30 0%、XAUUSD 0%。FX4銘柄の2〜6%と同水準で、閾値は調整しない。
+
+### 2. PositionSizer::VolumeDigitsの防御
+
+**防御を入れる（必要）。** 正規化後のvolumeが0以下なら、`Calculate()`は`SIZE_BELOW_MIN`で拒否する（新しい理由コードは追加せず、既存のコードを使う）。
+
+* `VolumeDigits`と、正規化を行う`NormalizeVolume`を`CPositionSizerRules`のstaticとして純粋関数に切り出した（ロジックは元のまま）。`Calculate()`は`NormalizeVolume`の結果が0以下なら拒否する。
+* 危険性: volume=0のまま成功でも、後段のExposureGuardが拒否する（fail-safe）ため、誤発注には至らない。ただし理由コードが`RISK_STATE_UNAVAILABLE`（リスク状態不明）となり、原因の切り分けを誤らせるため、Risk Managerの最終権限・原因の明確さの観点で入れる。
+* 4銘柄への無影響: 正常なBroker仕様（刻み0.01・0.1・1・0.001）では、正規化の前後でvolumeは変わらない（単体テストで確認）。Final Holdout 4銘柄（181トレード）をコード変更後に再実行し、取引数・純損益・PF・全335件のRISK_DECISION（volume・risk_budget含む）が修正前と完全に一致した（`results/backtests/20260919-133712-cases`と`20260919-161758-cases`）。
+
+## 理由
+
+* 価格比で揃えれば、FXで検証済みのフィルターの厳しさを非FX資産へ、実データの分布や成績を見ずに移せる。データを見て閾値を決めるより、過学習を避けられる。
+* コードの変更は最小（関数の切り出しと、0以下の拒否1か所）にとどめ、既存の売買・リスクロジックへ影響しない形にした。
+
+## 影響
+
+* 変更: `mt5/Include/Risk/PositionSizer.mqh`、`mt5/Tests/TestPositionSizer.mq5`（アサーション9件追加）、`mt5/test-config/StrategyTester-Generic-{JP225,US30,XAUUSD}-H1.ini`（`InpMaxSpreadPoints`）。
+* 検証: MQL5コンパイル13ターゲットが0 errors/0 warnings、全12 Script Test PASS、Final Holdout 4銘柄の再実行で完全一致（2026-09-19）。
+* 限界: 閾値はPoint単位の固定値のため、価格水準が大きく動くと（JP225は約3.3万〜6.9万）価格比が変わる。価格比で指定できるEAパラメータの追加は、設計変更のため今回は行わない。基準価格は、最初の追加測定で見えた価格水準に依存する（成績には依存しない）。
+* 未確認: OANDA公式のスプレッド水準との照合。
+* 価格水準・スプレッド水準が変わった場合の妥当性は、下の「追加確認」で全期間のtickを集計して確認した。
+
+## 追加確認: 全期間での閾値の妥当性（2026-09-19、読み取り専用、閾値は変更しない）
+
+`mt5/Tools/SpreadProfile.mq5`で、Custom Symbolのtickから月別のスプレッド（(ask-bid)/Point）と価格水準を集計した。各時間の最初のtick（H1候補の評価時点に近い）の年別結果は次のとおり（over_fixedは現行の固定値を超えた割合、over_ratioは「その年の価格×0.0227%」を超えた割合）。
+
+| 銘柄 | 年 | 平均価格 | スプレッド中央値(points) | 固定値/価格比換算 | over_fixed | over_ratio |
+|---|---|---|---|---|---|---|
+| JP225 | 2021 | 28,855 | 60 | 1.69 | 4.1% | 5.9% |
+| JP225 | 2023 | 30,657 | 60 | 1.58 | 3.3% | 5.7% |
+| JP225 | 2024 | 38,343 | 100 | 1.27 | 15.1% | 56.0% |
+| JP225 | 2025 | 41,790 | 100 | 1.16 | 10.1% | 40.2% |
+| JP225 | 2026 | 60,289 | 100 | 0.80 | 30.7% | 23.3% |
+| US30 | 2021 | 34,051 | 20 | 1.43 | 0.1% | 0.4% |
+| US30 | 2024 | 40,321 | 25 | 1.20 | 0.4% | 0.5% |
+| US30 | 2026 | 49,446 | 32 | 0.98 | 1.4% | 1.4% |
+| XAUUSD | 2022 | 1,731 | 260 | 1.96 | 0.6% | 4.3% |
+| XAUUSD | 2024 | 2,389 | 390 | 1.42 | 1.6% | 5.0% |
+| XAUUSD | 2025 | 3,442 | 765 | 0.98 | 43.1% | 38.2% |
+| XAUUSD | 2026 | 4,588 | 690 | 0.74 | 41.6% | 12.7% |
+
+* **US30**: 全期間で超過率2%以下。固定値110 pointsは、価格が2.5万〜5.3万に動いても問題ない。
+* **JP225**: 価格の上昇より、**Broker側のスプレッド水準の変化が支配的**。中央値が2024年前半に約5円から10円へ倍増し、以後の超過率は10〜31%になる。2026年は価格上昇（6万超）で価格比換算より固定値が厳しくなる（0.80倍）。
+* **XAUUSD**: 中央値が2024年の約0.39ドルから2025年の約0.77ドルへ倍増し、固定値770 pointsは2025年以降で候補の約4割を拒否する。
+* **価格比の方式でも解決しない**: 価格比換算（over_ratio）でもJP225 2024年は56%、XAUUSD 2025年は38%が超過する。スプレッドが価格に比例して動かず、価格水準よりスプレッド水準の変化が大きいため。固定値のままで問題ないのは、US30の全期間と、スプレッドが安定していた期間（JP225〜2023年、XAUUSD〜2024年）に限られる。
+* 先の短期間実行（JP225 2021-04〜12、US30 2021-04〜12、XAUUSD 2023-07〜12）が低い超過率だったのは、スプレッドが安定した期間だったため。全期間へ外挿できない。
+
+**判断:** 閾値は変更しない。データの分布を見て閾値を調整すれば、DEC-034の「事前固定」の原則を崩し、初見資産のパラメータ探索になるため。代わりに、次を運用ルールとする。
+
+* 非FX資産の結果を報告するときは、必ず`SPREAD_TOO_WIDE`の割合を併記する。2024年以降のJP225と2025年以降のXAUUSDは、スプレッドフィルターの拒否が結果を左右する期間として扱い、他の期間と単純に比較しない。
+* 価格比で閾値を指定するEAパラメータや、期間ごとの閾値は、設計変更となるため導入しない（必要なら別のDECで判断する）。
+
+**限界:** 直近月（JP225 2026年2月以降、US30 2026年5月以降、XAUUSD 2026年8月）は、terminalのtick読み取りAPIが約1%しか返さない（DEC-033）ため標本が間引かれている。JP225の2020年前半はtickが疎（2020年4月は7,624件）で、統計として弱い。各時間の最初のtickはAPI経由の値で、Testerが評価する最初のtickと厳密には一致しない場合がある。OANDAの公式スプレッドとの照合は未実施。
+
+## 追加確認（続き）: US100・US500・US2000の全期間での閾値の妥当性（2026-09-26、読み取り専用、閾値は変更しない）
+
+上記と同じ`mt5/Tools/SpreadProfile.mq5`で、DEC-035で仕様適用したUS100・US500・US2000（`InpMaxSpreadPoints`=60/20/540）についても全期間（2020-2026）のスプレッド分布を集計した。
+
+| 銘柄 | 年 | 平均価格 | スプレッド中央値(points) | 固定値/価格比換算 | over_fixed | over_ratio |
+|---|---|---:|---:|---:|---:|---:|
+| US100 | 2020 | 11,076 | 17.6 | 23.9 | 0.1% | 11.5% |
+| US100 | 2023 | 14,181 | 17.0 | 18.6 | 0.0% | 0.7% |
+| US100 | 2026 | 27,273 | 24.6 | 9.7 | 0.4% | 0.5% |
+| US500 | 2020〜2026 | — | 4.0〜5.0 | 12.5〜26.5 | 0.0〜0.1% | 0.1〜6.6% |
+| US2000 | 2020 | 1,569 | 386.9 | 1515.7 | **13.5%** | **60.1%** |
+| US2000 | 2024 | 2,130 | 394.1 | 1117.0 | **8.3%** | **24.4%** |
+| US2000 | 2025 | 2,253 | 408.2 | 1056.0 | **8.6%** | **16.9%** |
+| US2000 | 2026 | 2,713 | 418.7 | 876.7 | **10.2%** | **8.2%** |
+
+* **US100・US500**: 固定値（60・20 points）は実勢スプレッドに対して十分緩く、`over_fixed`は全期間0.0〜0.4%と無視できる水準（`over_ratio`は2020年のみ11.5%・6.6%とやや高いが以後は低下）。
+* **US2000**: 固定値540に対し`over_fixed`が全期間で8〜14%、`over_ratio`は8〜60%に達し、JP225・XAUUSDと同様に**スプレッドフィルターの拒否が結果を左右する銘柄**であることが判明した。US2000は価格水準が他2銘柄より一桁低く（1,500〜2,700ドル程度）、絶対points表記のスプレッドの相対的な重みが構造的に大きくなりやすいことが背景と考えられる。
+
+**判断:** 上記の運用ルール（`SPREAD_TOO_WIDE`割合の併記、閾値の事後調整は行わない）をUS2000にも適用する。既存の6資産mfe_r検証結果（`TASKS.md` 2.1.4節「6資産への見直し」）では、この事実を踏まえた再解釈が必要（US2000の結果はスプレッド拒否の影響を強く受けている可能性がある）。
+
+**限界:** JP225等と同じく、直近月（US100 2026年3月以降、US500 2026年3月以降、US2000 2026年4月以降）はtick読み取りAPIの制約で標本が間引かれている。OANDA公式スプレッドとの照合は未実施。
+
+* Rollback: `git checkout -- mt5/Include/Risk/PositionSizer.mqh mt5/Tests/TestPositionSizer.mq5`でコードを戻し、テンプレートの`InpMaxSpreadPoints`は元の値（500000/200000/60000）へ戻す。
+
+---
+
+# DEC-035: 投入済みのUS100・US500・US2000のCustom Symbolへ仕様を設定し、InpMaxSpreadPointsはDEC-034の方式で事前固定する
+
+**状態:** 採用（2026-09-19）
+
+## 背景
+
+`bases\Custom\ticks\`に、tick投入済みで仕様適用の記録がない`US100_HIST`・`US500_HIST`・`US2000_HIST`（2020-04〜2026-09）があった。DEC-033のJP225・US30・XAUUSDと同じ状況の可能性が高く、確認して修正した。対象は投入済みのSymbolのみで、新しいtickの投入は行っていない。
+
+## 確認結果（適用前、読み取りのみ）
+
+* **仕様は3銘柄とも初期値のまま**（Strategy Tester内の診断`DiagnoseSymbolSpecEA`）: Digits 4、Point 0.0001、契約サイズ100000、Volume Min/Step/Max 1e-8/1e-8/1e-7、CalcMode 0（FOREX）、証拠金率1.0、利益通貨は銘柄名の切れ端（US100=`00_`、US500=`00_`、US2000=`000`）、tick価値0。
+* **現行EA（Genericテンプレートの現在値、2021-04-01〜12-31、`20260919-192241-cases`）は3銘柄とも取引0件**。候補のRISK_DECISIONは全件`SPREAD_TOO_WIDE`（US100 37件、US500 66件、US2000 25件。Pointが0.0001のためスプレッドが数万pointsになる）。`TICK_VALUE_UNAVAILABLE`・`RISK_STATE_UNAVAILABLE`は、最初の関門で拒否されたため未観測。
+* **tickの価格水準は、対応する株価指数の水準と矛盾しない**（2024-03: US100 18,317、US500 5,136、US2000 2,077。2022年10月の安値: US100 10,801、US500 3,564、US2000 1,659）。**投入元CSVの記録はリポジトリになく、由来は価格水準の照合のみ（未確認）**。
+
+## OANDA公式ページとの照合（2026-09-19、原文で確認）
+
+出典: [株価指数CFD取扱銘柄](https://www.oanda.jp/indices/lineup)、[最小取引単位のお知らせ（2021-05-26）](https://www.oanda.jp/info/787)。3銘柄ともOANDA証券の取扱銘柄。
+
+| 項目 | US100 | US500 | US2000 |
+|---|---|---|---|
+| 呼値（Tick Size） | 0.1 | 0.1 | 0.001 |
+| 通貨 | USD | USD | USD |
+| 証拠金率（MT5） | 10% | 10% | 10% |
+| 契約サイズ | 1（取引例: 29,701×0.1×157＝¥466,306が公式値と一致） | 1（7,669×1×157＝¥1,204,033が一致） | 1（2,862×1×157＝¥449,334が一致） |
+| 最小取引単位 | 0.1 | 1 | 1 |
+| 取引数量の刻み | 0.10（2021-05-31〜） | 1.00 | 1.00 |
+| 最大取引数量 | 200 | 1,000 | 200 |
+| 最大建玉数量（Custom Symbolへ未設定） | 1,000 | 2,500 | 3,000 |
+
+* **時期による仕様の違い（限界）**: US100の最小取引単位は2021-05-31より前は1.00だった（DEC-033のUS30と同じ扱い。動作確認は2021-06-01以降で行う）。US2000の最大取引数量は同日に500から200へ下がった。過去時点の他の仕様は公開情報で確認できず**未確認**（照合したのは2026-09-19時点の現行ページ）。
+* スプレッド、スワップは原ページに記載なし（**未確認**）。
+
+## 判断
+
+1. **仕様の設定**: `mt5/Tools/ApplyCfdSymbolSpec.mq5`へ3銘柄を追加し（`LoadSpec`のみの最小変更）、DEC-033の判断2（CalcModeはCFD）に従って設定した。刻みは、3銘柄ともお知らせ（US100は0.10、US500・US2000は1.00）から確定している。
+
+| 項目 | US100_HIST | US500_HIST | US2000_HIST |
+|---|---|---|---|
+| Digits / Point・Tick Size | 1 / 0.1 | 1 / 0.1 | 3 / 0.001 |
+| 契約サイズ | 1 | 1 | 1 |
+| Volume Min / Step / Max | 0.1 / 0.1 / 200 | 1 / 1 / 1000 | 1 / 1 / 200 |
+| 通貨（Base・Profit・Margin） | USD | USD | USD |
+| CalcMode / 証拠金率 | CFD / 10% | CFD / 10% | CFD / 10% |
+
+2. **InpMaxSpreadPointsはDEC-034の方式で事前に固定した**（結果を見て調整しない）。基準価格は、2025-01〜2026-08の全候補の`entry_price`中央値を有効数字2桁に丸めた値（JP225の48,098→48,000、US30の49,326→49,000、XAUUSDの3,359→3,400と同じ方式）。使ったのは価格だけで、スプレッド・成績は使っていない。
+
+| 銘柄 | 中央値（候補数） | 基準価格 | 0.0227%換算 | 決定値 |
+|---|---|---|---|---|
+| US100 | 25,012（131） | 25,000 | 56.7 | **60** |
+| US500 | 6,717（114） | 6,700 | 15.2 | **20** |
+| US2000 | 2,447（83） | 2,400 | 544.8 | **540** |
+
+   US500は、10 points単位への丸めで換算値15.2が20になる（実質0.0298%、約1.3倍）。事前規則の粗さによる歪みだが、規則どおりとした。専用テンプレート`mt5/test-config/StrategyTester-Generic-{US100,US500,US2000}-H1.ini`は、Genericテンプレートに`InpMaxSpreadPoints`を足しただけの構成（Leverage 1:25）。
+3. **適用手順はDEC-033の判断4に従った**: 適用前にtick・バー履歴（.hcc）・`symbols.custom.dat`をバックアップ（US100 2,344,818,980バイト、US500 685,816,837バイト、US2000 944,971,211バイト、元と一致）し、`InpRebuildFromMonth`を空で適用した。Digits変更（4→1／1／3）で.hccが空（15,144バイト）になったため、バックアップから戻した。`RebuildBarsFromTicks`は使っていない。
+
+## 検証
+
+* **tick**: 適用前後で3銘柄とも全79ファイルのSHA-256が一致（欠落なし）。バー履歴は復元後、全7ファイルがバックアップとSHA-256一致。
+* **仕様**: Tester内の診断で、Digits・Point・契約サイズ・Volume・CalcMode・通貨・証拠金率が上表どおり。tick価値がTester内で自動計算され（USDJPYから約15円）、`OrderCalcProfit`・`OrderCalcMargin`が成立。
+* **取引の成立**（動作確認のみ。成績の評価・採用判断には使わない。`20260919-201210-cases`）:
+
+| ケース | トレード数 | RISK_DECISION | 承認時のvolume | required_margin |
+|---|---:|---|---|---|
+| US100 2021-06-01〜12-31 | 14 | 承認14・`POSITION_LIMIT`14 | 0.3〜1.4 | 約5.4万〜24.2万円 |
+| US100 2021-04-01〜12-31 | 19 | 承認19・`POSITION_LIMIT`18 | 0.3〜1.4 | 同上 |
+| US500 2021-04-01〜12-31 | 34 | 承認34・`POSITION_LIMIT`32 | 1.0〜5.0 | 約4.5万〜25.0万円 |
+| US2000 2021-04-01〜12-31 | 17 | 承認17・`POSITION_LIMIT`8 | 1.0〜7.0 | 約2.4万〜18.0万円 |
+
+  `SPREAD_TOO_WIDE`・`TICK_VALUE_UNAVAILABLE`・`RISK_STATE_UNAVAILABLE`・`SIZE_BELOW_MIN`は0件（この期間のみ。DEC-034のとおり、スプレッド水準は期間で変わるため他の期間へ外挿しない）。
+* **候補の一致**: 仕様適用前後で、3銘柄の候補（US100 37・US500 66・US2000 25件）のtimestamp・entry_price・ATRが完全一致した（バー履歴が復元前と変わっていないことの確認）。
+* **4銘柄への無影響**: Final Holdout 4銘柄（181トレード）を適用後に再実行し、`summary.csv`（取引数・純損益・PF・勝率・期待値）と全335件のRISK_DECISIONが、適用前（`20260919-161758-cases`）と完全一致した（`20260919-201501-cases`）。EA本体（`mt5/Include`・`CoreEA.mq5`）は変更していない。MQL5コンパイル13ターゲットは0 errors/0 warnings（Script Testは、EA本体を変更していないため再実行していない）。
+
+## 限界・未確認
+
+* 初見資産のため、動作確認以外（パラメータ探索・採用判断・Final Holdoutの代替）の根拠にしない。
+* **投入tickの由来（投入元CSV）は、記録が失われており特定不可能（2026-09-26、Git履歴・ファイルシステムのタイムスタンプの両方で確認したが手がかりなし）。** 代わりに、月次平均価格（65か月分、2020-04〜2025-08）とYahoo Finance実指数終値の比較で間接検証した: US100 vs Nasdaq100（^NDX）比率0.9920±0.0337、US500 vs S&P500（^GSPC）比率0.9920±0.0267、US2000 vs Russell2000（^RUT）比率0.9942±0.0303。3銘柄すべて体系的なズレなく高い一致度で、投入tickが実際にそれぞれの指数に対応するCFD価格であることを間接的に強く裏付けた。投入元の記録（誰が・いつ・どのツールで投入したか）自体は依然不明。
+* 原ページとの照合は現行ページ（2026-09-19）のみ。過去時点の仕様、スプレッド、スワップは未確認。
+* `InpMaxSpreadPoints`は、DEC-034の限界と同様、期間によるスプレッド水準の変化により、期間ごとの拒否割合が変わりうる。**3銘柄の全期間のスプレッド分布を確認した（2026-09-26、DEC-034「追加確認（続き）」参照）。US100・US500は拒否率が無視できる水準だが、US2000は固定値540に対し`over_fixed`が全期間で8〜14%に達し、スプレッドフィルターの拒否が結果を左右する銘柄と判明した。**
+* **直近月のtick（DEC-033の約1%制約）について、Testerのtick数・全期間の候補一致を確認した（2026-09-26実施）。** CopyTicksRangeでは直近月（2026年8-9月）で実データがほとんど/全く読み取れない（US100 8月84,480件・9月0件等）が、この期間を含む短期間バックテスト（2026.08.01〜2026.09.21）は3銘柄とも「100%リアルティック」で完走した。CopyTicksRangeの制約はスクリプトからの外部読み取りに限定され、Strategy Tester内部エンジンには影響しないことを確認した（JP225・US30・XAUUSDと同じ結論）。
+
+## 影響
+
+* 変更: `mt5/Tools/ApplyCfdSymbolSpec.mq5`（`LoadSpec`に3銘柄）、`mt5/test-config/StrategyTester-Generic-{US100,US500,US2000}-H1.ini`（新規）。Custom Symbolの実体: `US100_HIST`・`US500_HIST`・`US2000_HIST`の仕様。
+* Rollback: バックアップ（`backup-before-us3-spec`）から`symbols.custom.dat`・.hcc・tickを戻す。コードは`git checkout -- mt5/Tools/ApplyCfdSymbolSpec.mq5`、テンプレート3件は削除。
+
+
+# DEC-036: ヒストリカルtickの取得・変換はProvider交換式のPythonパイプラインとし、MT5投入は既存Importerを再利用する
+
+**状態:** 採用（2026-09-21）。実Dukascopy・MT5実機での確認結果は下の「確認結果」を参照。
+
+## 背景
+
+長期バックテストのtickは、OANDAのWeb版ダウンロード（手動、DEC-023）に依存していた。別データソース（Dukascopy等）を、手作業なしに再現可能な手順で取得し、Strategy Testerで使える形にする必要があった。
+
+## 決定
+
+1. **処理本体は`python/tickdata/`（Python）に置き、Node.js（dukascopy-node）は1チャンク分を取得する薄いAdapter（`tools/tick-data/dukascopy-download.mjs`）に限る。** chunk分割・retry・resume・checksum・検証・変換を2言語で二重実装しない。
+2. **Providerは`TickProvider`（`download_chunk`・`iter_rows`）で交換可能にし、後段は共通tick（UTCエポックms＋bid/ask/volume）だけを扱う。** symbol・provider・期間は行ではなくmanifestで持つ。
+3. **MT5投入は既存`ImportOandaTicks.mq5`を再利用し（tick欠落の修正はDEC-037）、MT5標準のタブCSVへ変換して渡す。** Providerごとの別Importerは作らない。実Symbolは変更せず、既存`*_HIST`とは別名のCustom Symbolへ投入する。既存symbolへの追記・再投入は既定で拒否し、`-AllowExistingSymbol`で明示した場合のみ行う（完全にやり直す場合は`-ResetCustomSymbol`で削除して再作成）。
+4. **MT5サーバー時刻への変換規則（`server_time`）は必須の明示設定とする。** D1・H4の境界が変わるため、既定値は置かない。OANDA-Japan MT5は`ny_close`（NY現地時刻+7時間）であることを既存OANDA tickで確認した。
+5. **検証をconvertの前提にする。** 検証がFAILの、または検証後に変わったデータは変換しない。取込は`complete`/`complete_with_skips`/`incomplete`、品質確認はtick数0を成功にしない。
+6. **Tickstoryはパイプラインに組み込まない。** GUI自動操作を避け、Tickstoryが出力したCSVは`csvfile` Providerで取り込む方針とする（CSV形式は未確認）。
+
+## 確認結果（2026-09-21）
+
+* **Locally Tested**: Python単体・結合テスト60件（`python/tests/test_tickdata_*.py`）。既存のPython/Lambda/infraテスト194件（新規60件を含む）、既存MQL5 Script Test 12件（`run-mql5-tests.ps1`）は全て成功。
+* **実Dukascopy（USDJPY、2020-03-02〜03-06、5日、894,250 tick）**: 取得（dukascopy-node 1.50.0）→正規化→検証（PASS）→MT5形式変換（サーバー時刻`ny_close`）が成功。既存ImportOandaTicks.mq5で試験用Custom Symbolへ取込し、Strategy Testerで「100%リアルティック」を確認した。初回の取込では、MT5から取得できたtickが888,490件（5,760件・0.64%少ない）だった。原因はImporterの`CustomTicksAdd()`（DEC-037）で、修正後は894,250件が一致した。
+* **サーバー時刻**: `ny_close`がOANDA-Japan MT5の時刻に一致することを、既存OANDA tick（2017-03の週明けが米国DST前後とも月曜00:00台）で確認した。Dukascopy由来tickの最終tickが`2020.03.06 23:59:56`（OANDAの週末終了`23:59:59`と同型）になることとも整合する。
+* **mock（合成tick）**: 取込・件数照合・Strategy Testerまで、MT5実機で確認（tick数一致）。試験用Custom Symbol・Junction・プリセットは削除済み。
+* **既存OANDA取込のImporter**: DEC-037で修正した。修正後のImporterでの、OANDA形式CSVそのものの取込は未実施（元CSVが圧縮ファイルのまま。Dukascopy由来・mockのMT5形式CSVでは確認済み）。
+* **未実施**: Dukascopy全期間（2016-09〜2020-12）の取得・投入、Dukascopyのライセンス確認、Dukascopy由来tickでのIS/OOS再検証、Tickstory連携、CoreEAでの実行（ウォームアップに長い履歴が必要なため5日では不可）。
+## 影響
+
+* 追加: `python/tickdata/`、`python/tests/test_tickdata_*.py`、`tools/tick-data.ps1`、`tools/tick-data/`、`mt5/Tools/VerifyCustomSymbolTicks.mq5`、`docs/tick-data-pipeline.md`。既存のEAロジック、`run-strategy-tester.ps1`、OANDA tick運用（既存Custom Symbol）は変更していない。`ImportOandaTicks.mq5`はDEC-037で修正した。
+* Node.js依存（`dukascopy-node` 1.50.0、`tools/tick-data/package-lock.json`で固定）が加わる。使うのはDukascopy取得時のみ。
+* Rollback: 上記の追加ファイルを削除し、`.gitignore`の`tools/tick-data/node_modules/`を戻す。作成したCustom Symbolは別名のため既存の履歴に影響しない。
+
+# DEC-037: ImportOandaTicks.mq5はCustomTicksReplace()で投入する（CustomTicksAdd()はバッチ末尾128 tickを永続化しない）
+
+**状態:** 採用（2026-09-21）。修正後のImporterで、Dukascopyサンプル・複数ファイル・同一ms・再投入を実機確認済み。既存10銘柄の再投入は2026-09-22に完了。
+
+## 背景
+
+DEC-036のパイプラインで、取込後のtick数照合が0.64%（バッチごとに128件）不足した。既存`USDJPY_HIST`（DEC-023、OANDA由来）でも、2016-08-31の1日で66,878件中384件が欠けていた（同じImporterで投入したため）。
+
+## 調査結果（実機）
+
+* `CustomTicksAdd()`は、呼び出し直後は全件を返す（`CopyTicksRange`）が、端末終了・再起動後は各呼び出しの末尾128件が取得できない。256件以下の呼び出しは何も永続化されない。待機、`TerminalClose`、通常のウィンドウ終了では変わらない。
+* 時刻が複数の日にまたがる疎なtickでは欠けなかった。発生条件の全体は特定していない。
+* `CustomTicksReplace()`で各バッチの時刻範囲を置換すると、全件が永続化された（894,250件、時刻・bid・askの順序付きchecksumが元ファイルと一致）。
+
+## 決定
+
+1. **`InpUseReplace`（既定true）を追加し、各バッチを`CustomTicksReplace()`で投入する。** `false`で従来の`CustomTicksAdd()`に戻せる。入力形式・他のパラメータ・出力マーカーは変更しない。
+2. **同一msのtickの途中でバッチを分割しない**（ファイルをまたぐ場合は持ち越す）。置換範囲が隣のバッチのtickを消さないため。
+3. **入力が時刻順でなく範囲が重なる場合は、従来の`CustomTicksAdd()`へ切り替える**（`REPLACE_FALLBACK_ADD`を出力）。既に投入したtickを消さないため。
+4. **既存の`*_HIST`（OANDA由来の10銘柄）は、元のzipから修正済みImporterで再投入して補修する（ユーザー指示、2026-09-21）。** Custom Symbolの仕様・履歴は削除せず（`InpResetSymbol=false`）、範囲置換で欠けたtickだけを補う。事前にバックアップを取る。手順・結果は`docs/tick-data-pipeline.md`、道具は`tools/reimport-oanda-ticks.ps1`。
+
+## 影響
+
+* 変更: `mt5/Tools/ImportOandaTicks.mq5`・`.ex5`（再コンパイル）。追加: `mt5/Tools/CountCustomSymbolTicks.mq5`（読み取り専用）、`tools/reimport-oanda-ticks.ps1`、`python/tickdata/oanda_zip.py`。EA本体・Strategy Testerは無変更。既存10銘柄のtick・バーは再投入で更新した。
+* 同じデータの再投入は範囲置換のため重複せず、件数も変わらない（従来は重複・不一致）。別データの範囲は上書きされる。
+* **再投入の結果（2026-09-21〜22）**: 10銘柄（52億tick、全月ファイル）を再投入し、約3,359万tick（0.641%）を補った。欠落量は、バッチ数×128で予測どおり（20ファイル中19ファイルで1件も違わず一致、残り1件は30件多い）。Importerの受理数は全銘柄で元データの行数と一致（skip 0、パース失敗0）。全ファイルがMT5上の件数、または（直近月でCopyTicksRangeが過少になるため）Strategy Testerのtick数で、元データと完全一致した。JP225の1日分の（時刻・bid・ask）checksumも元CSVと一致し、10銘柄でStrategy Testerが100%リアルティックで完走した。バックアップ: `D:\Backup\mt5-custom-before-tickfix-20260921`（bases\Custom＝tick・バー約26GBと`symbols.custom.dat`）。
+* **バーは再生成される**（USDJPY 2016-09のH1バーが再投入前後で微小に変化）。
+* **`CopyTicksRange`は直近数か月（2025-12以降）で実データの一部しか返さない**（DEC-033と同じ現象）。データ自体は完全で、Testerのtick数で照合した。
+* **主要な検証への影響を確認した（2026-09-22、ユーザー指示、`TASKS.md` 3.1節参照）**: EA・パラメータ一式は無変更のまま、IS期間の一部（2017-09〜2019-12）・Walk Forward（2020-2024）・Final Holdout（2025-01〜2026-08）を再実行し、旧結果と比較した。IS期間は取引数がケース単位で完全一致し純利益差も+0.6%とごく小さかったが、Walk Forward（取引数520→521、純利益+7.8%）・Final Holdout（取引数181→182、純利益-28,991円→-18,349円、損失37%縮小）では無視できない幅の変化があった。原因は未検証の仮説だが、Entry/Exit確認ロジックが連続tick数（`InpTrendReversalConfirmationTicks`等）を使うため、復元tickが確認タイミング・約定価格を変えうることが考えられる。ただし、年次expectancyのトレンド形状・Final Holdoutでの符号反転・NO-GO判定という中核的な結論は維持された。詳細は`docs/production-readiness-report.md` 7.5節、`TASKS.md` 3.1節を参照。
+* **未確認**: バーの微小な変化・tick確認ロジックが個々のトレードへ与える影響の詳細な機序（仮説段階）、非FX資産・cross-asset確認（3資産・6資産）への影響（今回は再実行せず）、OANDA形式CSVを修正後のImporterで取り込む際の全月ファイル以外の条件、`CustomTicksAdd()`が欠落する条件の全容。
+* Rollback: コードは`git checkout -- mt5/Tools/ImportOandaTicks.mq5 mt5/Tools/ImportOandaTicks.ex5`（または`InpUseReplace=false`）。データはMT5停止中に、バックアップの`Custom\ticks`・`Custom\history`・`symbols.custom.dat`を`bases\`へ戻す。
+
+# DEC-038: Dukascopy取得は、休場が確定している時間帯（土曜終日・金曜夜間・日曜早朝）を既定でスキップする（既定true）
+
+**状態:** 採用（2026-09-23、ユーザー依頼の速度調査の結果。当初は土曜のみ・既定falseだったが、同日中に金曜・日曜の部分休場帯へ範囲を広げ、さらに既定をtrueへ変更した。経緯は本文参照）。稼働中の取得ジョブには影響させていない（コード変更のみで、稼働中プロセスの挙動は変えない）。
+
+## 背景
+
+AUDUSD（2020-01-01〜2026-08-31、2,435日）の取得に約50〜65時間を要する見積りとなり、短縮できないか調査した。稼働中ジョブに影響を与えないよう、追加のDukascopyリクエストを発生させない範囲（ライブラリのローカルソース調査、GitHub Issue確認、既に完了済みのローカルデータの集計）で調査した。
+
+## 調査結果
+
+* 稼働中ジョブの実測ペースは約97秒/日（849日で22時間53分）。
+* `batchSize=1`（現行実装）は、dukascopy-node作者自身が429対策として推奨する設定であり（[#124](https://github.com/Leo4815162342/dukascopy-node/issues/124)）、これより緩めることは推奨されない。
+* `batch_pause_ms`を3,000msから下げられるかは、稼働中ジョブと同じDukascopyサーバー・同じIPを使うため今回は検証しなかった（過去の実測では1,500msで429が再発した記録がある）。
+* **土曜（UTC終日）は市場休場でtickが常に0件であることを、稼働中ジョブの完了済み122件の土曜チャンク全件（例外0件）で確認した。**
+* **金曜の最終tick・日曜の最初のtickの時刻を、すでにダウンロード済みの生CSV（2020-01〜2022-05、金曜123件・日曜122件、追加のDukascopyリクエストなしでローカル読み取りのみ）から集計した。** 金曜は全件が21:59:59以前に終了し（分布: 20時台76件・21時台42件・例外的に早い休日2件）、日曜は全件が21:00:00以降に開始した（分布: 21時台75件・22時台46件・23時台1件、最早は21:00:00.066）。いずれも境界を超える例は0件だった。
+* 従来の実装は、これら空とわかっている時間帯も律儀に1時間ごとのリクエスト・待機（1時間あたり約3〜4秒）を行っていた。
+
+## 決定
+
+1. **`DukascopyProvider.download_chunk()`に、休場が確定している範囲を検出して要求を縮める分岐を追加する。**
+   * 土曜（1日チャンクかつ曜日が土曜）: リクエストを送らず空ファイルを直接書く。
+   * 金曜（1日チャンクかつ曜日が金曜）: 取得範囲の終端を22:00 UTCに縮める（22:00〜24:00は要求しない）。
+   * 日曜（1日チャンクかつ曜日が日曜）: 取得範囲の始端を21:00 UTCに縮める（00:00〜21:00は要求しない）。
+2. **既定は`true`（2026-09-23、ユーザー指示により変更。当初はfalseだった）。** 変更理由: 本プロジェクトの本番ブローカーはOANDA証券のみ（DEC-023）であり、OANDA証券がMT5で提供する銘柄は全てFXで、週末取引される銘柄（暗号資産等）は一切ないことを、公式サイト（取引全コース比較ページ・株価指数/商品CFD取引時間ページ）とデモ口座での`SymbolInfoSessionTrade`直接照会の両方で確認した（東京サーバーMT5は裁量プラン37／スタンダードプラン40通貨ペアのみ。デモで照会した40件と一致）。**このため、既定でスキップしても本プロジェクトの実用上は安全と判断した。**
+3. **一般のMT5ブローカーには週末も取引される銘柄（暗号資産CFD等）を提供するところがある。** 本Providerを他ブローカー・他銘柄（OANDA証券のFX以外）に転用する場合は、`provider_options.skip_weekend_closed_hours: false`を明示指定すること。既定trueのまま使うと、該当銘柄の週末tickが欠落する。
+4. **金曜・日曜の境界値は、2020-01〜2022-05（AUDUSDジョブの完了済み範囲）の実データから求めた値であり、未取得の2022-06〜2026-08について同じ境界が成り立つ保証はない**（未確認。ただし外国為替市場の週次休場慣行はNY時間17時で数十年変わっておらず、変動は考えにくいと判断した）。また、この境界値はFX（AUDUSD）固有であり、OANDA証券の商品CFD（北海ブレント原油は土曜5:59 JST終了・月曜7:01 JST再開など）を含む他の資産クラスにはそのまま適用できない（確認済み）。
+5. **既定変更時点で稼働中のAUDUSDジョブは停止していた**（ユーザーによる停止か異常終了かは未確認）ため、この変更が稼働中プロセスに影響することはなかった。再開・新規ジョブでは、既存プロファイル（`skip_weekend_closed_hours`を明示していないもの）も含めて次回実行から既定trueが適用される。
+
+## 影響
+
+* 変更: `python/tickdata/chunks.py`（`Chunk.is_friday_only`・`is_sunday_only`プロパティ追加）、`python/tickdata/providers/dukascopy.py`（`skip_weekend_closed_hours`オプション追加、既定true）。`tools/tick-data/dukascopy-download.mjs`（稼働中ジョブが都度呼び出すNode.jsスクリプト）は変更していない。
+* 期待短縮効果: 週168時間のうち、休場としてスキップ可能な時間は土曜24h＋金曜2h＋日曜21h＝47h（週の約28%）。2,435日規模のジョブでは理論上**約18時間**（65時間ベース）の短縮見込み。**未実測**。
+* **既定変更（2026-09-23）の範囲**: 既定trueのため、既存の`tools/tick-data/profiles/*.json`（`skip_weekend_closed_hours`を明示していないもの）も含め、次回実行分から自動的に有効になる。プロファイル側の追記は不要。
+* テスト: `python/tests/test_tickdata_core.py`に、既定（true）で土曜が空ファイル直書き・金曜終端22:00・日曜始端21:00に縮まること、`skip_weekend_closed_hours=false`明示時は週末も取引される銘柄向けに終日取得すること、平日は影響しないことを確認するテストを追加・更新した。
+* **`batch_pause_ms`の短縮は別途検証済み（DEC-039）。** `batchSize`引き上げ・チャンク並列実行は未検証のまま。
+* Rollback: `git checkout -- python/tickdata/chunks.py python/tickdata/providers/dukascopy.py python/tests/test_tickdata_core.py`。データへの影響はない（コード変更のみ）。既定を元のfalseへ戻す場合は`dukascopy.py`の`self.options.get("skip_weekend_closed_hours", True)`を`False`に戻す。
+
+# DEC-039: Dukascopy取得の`batch_pause_ms`既定値を3,000msから500msへ引き下げる
+
+**状態:** 500msとしては採用したが、その後DEC-040により既定値は0msへ更新済み。稼働中の取得ジョブがない（停止済みであることを確認済み）状態で、実際にDukascopyへリクエストを送る検証を行った。
+
+## 背景
+
+DEC-038の速度調査時点で、`batch_pause_ms`（1時間ごとの待機）の短縮余地は「稼働中ジョブと同じレート制限を共有するため検証しなかった」として保留していた。AUDUSDジョブが（ユーザーによる停止か異常終了かは未確認のまま）停止していることを確認したうえで、改めてユーザーから安全域の検証を依頼された。
+
+## 検証内容・結果
+
+* USDJPY・2020年3〜4月の実データで、1日分（24リクエスト）を`batch_pause_ms`=2000/1500/1000/500/0msの各値で個別に試したところ、**いずれも429なしで成功した**。特に1500msは、過去のセッションで「1日を通すと429が再発した」と記録されていたが、今回は問題なく成功した（原因は未特定。当時の同時実行や別要因の可能性がある）。
+* 実運用に近い持続負荷を確認するため、間隔ゼロで日をまたいで連続実行する試験も行った: `batch_pause_ms`=500msで15日連続（360リクエスト）、0msで20日連続（480リクエスト）。いずれも429・失敗0件だった。
+* 本検証で発生させたDukascopyへのリクエストは合計約960件（単発試験120件＋持続試験840件）。
+
+## 決定
+
+1. **`batch_pause_ms`の既定値を3,000msから500msへ引き下げる。** 変更箇所は`tools/tick-data/dukascopy-download.mjs`の内部既定値と、`tools/tick-data/profiles/*.json`（USDJPY・AUDUSD・NZDUSD・USDCADの本編・sample、計9ファイル）の明示値の両方。全プロファイルが`batch_pause_ms`を明示指定していたため、コード側の既定値だけを変えても既存プロファイルには反映されない。
+2. **0msではなく500msを採用する。** 0msの方が持続試験のリクエスト数は多かった（480件 vs 360件）が、無料の公開サービスへの配慮と、サーバー負荷変動・時間帯による差異への余裕を残すため、明示的な間隔が残る値を選んだ。
+3. **検証の限界を明記する。** 実施した持続試験は最大でも連続480リクエスト（20日相当）で、実際のジョブが行う数千日規模・数十時間にわたる連続実行と同等かは未検証。検証はUSDJPY・特定の日時のみで、他銘柄・他の時間帯・サーバー高負荷時の挙動は未確認。429が発生した場合は既存の`retry_pause_ms`（既定30000、倍々）による再試行で吸収される設計だが、保証ではない。
+4. **`batchSize`の引き上げ・チャンクの並列実行は今回検証していない。** 単一リクエストの間隔ではなく同時接続数に関わる別のリスクがあり得るため、別途の検証が必要。
+
+## 影響
+
+* 変更: `tools/tick-data/dukascopy-download.mjs`（内部既定値）、`tools/tick-data/profiles/dukascopy-{USDJPY,AUDUSD,NZDUSD,USDCAD}.json`・同`-sample.json`（明示値、計9ファイル）。
+* 期待効果: 1時間ごとの待機が3,000ms→500msになるため、1日24時間の待機時間だけで23×2.5秒＝約57.5秒/日の短縮（DEC-038の休場スキップとは独立に効く）。実運用での複合効果は未実測。
+* 稼働中のAUDUSDジョブは変更時点で停止していたため、この変更が稼働中プロセスに影響することはなかった。再開時は新しい既定値（プロファイルの明示値500ms）が次回実行分から適用される。
+* Rollback: `git checkout -- tools/tick-data/dukascopy-download.mjs tools/tick-data/profiles/`。データへの影響はない（設定変更のみ）。
+
+# DEC-040: Dukascopy取得の`batch_pause_ms`既定値を500msから0msへ引き下げる
+
+**状態:** 採用（2026-09-23、ユーザー依頼の追加検証・ユーザーの明示的な採用指示による）。稼働中の取得ジョブがない状態を確認したうえで、実際にDukascopyへリクエストを送る追加検証を行った。
+
+## 背景
+
+DEC-039で500msを採用した際、0msも429なしで成功していたが、「無料公開サービスへの配慮」を理由にあえて間隔を残していた。ユーザーから、0〜500msの中間値の安全性を追加で検証するよう依頼された。
+
+## 検証内容・結果
+
+* USDJPY・2020年5〜6月の実データ（DEC-039とは重複しない日付）で、1日分（24リクエスト）を`batch_pause_ms`=100/200/300/400msの各値で個別に試したところ、いずれも429なしで成功した。
+* 持続負荷試験: 100msで15日連続（360リクエスト、55.4秒）、200msで15日連続（360リクエスト、89.8秒）、いずれも429・失敗0件。
+* 0msについても追加で15日連続（360リクエスト、16.9秒）の持続試験を行い、429・失敗0件。DEC-039分と合わせ、0msの累計検証は35日分・840リクエストとなった。
+* 本検証で追加発生させたDukascopyへのリクエストは合計816件（単発試験96件＋持続試験720件）。DEC-039分と合わせ、累計約1,780件のリクエストで429・失敗は1件も発生していない。
+
+## リスク評価の訂正
+
+検証過程で「極端な短縮（0ms等）はDukascopy側のIPブロックを招くリスクがある」との懸念を提示したが、公開情報で改めて確認したところ、この懸念は具体的な根拠を伴わない推測だった。dukascopy-node公式リポジトリのissueを調査した結果、次のことが分かった。
+
+* メンテナー自身が「DukascopyはIPによってURLをブロックしたり、レート制限したりすることがある」とコメントした事例（issue #191、https://github.com/Leo4815162342/dukascopy-node/issues/191 ）はあるが、これは特定の国・ISP起因の恒常的な接続不能の報告であり、リクエスト頻度が引き金になった事例ではない（報告者はVPN使用で解決）。
+* 別の接続障害報告（issue #180、https://github.com/Leo4815162342/dukascopy-node/issues/180 ）でも当初レート制限が疑われたが、最終的には報告者側ISPのブロックが原因と判明した。
+* 公式ドキュメント（dukascopy-node.app/errors-and-empty-data）に、IPブロックやレート制限の閾値・ポリシーの具体的な記載はない。
+* 結論として、「短時間の連続大量リクエストがIPブロックを引き起こす」という具体的な事例や閾値は公開情報から確認できなかった。Dukascopy側に何らかのレート制限機構（429・503）が存在すること自体は確かだが、内部仕様は非公開であり、不確実性そのものが残存リスクである。
+
+## 決定
+
+1. **`batch_pause_ms`の既定値を500msから0msへ引き下げる。** 変更箇所は`tools/tick-data/dukascopy-download.mjs`の内部既定値と、`tools/tick-data/profiles/*.json`の明示値の両方（DEC-039と同様、全プロファイルが明示指定のため、コード側の既定値だけでは反映されない）。
+2. **0msを採用する。** DEC-039は「無料公開サービスへの配慮」を理由に、429が出ないと分かっていた0msをあえて避け、間隔の残る値（500ms）を選んでいた。今回、その判断を補強していた「極端な短縮はIPブロックを招く」という懸念が具体的根拠を欠くと判明したこと、および0〜500msの中間値を含めても429・失敗が一貫して0件だったことを踏まえ、**ユーザーが0msを既定値として採用するよう明示的に指示した**。技術的な安全性の実測結果自体はDEC-039時点から変わっていない。
+3. **検証の限界は引き続き残る。** 検証規模は最大840リクエスト（35日相当、0ms）で、実際のジョブ（数千日規模）とは桁が異なる。サーバー高負荷時間帯、他銘柄との同時実行、`batchSize`引き上げとの組み合わせ、Dukascopy側のレート制限の内部仕様（閾値・エスカレーション条件）は未検証・非公開のまま。「無料公開サービスへの配慮」という定性的な安全マージンを手放す判断であることを明記する。
+
+## 影響
+
+* 変更: `tools/tick-data/dukascopy-download.mjs`（内部既定値）、`tools/tick-data/profiles/dukascopy-{USDJPY,AUDUSD,NZDUSD,USDCAD}.json`・同`-sample.json`（明示値、計9ファイル）。
+* 期待効果: 1時間ごとの待機が500ms→0msになるため、1日24時間の待機時間だけで23×0.5秒＝約11.5秒/日のさらなる短縮。DEC-038以前（3,000ms）比では23×3.0秒＝約69秒/日相当の短縮になる。
+* 稼働中のジョブは変更時点で存在しないため、この変更が稼働中プロセスに影響することはなかった。
+* Rollback: `git checkout -- tools/tick-data/dukascopy-download.mjs tools/tick-data/profiles/`。データへの影響はない（設定変更のみ）。
+
+# DEC-041: Release Gateへベンチマーク受入基準（MSCI ACWI比、税引き後CAGRとSharpe比）を追加する
+
+**状態:** 採用（2026-09-23、ユーザー指示）。
+
+## 背景
+
+EAの運用資金は、NISA非課税枠（1,800万円）を超えた資産を想定している。EAを使わない場合、この資金は課税口座でインデックス投資へ回すことになるため、EAはその代替案を税引き後・リスク調整後で上回らない限り使う意義がない。既存の必須ゲートは「事前固定した受入基準を満たす」とだけ定めており、何と比べてどれだけ上回ればよいかは未定義だった。
+
+## 決定
+
+1. **ベンチマークはMSCI ACWI（全世界株式、配当込み、円換算）とする。** ユーザーが選択した（候補: 全世界株式・S&P500・TOPIX）。
+2. **合格条件は、税引き後CAGRとSharpe比の両方がベンチマークを上回ることとする。** ユーザーが選択した（候補: 両方・税引き後リターンのみ・Sharpe比のみ）。Walk Forward（全Fold合算）とFinal Holdoutのそれぞれで満たす必要がある。
+3. **税は非対称に扱う。** OANDA証券は国内業者であり、EAの損益は申告分離課税20.315%が暦年ごとに課税される（損失は3年間繰越可能）。一方、ベンチマークは売却まで課税が繰り延べられるため、期間終了時に一括課税する。税率は同じでも、課税時期の違いによって複利の面でEAが不利になる点を、比較に反映する。
+4. **機械的に強制する。** `contracts/production-release-evidence.schema.json`へ`benchmark_comparison_report`（レポートへの相対path）と`benchmark_criteria_met`（`const: true`）を必須項目として追加し、`tools/release-gate.ps1 -Mode Production`で検証する。
+
+詳細な計算方法は`docs/release-gate.md`「ベンチマーク受入基準」を正本とする。
+
+## 影響
+
+* production証跡の必須項目が2つ増える。schema_versionは据え置いた（production証跡はまだ一度も作成されておらず、互換性を保つべき既存証跡が存在しないため）。
+* Developmentモードの挙動は変わらない。
+* 比較レポートの計算処理は`python/analysis/benchmark_comparison.py`として実装した（2026-09-23、出力契約は`contracts/benchmark-comparison-report.schema.json`）。ベンチマークの月末値はネットワークから自動取得せず、利用者が用意したCSVを入力とする（データ提供元のライセンス条件に依存し、取得元とデータを固定して再現性を保つため）。既存のWalk Forward・Final Holdout結果での合否は、ベンチマークデータ未取得のため未判定。
+* 実装時に次の計算上の仮定を固定した。(1) 月・暦年はAsia/Tokyoで区切る（課税年度と円建て月末値に合わせる）。(2) 複数ケース（銘柄×年）の取引は、ケースごとの口座通貨建て損益をそのまま1口座（`--initial-balance`）へ合算する（1口座で複数銘柄を運用する実際の配置に近いが、ケース間で`InpMaxOpenRiskPercent`等の口座全体の制約が効かない近似である）。(3) EAの税は年末に資産から差し引き、翌年以降の収益率はその資産へ掛ける（EAのLotは有効証拠金に比例するため）。(4) 期間末の途中年も、その時点までの利益へ課税する。繰越控除しきれなかった損失は価値ゼロとして扱う（ベンチマーク側も期間末の損失に価値を認めない）。(5) Sharpe比が算出不能な場合は「上回った」と判断できないため不合格とする。
+* Rollback: `git checkout -- docs/release-gate.md docs/operations.md docs/production-readiness-checklist.md contracts/production-release-evidence.schema.json tools/release-gate.ps1`、および本DECと`TASKS.md`の追加項目を削除する。
+
+# DEC-042: Dukascopy tick取得のライセンス上のリスクを認識の上で継続する
+
+**状態:** 採用（2026-09-26、ユーザーの明示的な判断）。
+
+## 背景
+
+TASKS.md 3.1節「データ利用条件とライセンスを確認する」の一環で、Dukascopy Bank SAの公式サイト（`https://www.dukascopy.com/swiss/english/legal-pages/terms-of-use/`）のTerms of Use（TCU）を確認した結果、既に投入済みのDukascopy由来tick（EURUSD検証サンプル、AUDUSD/USDCAD/NZDUSD/GBPUSD/AUDJPY/CADJPYの全期間、`docs/tick-data-pipeline.md`・DEC-036〜040）の取得・保存方法が、TCUの複数の条項に文言上抵触する可能性が判明した。
+
+## 確認したTCUの抵触点
+
+1. **自動化ツールでの取得の禁止**: 「You shall not use or attempt to use any 'scraper,' 'robot,' 'bot,' 'spider,' 'data mining,' 'computer code,' or any other automate device, program, tool, algorithm, process or methodology to access, acquire, copy, or monitor any portion of the WEBSITE ... without the prior express written consent of DUKASCOPY.」——`tools/tick-data/dukascopy-download.mjs`（`dukascopy-node`経由）による自動取得は、この条項に該当する可能性が高い。
+2. **非商用利用限定**: 「you agree to use the WEBSITE solely for your own non-commercial use and benefit」「Such download is licensed to you by DUKASCOPY ONLY for your own personal, non-commercial use」——本プロジェクトは将来的な実取引（商用）を目的とするため、この制約に抵触する可能性がある。
+3. **データベース構築の禁止**: 「The WEBSITE and the information contained therein may not be used to construct a database of any kind. Nor may the WEBSITE be stored (in its entirety or in any part) in databases」——`tick/pipeline/`への永続的な保存、MT5 Custom Symbolへの投入は、この条項が禁じる「データベース構築」に該当する可能性が高い。
+
+## 留保（断定していない点）
+
+* これは`dukascopy.com`という一般公開ウェブサイトに対するTCUであり、実際に`dukascopy-node`がアクセスする配信エンドポイント（historydata系サブドメイン等）がこのTCUの適用範囲に技術的に含まれるかは、公式文書のみからは確定できない（**未確認**）。
+* 同種のツール（`dukascopy-node`等）は広く使われている実績があるが、これはDukascopyが明示的に許可していることを意味しない。
+* Dukascopyへの直接の問い合わせ・許諾確認は行っていない。
+
+## 決定
+
+上記のリスクを認識した上で、ユーザーの明示的な判断により、既存のDukascopy由来tickの利用（分析・検証目的）を継続する。追加のDukascopy取得を行う場合も、本DECに記録したリスクが解消されたわけではないことを前提とする。
+
+## 影響
+
+* 既存のDukascopy由来tick（EURUSD検証サンプル、AUDUSD/USDCAD/NZDUSD/GBPUSD/AUDJPY/CADJPYの全期間データ）はそのまま保持し、削除・巻き戻しは行わない。
+* 将来、本プロジェクトが実際に商用・本番運用へ進む場合（Production Release Gate通過後の実口座運用等）は、Dukascopy由来tickを使った検証結果の位置づけ（あくまで参考・探索目的であり、production判定の直接根拠にはしていないこと、`TASKS.md`各エントリに明記済み）を再確認し、必要であれば正規のライセンス確認・許諾取得を検討すべきである。
+* Rollback: 本DEC自体は事実の記録であり、取り消すべき変更（コード・データ）はない。方針を変更する場合は本DECの上書きで対応する。
+
+# DEC-043: AWS/EA運用基盤の改善（LLM deadline、Secretキャッシュ、通知必須化、EA Heartbeat）
+
+**状態:** 採用（2026-09-26）。Implemented / Unit Tested / Synthesized。Deployed以降は未検証。
+
+## 背景
+
+「AWS・ML・LLMは補助、MT5側Risk Managerが最終権限」の設計を維持したまま、次の運用上の弱点が残っていた。
+
+1. LLM timeout 3秒はurllibの操作単位timeoutで合計時間を保証せず、前処理で時間を消費した後もLLMを開始していた。EA timeout（4.5秒）後に作られたALLOWが無駄になり、Lambda timeout（5秒）への接近で監視上の区別も難しかった。
+2. リクエストごとにSSM SecureStringを取得しており、レイテンシーとSSM throttlingの影響を受けやすかった。
+3. `alarm_email` 未指定でもAlarmとSNS Topicは作成され、通知先がない状態を検出できなかった。
+4. 独立したEA Heartbeatがなく、無候補時間帯にEA停止・ハングを検知できなかった。
+
+## 決定
+
+* **LLM deadline**: Handler開始から `DECISION_DEADLINE_SECONDS`（4.0秒）以内に応答する。LLM開始時点の残り時間（Lambda残り時間とも比較）が `LLM_TIMEOUT_SECONDS + LLM_DEADLINE_RESERVE_SECONDS`（3.0 + 0.5秒）未満ならLLMを呼ばず `VETO / LLM_INFERENCE_ERROR` とする。providerは合計経過時間も検査する。新しいreason codeは追加せず、API契約とEA側パーサーを変更しない。LLM timeout 3.0秒は維持する（延長にはEA timeout等の同時変更が必要で、実latency分布が未計測のため）。
+* **タイムアウト順序の検証**: LLM + 予備 ≤ deadline < EA 4.5秒 < API Gateway 5秒 ≤ Lambda 5秒を `infra/config.py` の `validate_timeout_budget` でsynth時に検証する。
+* **Secretキャッシュ**: Lambda実行環境内の単純なTTLキャッシュ（既定300秒、0で無効、上限3600秒）とする。失敗・不正値はキャッシュしない。外部キャッシュ（Parameters and Secrets Lambda Extension、ElastiCache等）は、依存と構成を増やすため採用しない。ローテーションは新key ID追加で行い、同一Parameter上書き時の反映遅延（最大TTL）を運用手順に明記する。
+* **通知必須化**: staging/productionは `alarm_email` 未指定・形式不正でsynthを失敗させる。devは柔軟性のため警告に留める。
+* **EA Heartbeat**: 取引判断・Telemetryと別のRoute・Lambda・契約とし、EAは`OnTimer`から送信する。認証・nonceは既存方式を再利用する。停止検知はスケジュール実行Lambdaを置かず、EMF受信件数の欠損をBREACHINGとするCloudWatch Alarmで行う（常時稼働リソース・追加の定期実行費用を避けるため）。EA別dimensionはCDKで明示したEA IDに限定する。devのHeartbeat欠損Alarmは既定無効（EA非稼働時の誤報回避）、staging/productionは必須とする。
+* Heartbeat・Telemetryの失敗は取引判断、Risk Manager、Kill Switch、SL/TP、既存ポジション管理に一切反映しない。
+
+## 影響
+
+* 新規AWSリソース: Heartbeat Lambda、ロググループ、HTTP API Route/Integration、Alarm 2個（常設）＋Heartbeat欠損Alarm（EA数分、staging/production）。NAT、VPC、RDS、EC2は追加しない。
+* EA: 入力 `InpHeartbeatEnabled=false`（既定）、`InpHeartbeatApiUrl`、`InpHeartbeatIntervalSeconds=60`、`InpHeartbeatTimeoutMs=1500` を追加。既定では挙動は変わらない。有効時はWebRequestが最大timeout分EAスレッドを占有する。
+* 未検証: AWS deploy、実通信、Alarm発報・SNS到達、実LLM latency、SSM取得回数削減の実測、Demo・MQL5 VPS上のHeartbeat継続。
+* Rollback: 本変更のコミットをrevertし、deploy済みの場合は直前のcommitで `cdk diff` を確認して再deployする。EAは `InpHeartbeatEnabled=false` で即時無効化できる。

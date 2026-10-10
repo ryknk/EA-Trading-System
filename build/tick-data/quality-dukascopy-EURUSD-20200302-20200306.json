@@ -1,0 +1,9 @@
+[
+  {
+    "case_name": "tick-quality",
+    "to_date": "2020.03.06",
+    "from_date": "2020.03.04",
+    "symbol": "EURUSD_DUKA_TEST",
+    "template": "mt5\\test-config\\StrategyTester-TickQuality-M1.ini"
+  }
+]

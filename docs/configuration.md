@@ -151,7 +151,7 @@ Long/Short対称に実装されている（`CEarlyAdverseExitRules`、`mt5/Inclu
 | `InpEnableEntryTimingAnalysis` | false | Entry Timing比較分析（分析専用、実注文なし）を有効化する（2026-08-22追加）。プルバックSetupについて即時Entry・1本待ち・2本待ち・Trigger待ちの4方式をShadow Tradeとして並行シミュレートし監査ログへ記録する。falseの間はIndicatorハンドルすら作成せずコスト0で、既存の売買判断・発注には一切影響しない。詳細は`docs/backtesting.md`「Entry Timing比較分析」を参照 |
 | `InpEntryTimingMaxWaitBars` | 6 | Trigger待ち(WAIT_TRIGGER)方式がTriggerの成立を探す最大バー数。この本数を超えてもTriggerが成立しない場合はWAIT_TRIGGERのShadow Tradeを生成しない（`InpEnableEntryTimingAnalysis=true`時は1以上が必須） |
 | `InpEntryTimingMaxHoldingBars` | 20 | Shadow Trade（IMMEDIATE/WAIT_1_BAR/WAIT_2_BARS/WAIT_TRIGGERいずれも）の最大追跡バー数。SL/TP未到達のままこの本数へ達すると`EXPIRED`としてその時点の価格で打ち切る（`InpEnableEntryTimingAnalysis=true`時は1以上が必須） |
-| `InpEnableTrendReversalExit` | false | トレンド継続反転Exit（Trend Reversal Exit）の有効化（2026-09-12追加）。OOS分析で確認された「含み益ピーク→反転→初期SL到達」の損失パターンを、初期SLへ到達する前の早期決済で抑制する。`InpEnableTradeMutations=false`では発動しない。既定値はOFF（安全側）。詳細は本節末尾「トレンド継続反転Exit」を参照 |
+| `InpEnableTrendReversalExit` | false | トレンド継続反転Exit（Trend Reversal Exit）の有効化（2026-09-12追加）。OOS分析で確認された「含み益ピーク→反転→初期SL到達」の損失パターンを、初期SLへ到達する前の早期決済で抑制する。`InpEnableTradeMutations=false`では発動しない。既定値はOFF（安全側）。2026-09-13のEarlyAdverseExitとの併用検証では集計値上最良の結果だったが、Fold単位の改善区分数が単独設定より少なく頑健性が低い上、現行既定TriggerR（0.75）での再検証も未実施のため、Fold1-5への過剰適合回避を優先し既定`false`のまま据え置いた（判断理由の詳細は`docs/backtesting.md`「初期逆行Exit比較分析」の「TrendReversalExitを不採用のまま据え置いた理由」を参照）。詳細は本節末尾「トレンド継続反転Exit」を参照 |
 | `InpTrendReversalActivationR` | 1.0 | 反転監視を開始する最低到達ライン。含み益ピークが「建値〜当初SL距離（初期リスク）」のこの倍数（R）以上に達するまでは監視自体を行わない。`InpEnableTrendReversalExit=true`時は0より大きい値が必須 |
 | `InpTrendReversalRetraceR` | 0.5 | 反転検知の閾値。含み益ピークからの逆行が初期リスクのこの倍数（R）以上になったら「反転」として検知する。`InpEnableTrendReversalExit=true`時は0より大きい値が必須 |
 | `InpTrendReversalConfirmationTicks` | 5 | 反転検知が何Tick連続で継続したら決済するか（一時的なTickノイズによる誤Exitを防ぐ継続確認）。Peak方向へ戻れば0へリセットされる。`InpEnableTrendReversalExit=true`時は1以上が必須 |
@@ -245,8 +245,19 @@ Strategy Testerだけで `InpTesterDecisionMode` を使用できる。0はフェ
 
 Telemetry失敗は取引判断や既存ポジション管理へ影響しない。ローカルJSONLを先に保存し、AWS欠損時の正本とする。
 
+## Heartbeat設定（2026-09-26追加）
+
+| 設定 | 初期値 | 意味 |
+|---|---:|---|
+| `InpHeartbeatEnabled` | false | EA稼働監視Heartbeatの送信 |
+| `InpHeartbeatApiUrl` | 空 | `/v1/heartbeats`で終わるHTTPS URL（CloudFormation出力 `HeartbeatApiUrl`） |
+| `InpHeartbeatIntervalSeconds` | 60 | 送信間隔（30〜900秒）。`OnTimer`で送信する |
+| `InpHeartbeatTimeoutMs` | 1500 | 送信timeout（100〜5000 ms、かつ間隔の1/10以下） |
+
+key IDと共有鍵ファイルは `InpDecisionApiKeyId`、`InpDecisionApiSecretFile` を共用する。Heartbeatの初期化失敗・送信失敗はログ出力だけで、取引判断、Risk Manager、Kill Switch、既存ポジション管理へ影響しない。Strategy TesterではTimerを設定せず送信しない。Heartbeatは稼働監視、Telemetryは取引・判断イベントの監査であり、互いを代替しない。
+
 **2026-09-07変更: 監査JSONLの保存先を`FILE_COMMON`へ変更した。** 従来はサンドボックス化された`<data folder>\MQL5\Files\<InpAuditLogDirectory>`（Strategy Tester実行時はTester Agent固有のサンドボックス配下）に保存していたが、VM実行でMT5終了後にTester Agentのサンドボックスがcleanupされると、HTM reportは回収できるのに監査JSONLだけ消失する問題があった。`FILE_COMMON`（`Terminal\Common\Files\<InpAuditLogDirectory>`、同一Windowsユーザーの全MT5ターミナルで共有）はTester Agentのサンドボックスの外にあるため影響を受けない。`tools/run-strategy-tester.ps1`はStrategy Tester実行のたびにReport名と同一の値を`InpAuditRunId`へ設定し、`audit-<ReportName>.jsonl`という実行単位で一意なファイル名にする（Common領域が複数ターミナル・複数実行で共有されるため、実行間・ケース間のログ混入を防ぐ目的）。詳細は`docs/backtesting.md`とDECISIONS.md DEC-030を参照。
 
 ## AWS CDK context
 
-`environment`、`ml_model_key`、`ml_model_sha256`、`llm_provider`、`llm_model`、`llm_shadow_mode`、`alarm_email`、`enable_dashboard`、`metrics_enabled`、`log_level` をdeploy時に指定できる。秘密値はcontextへ渡さない。`llm_shadow_mode` は既定でtrueで、有効なLLM VETOを記録するが最終判定へ適用しない。LLM timeout・不正出力・provider errorはShadow ModeでもVETOである。productionではモデルobjectとchecksum、固定LLM model、prompt version、SNS購読、予算通知を証跡へ記録する。
+`environment`、`ml_model_key`、`ml_model_sha256`、`llm_provider`、`llm_model`、`llm_shadow_mode`、`alarm_email`、`enable_dashboard`、`metrics_enabled`、`log_level`、`secret_cache_ttl_seconds`（既定300、0〜3600、0で無効）、`heartbeat_alarm_enabled`（dev既定false、staging/productionは常にtrue）、`heartbeat_stale_minutes`（既定5、2〜60）、`heartbeat_ea_ids`（既定`trend-ea-v1`、カンマ区切り最大10件）をdeploy時に指定できる。staging/productionでは `alarm_email` が必須で、未指定ならsynthが失敗する。LLM timeout（3.0秒）、Decision deadline（4.0秒）、LLM後予備（0.5秒）、API Gateway integration timeout（5秒）は `infra/config.py` の環境設定で管理し、synth時に順序を検証する。秘密値はcontextへ渡さない。`llm_shadow_mode` は既定でtrueで、有効なLLM VETOを記録するが最終判定へ適用しない。LLM timeout・不正出力・provider errorはShadow ModeでもVETOである。productionではモデルobjectとchecksum、固定LLM model、prompt version、SNS購読、予算通知を証跡へ記録する。

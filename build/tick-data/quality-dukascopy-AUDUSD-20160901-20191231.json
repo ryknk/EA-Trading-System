@@ -1,0 +1,9 @@
+[
+  {
+    "template": "mt5\\test-config\\StrategyTester-TickQuality-M1.ini",
+    "symbol": "AUDUSD_HIST",
+    "to_date": "2017.01.05",
+    "case_name": "tick-quality",
+    "from_date": "2017.01.01"
+  }
+]
