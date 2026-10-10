@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from datetime import date
@@ -339,7 +340,10 @@ class ConvertTests(PipelineCase):
         config, store, provider, manifest, chunks = self.validated()
         first = run_convert(store, manifest, chunks, config.server_time_rule())
         marker = store.mt5_dir / first["files"][0]["name"]
-        before = marker.stat().st_mtime_ns
+        # Windowsのファイル時刻はシステムクロックの刻み（約15.6ms）で更新されるため、同じ刻み内で
+        # 再生成すると更新時刻が変わらない。既知の過去時刻へ戻し、再生成の有無を時計の粒度に依存せず判定する。
+        before = marker.stat().st_mtime_ns - 60 * 1_000_000_000
+        os.utime(marker, ns=(before, before))
         second = run_convert(store, manifest, chunks, config.server_time_rule())
         self.assertEqual(marker.stat().st_mtime_ns, before)
         self.assertEqual(first["converted_at"], second["converted_at"])

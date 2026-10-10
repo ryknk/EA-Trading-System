@@ -99,6 +99,10 @@ try {
     }
     Write-Host "PASS JSON contracts"
 
+    # CaseFile（既存全件の後方互換を含む）と検証対象識別情報の取得処理。MT5端末は起動しない。
+    & ".\tools\test-validation-manifest.ps1"
+    Write-Host "PASS validation manifest"
+
     if ($Mode -eq "Production") { Assert-ProductionEvidence $EvidenceFile }
     if ($Mode -eq "Production") { Write-Host "PASS production evidence" }
 

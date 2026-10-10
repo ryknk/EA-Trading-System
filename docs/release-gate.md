@@ -70,6 +70,22 @@ Demo口座と小額実口座は期間が短いため、この基準の合否に�
 
 比較結果は `python.analysis.benchmark_comparison` で作成し（使い方は `docs/backtesting.md`「ベンチマーク比較」節）、出力の `benchmark-comparison.json` を `benchmark_comparison_report` として本番証跡へ添付し、合格条件をすべて満たした場合だけ `benchmark_criteria_met` を `true` とする。`true` でない証跡は `release-gate.ps1 -Mode Production` が拒否する。レポートには、ベンチマークのデータ源と取得日、控除した信託報酬、各期間の税引き前・税引き後のCAGRとSharpe比、年次損益と繰越控除の計算過程を記録する。
 
+## 検証結果・合否基準・対象commitの関連づけ（2026-10-10追加）
+
+Strategy Tester系の検証結果は、`tools/run-strategy-tester.ps1 -CaseFile` が出力する `manifest.json`（schema 1.1）で次を相互に関連づける（`docs/backtesting.md`「検証メタデータ」、`docs/product-separation.md`）。
+
+* 検証対象: 製品EAソースのcommit・未コミット変更の有無・ソースハッシュ、EAバージョン、実行したex5のSHA-256、MT5端末バージョン
+* 検証条件: CaseFile・Template・実効tester.iniのSHA-256、データセットmanifestのSHA-256（指定時）
+* 合否基準: CaseFileの `acceptance_criteria` で指定した基準ファイルのパスとSHA-256（実行前に実在を確認する）
+* 検証レイヤーと合否区分: `validation_layer` と、そこから導出する `gate_category`（performance / safety）
+
+運用ルール:
+
+* 合否基準ファイルは、評価対象の結果を得る前にコミットする。結果を見た後に変更した場合は、変更後の基準でその期間を合否判定に使わない（ベンチマーク受入基準と同じ扱い）。
+* `provenance.product.dirty=true` の結果、`expert_ex5_older_than_source=true` の結果は本番証跡に使わない。
+* 性能（performance）と安全機能（safety）の合否は別々に判定する。Profit Factorだけで合否を決めない。
+* 数値基準そのものは未決定である（本書のベンチマーク受入基準を除く）。本番証跡JSON（`production-release-evidence.schema.json`）とmanifestの関連づけは未実装（`TASKS.md` 10章）。
+
 ## フラグ有効化順序
 
 1. devでAWSをdeployし、モデル・LLM・監視を検証する。

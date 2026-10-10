@@ -34,10 +34,39 @@ CaseFileはJSON配列（または`cases`キーを持つオブジェクト）で�
 
 結果は `results/backtests/<run-id>-cases/` 配下へ保存する。
 
-* `manifest.json`: Run ID、InstallPath/TerminalData/TimeoutSeconds、CaseFileパスとSHA-256、ケースごとのSymbol/期間/Template/Template SHA-256/Expert/Deposit/実行結果（Succeeded/Failed）・失敗理由・監査ログ格納先・分析結果パスを記録する（再現用の識別情報）。
+* `manifest.json`: Run ID、InstallPath/TerminalData/TimeoutSeconds、CaseFileパスとSHA-256、ケースごとのSymbol/期間/Template/Template SHA-256/Expert/Deposit/実行結果（Succeeded/Failed）・失敗理由・監査ログ格納先・分析結果パスを記録する（再現用の識別情報）。schema 1.1（2026-10-10）で検証対象の識別情報を追加した（下記「検証メタデータ」）。
 * 各ケースの結果は `<CaseName>-<Symbol>-<FromDateCompact>_<ToDateCompact>/` の専用フォルダへ保存し、ケース間の結果混同を防ぐ（監査JSONLの混入防止処理は既存どおりケースごとに実行する）。
 * 全ケース終了後、監査JSONLが取得できたケースは既存の`python.analysis.reports`を再利用してケース単位の`performance-summary.json`等を生成し、`summary.csv`・`summary.md`へCaseName・Symbol・FromDate・ToDate・Net Profit・CAGR・Max Drawdown・Profit Factor・Sharpe Ratio・Win Rate・Average Win/Loss・Expectancy・Max Consecutive Losses・Trades・Status・ResultPathを集計する。
 * 1ケースが失敗（Terminal未検出、Timeout、レポート未生成等）しても後続ケースは継続し、失敗理由は`manifest.json`と`summary.csv`/`summary.md`へ記録される。
+
+**検証メタデータ（2026-10-10追加、`DECISIONS.md` DEC-044、`docs/product-separation.md`）。** CaseFileへ次の任意項目を指定できる。いずれも未指定なら従来どおり動作する（既存CaseFile 76件は変更不要）。不正値・存在しないファイルはMT5を起動する前にエラーにする。
+
+| 項目 | 指定位置 | 内容 |
+| --- | --- | --- |
+| `validation_layer` | CaseFile全体、またはケース単位（ケース単位が優先） | `strategy_test`・`in_sample`・`out_of_sample`・`walk_forward`・`final_holdout`・`multi_symbol`・`cost_stress`・`operational_fault`・`forward_test`。manifestへ合否区分 `gate_category`（`operational_fault`はsafety、それ以外はperformance）を導出して記録する |
+| `acceptance_criteria` | CaseFile全体 | 事前に固定した合否基準ファイルのパス（リポジトリ相対）。パスとSHA-256を記録する |
+| `data_manifest` | ケース単位 | tickデータセットのmanifest（`tick/pipeline/<dataset_id>/dataset.json`等）のパス。パスとSHA-256を記録する |
+
+```json
+{
+  "description": "...",
+  "validation_layer": "walk_forward",
+  "acceptance_criteria": "mt5/test-config/criteria/<基準ファイル>.json",
+  "cases": [
+    { "case_name": "USDJPY-WF-2021", "symbol": "USDJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini", "data_manifest": "tick/pipeline/<dataset_id>/dataset.json" }
+  ]
+}
+```
+
+manifest.json 1.1では、上記に加えて次を自動記録する。取得に失敗しても実行は止めず `null` とする（Strategy Testerの成否判定へ影響させない）。
+
+* `provenance.product`: 製品EAソース（`-ProductSourceRoot`、既定 `mt5/`）のGit commit・branch・remote URL（資格情報を除去）・未コミット変更の有無（`dirty`）・ソースハッシュ（`Experts`・`Include`配下の`.mq5`/`.mqh`の内容ハッシュ）
+* `provenance.platform`: 検証基盤（本リポジトリ）のcommit・branch・`dirty`
+* `provenance.mt5.terminal_file_version`: `terminal64.exe` のファイルバージョン（Host実行時のみ）
+* ケースごとの `ea_version`（`#property version`）、`expert_ex5_sha256`（実行したex5、Host実行時のみ）、`expert_ex5_older_than_source`（ex5が製品ソースより古い場合true。更新時刻比較による参考値）、`tester_ini_sha256`（Symbol・期間・Run ID置換後の実効設定）
+
+`provenance.product.dirty` がtrueの結果は、特定commitの再現とはみなさない（実行時に `STRATEGY_TESTER_PRODUCT_SOURCE_DIRTY` を出力する）。CaseFile読込・識別情報取得の単体テストは `.\tools\test-validation-manifest.ps1`（MT5不要、開発ゲートに含む）。
 
 **進捗ログ（2026-09-13追加）。** 複数ケース実行中はターミナルへ次の進捗ログを出力する（`manifest.json`等の実行結果ファイルには記録しない、ログ専用の概算値）。
 

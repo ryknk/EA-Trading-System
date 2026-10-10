@@ -1298,3 +1298,34 @@ TASKS.md 3.1節「データ利用条件とライセンスを確認する」の�
 * EA: 入力 `InpHeartbeatEnabled=false`（既定）、`InpHeartbeatApiUrl`、`InpHeartbeatIntervalSeconds=60`、`InpHeartbeatTimeoutMs=1500` を追加。既定では挙動は変わらない。有効時はWebRequestが最大timeout分EAスレッドを占有する。
 * 未検証: AWS deploy、実通信、Alarm発報・SNS到達、実LLM latency、SSM取得回数削減の実測、Demo・MQL5 VPS上のHeartbeat継続。
 * Rollback: 本変更のコミットをrevertし、deploy済みの場合は直前のcommitで `cdk diff` を確認して再deployする。EAは `InpHeartbeatEnabled=false` で即時無効化できる。
+
+# DEC-044: 本リポジトリを開発基盤とし、検証対象の識別情報をCaseFile・manifestで管理する（製品EAは将来別リポジトリへ分離）
+
+**状態:** 採用（2026-10-10）。Phase B（検証メタデータ・回帰テスト）はImplemented / Unit Tested / Locally Tested（Host実行1ケース）。製品リポジトリ分離（Phase C）は計画のみで未実施。
+
+## 背景
+
+販売EAを将来別リポジトリ（仮称 `EA-Product`）で管理し、本リポジトリを研究・検証・分析の開発基盤とする方針になった。現状調査（`docs/product-separation.md` 1章）で次を確認した。
+
+1. 複数ケース実行のmanifest.json（1.0）はCaseFile・TemplateのSHA-256を記録するが、検証したEAのcommit・ソース・ex5、MT5端末バージョン、データセットを記録しておらず、結果と検証対象を事後に対応づけられなかった。
+2. 検証レイヤー（IS/OOS/Walk Forward等）や合否基準はCaseFileの `description` の自由記述だけで、機械的に区別・追跡できなかった。
+3. 分析CLI（`python.analysis.reports`）の指標は単体テストがあるが、Runnerが使う「監査JSONL→CLI→performance-summary.json→summary.csv」の経路全体と、Runnerが参照するキー名の契約はテストされていなかった。
+4. `EAController.mqh` が製品中核・外部連携・研究計測を静的に結合しており、製品の単独ビルドにはinclude構造の変更が必要。
+
+## 決定
+
+* 新しい形式は導入せず、既存CaseFileへ任意項目（`validation_layer`、`acceptance_criteria`、`data_manifest`）を追加し、manifest.jsonを1.1へ加算的に拡張する。既存CaseFile 76件は変更不要とする。
+* CaseFileの読込・検証と識別情報の取得は `tools/lib/ValidationManifest.psm1` に分離し、MT5なしで単体テストできるようにする（`tools/test-validation-manifest.ps1`、開発ゲートに追加）。
+* 識別情報の取得失敗はStrategy Testerの成否判定へ影響させない（`null` で記録）。一方、CaseFileで指定した合否基準・データmanifestが存在しない場合は、記録が欠けた結果を作らないためMT5起動前にエラーとする。
+* 検証レイヤーは9種類とし、`operational_fault` だけを安全機能（safety）、他を性能（performance）の合否区分とする。区分は導出値とし、CaseFileで別途指定させない（指定の矛盾を避けるため）。
+* Runnerは `-ProductSourceRoot`（既定 `mt5/`）で製品ソースを受け取る。製品分離後は製品checkoutを指定するだけでRunner本体を変更しない。
+* 製品リポジトリとの連携は、検証対象commitを開発基盤の履歴へ固定できるGit submoduleを推奨とする（`docs/product-separation.md` 2.2節）。ゲート証跡は製品ビルド（販売するex5と同一）でだけ取得し、研究計測を含むビルドの結果を性能証跡に使わない。
+* 数値の合否基準は本決定では定めない。合否基準ファイルの事前コミットとSHA-256記録により、結果を見た後の変更を検出できる構造だけを用意する。
+
+## 影響
+
+* Runnerの既存の実行方式・Timeout・監査ログ回収・成果物配置・単一/複数ケース実行は変更しない。manifestのフィールド追加のみ（`schema_version` 1.0→1.1）。単体実行モードはmanifestを出力しない（従来どおり）。
+* VM実行時は、ex5がVM側にあるため `expert_ex5_sha256` とMT5端末バージョンを記録しない。VM実行での動作は未確認（NOT VERIFIED）。
+* `expert_ex5_older_than_source` は更新時刻の比較であり、checkout直後等は誤検出し得る参考値である。
+* 未実施: 製品中核と研究計測のinclude分離、外部連携を製品へ含めるかの決定、製品リポジトリ作成・submodule化、本番証跡JSONとmanifestの関連づけ（`TASKS.md` 11章）。
+* Rollback: 本変更のコミットをrevertする。manifest 1.1の追加フィールドは既存の読み手（summary生成）から参照されていないため、revert後も既存結果の解釈に影響しない。
