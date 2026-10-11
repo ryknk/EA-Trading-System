@@ -2225,7 +2225,10 @@ Strategy Tester・MQL5単体テスト実行中にホストの対話デスクト�
 * [ ] 合否基準（数値）を検証実績から決定し、基準ファイルとしてコミットする（結果を見る前に固定する）
 * [ ] 主要CaseFile（Walk Forward等）へ `validation_layer` を付与する（既存CaseFileの変更のため、付与方針を決めてから行う）
 * [x] 外部連携（Decision API・Telemetry・Heartbeat）を製品EAへ含めるかを決定する（2026-10-11、含めない。DEC-046。製品ビルド `ProductEA` を追加し、研究ビルドとの成績一致を2銘柄で確認）
-* [ ] 製品ビルドの試験運用でのEA停止・ハング検知方法を決める（Heartbeatがないため。VPS Journal確認、MQL5プッシュ通知等）
+* [x] 製品ビルドの試験運用でのEA停止・ハング検知方法を決める（2026-10-12、DEC-048。製品EAへプッシュ通知と生存信号を追加。端末・VPS停止は日次稼働報告の不着を人が確認）
+* [ ] MQL5 VPS上で `SendNotification` が届くこと、日次稼働報告が毎日届くことを試験運用で確認する（未確認）
+* [ ] 必要になった場合、EAのハングを自動検知する監視EA（同じ端末の別チャートで生存信号を監視して通知）を開発基盤に追加する
+* [ ] 必要になった場合、端末・VPS停止の自動検知（AWS Heartbeat、外部の死活監視サービス）を検討する
 * [ ] 本番証跡（`production-release-evidence.schema.json`・`release-gate.ps1 -Mode Production`）を製品ビルド用に見直す（現在はML・LLM・AWSの項目を必須にしている）
 * [ ] 製品ビルドの成績一致を他の銘柄・期間（Walk Forward全Fold等）でも確認する
 * [x] Kill Switch規則（`External/IDecisionProvider.mqh`）と `External/CryptoUtils.mqh` の配置を製品リポジトリ作成時に見直す（2026-10-11、通信を伴わない規則・型のため製品リポジトリに置いた。通信を伴う外部連携は開発基盤の `EaTradingSystemResearch` ルートに残した。DEC-047）

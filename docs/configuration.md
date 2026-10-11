@@ -225,6 +225,26 @@ IS/OOS/Walk Forwardの個別検証時は、同一の`.set`/`.ini`から`InpStrat
 
 製品ビルドは外部判断の工程を持たず、新規注文をローカルの戦略・フィルタ・Risk Manager・`OrderCheck` で判断する。研究ビルドは従来どおり、Decision API無効・障害時に新規注文を拒否する。製品ビルドのStrategy Testerテンプレートは `mt5/test-config/StrategyTester-Product-H1.ini`。
 
+## 稼働監視（プッシュ通知・生存信号、2026-10-12追加、`DECISIONS.md` DEC-048）
+
+製品・研究ビルド共通。運用中の端末（Strategy Tester以外）だけで動作し、通知・生存信号の失敗は売買判断、Risk Manager、既存ポジション管理、SL/TPへ影響しない。プッシュ通知はMT5のツール→オプション→通知でMetaQuotes IDを設定したスマートフォンへ届く。通知が無効でも同じ内容をExpertsログ（`OPERATIONAL_ALERT`）へ記録する。
+
+| 設定 | 初期値 | 意味 |
+|---|---:|---|
+| `InpPushNotificationsEnabled` | false | プッシュ通知の有効化（試験運用ではtrue） |
+| `InpNotifyDisconnectMinutes` | 5 | Brokerとの切断がこの分数続いたら通知（1〜120）。復帰時も通知 |
+| `InpNotifyTickStallMinutes` | 10 | 取引セッション中、最終Tickとセッション開始の両方からこの分数経過したら通知（1〜240）。再開時も通知 |
+| `InpDailyReportHourUtc` | 22 | 日次稼働報告の時刻（UTC。22時=日本時間07:00、NYクローズ後） |
+| `InpNotifyRepeatCooldownMinutes` | 60 | ポジション監視・Risk状態取得・発注処理のエラー通知を、同じ種類で繰り返さない間隔（5〜1440） |
+
+固定値: Timer間隔60秒（研究ビルドでHeartbeat有効時はその間隔）、通知の最小送信間隔10秒（MT5のプッシュ通知の頻度制限を超えないため。間隔内の状態変化通知は次回Timer・Tickで再送する）。
+
+通知する事象: 起動（`STARTED`）・停止（`STOPPED reason=...`）・初期化失敗（`INIT_FAILED`）、切断継続（`DISCONNECTED`）と復帰（`RECONNECTED`）、Tick停止（`TICK_STALL`）と再開（`TICK_RESUMED`）、Risk Lockの発動（`RISK_LOCK`）と解除（`RISK_LOCK_CLEARED`）、`POSITION_MONITOR_ERROR`・`RISK_STATE_UNAVAILABLE`・`ORDER_ERROR`、日次稼働報告（`REPORT DAILY_ALIVE`: 残高、有効証拠金、自EAのポジション数、最終Tickからの経過分、接続、取引変更・新規注文・Risk Lockの状態）。口座番号は含めない。
+
+生存信号: 端末のGlobalVariable `ETS.ALIVE.<MagicNumber>.TICK`（EAが最後にTickを処理したUTC）、`.TIMER`（最後のTimer UTC）、`.CONNECTED`（1=接続）。
+
+制約: 端末・VPSごと停止した場合はEA自身では通知できない（日次稼働報告が届かないことで人が検知する）。EAスレッドがハングした場合も通知できず、生存信号の更新が止まるだけである（別チャートの監視EAによる自動検知は未実装）。取引セッションは `SymbolInfoSessionTrade` に従うため、Brokerのセッション表に反映されない祝日・臨時休場ではTick停止を誤通知し得る。日付をまたいで続くセッションでは、0時から閾値分の間はTick停止を判定しない。建値・トレーリングによるSL移動の失敗は、既存の保護SLが維持され次Tickで再試行されるため、通知せずログだけに記録する。
+
 ## Decision API・ML設定（研究ビルドのみ）
 
 | 設定 | 初期値 | 意味 |

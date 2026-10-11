@@ -1404,3 +1404,30 @@ DEC-044〜DEC-046で、製品ビルド `ProductEA` が研究計測・外部連�
 * 既存環境では `git submodule update --init` と `tools/link-mt5.ps1 -Relink` によるジャンクション張り替えが必要（`-Relink` はジャンクションだけを張り替え、リンク先の内容は削除しない）。
 * VM実行モード、製品リポジトリのブランチ保護、本番証跡とmanifestの関連づけは未対応。
 * Rollback: 開発基盤で分離コミットをrevertし、`git submodule deinit product` の後に `tools/link-mt5.ps1 -Relink` と再コンパイルを行う。製品リポジトリはGitHub上に残る。
+
+# DEC-048: 製品EAに外部サービスを使わない稼働監視（プッシュ通知・生存信号）を持たせ、端末停止は日次稼働報告の不着で人が検知する
+
+**状態:** 採用（2026-10-12、ユーザー決定）。Implemented / Unit Tested / Locally Tested（MT5 Script上の結合テスト、通知は無効）。プッシュ通知の実配信、MQL5 VPS上の動作は未確認。
+
+## 背景
+
+製品ビルド `ProductEA` はHeartbeat・Telemetry等の外部連携を持たない（DEC-046）ため、試験運用中のEA停止・ハング・切断を自動で知る手段がなかった。停止の種類は、EAの停止・削除、EAのハング、端末・VPS・ホストの停止、接続断・Tick停止、稼働しているが新規注文しない状態（Risk Lock等）に分けられる。EAのハングと端末ごとの停止は、EA自身では通知できない。
+
+## 決定
+
+* 製品EA（製品・研究ビルド共通）に稼働監視 `COperationalMonitor`（`product/mt5/Include/Logging/OperationalMonitor.mqh`）を追加する。外部サービス・WebRequestは使わず、MT5標準の `SendNotification`（MetaQuotes ID宛て）と端末のGlobalVariableだけを使う。製品が外部サービスに依存しない方針（DEC-046）を維持する。
+* 生存信号: `ETS.ALIVE.<MagicNumber>.TICK`・`.TIMER`・`.CONNECTED` を更新する。将来、別チャートの監視EAがハングを検知する場合の入力とする（監視EAは今回は実装しない）。
+* プッシュ通知（既定無効）: 起動・停止・初期化失敗、切断継続と復帰、取引セッション中のTick停止と再開、Risk Lockの発動と解除、ポジション監視・Risk状態取得・発注処理のエラー、日次稼働報告。
+* 推奨閾値を既定値とする: 切断5分（一時的な再接続を除外しつつ、新規注文不能を早く知る）、Tick停止10分（主要FXの取引時間中に10分Tickがないのは異常）、日次稼働報告22:00 UTC（日本時間07:00、NYクローズ後で毎朝確認できる）、同種エラーの再通知抑制60分、通知の最小送信間隔10秒（MT5の頻度制限内）、Timer 60秒。
+* 端末・VPSごとの停止は、当面「日次稼働報告が届かないことを人が確認する」方式とする（ユーザー決定）。AWS Heartbeat・外部死活監視サービスによる自動検知は採用しない。
+* Strategy Testerでは稼働監視を無効にし（Timerも設定しない）、バックテスト結果を変えない。
+* 通知・生存信号の失敗はログだけとし、売買判断、Risk Manager、Kill Switch、既存ポジション管理、SL/TPへ一切影響させない。OnTimerは取引・Risk・ポジション管理のメンバーを操作しない（Release Gateの静的検査を維持）。
+* 建値・トレーリングによるSL移動の失敗は、既存の保護SLが維持され次Tickで再試行されるため通知対象にしない（PositionManagerへ通知の依存を持ち込まないため）。保護SLのないポジション・緊急決済の失敗は `POSITION_MONITOR_ERROR` として通知される。
+
+## 影響
+
+* 研究ビルドの運用端末でも稼働監視が動き、Timerは常に設定される（従来はHeartbeat有効時のみ）。
+* 取引セッション表に反映されない祝日・臨時休場ではTick停止を誤通知し得る。
+* EAのハングと端末・VPS停止の自動検知は未実装（日次稼働報告の不着とGlobalVariableで人が判断する）。
+* 未確認: プッシュ通知の実配信、MQL5 VPS上での `SendNotification`、送信頻度制限の実値。
+* Rollback: 製品リポジトリで本変更のcommitをrevertし、開発基盤のsubmodule参照を戻す。運用中は `InpPushNotificationsEnabled=false` で通知を止められる（生存信号のGlobalVariable書込みは継続する）。

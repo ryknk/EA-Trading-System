@@ -105,3 +105,7 @@ EAは端末ログに加えて日別JSONLへ先に追記する。Telemetry API送
 ## 開発基盤と製品EAの境界（2026-10-10追加）
 
 本リポジトリは研究・検証・分析の開発基盤であり、販売EA（製品ビルド `ProductEA`）のソースの正本は製品リポジトリ `ryknk/EA-Product` へ分離した（2026-10-11、`DECISIONS.md` DEC-047）。開発基盤は `product/` にsubmoduleとして製品の特定commitを取り込み、ビルド・検証する。依存関係、責務境界、連携方式、移行の経緯は [product-separation.md](product-separation.md) を正本とする。
+
+## 製品EAの稼働監視（2026-10-12追加）
+
+製品EAは外部サービスを使わずに稼働を監視する。端末のGlobalVariableへ生存信号（最終Tick処理時刻・最終Timer時刻・接続状態）を書き、MT5標準のプッシュ通知で起動・停止、切断、Tick停止、Risk Lock、エラー、日次稼働報告を送る。通知・生存信号の失敗は売買判断、Risk Manager、既存ポジション管理へ影響しない。Strategy Testerでは動作しない。端末・VPSごとの停止はEA自身では通知できないため、日次稼働報告が届かないことで人が検知する（`DECISIONS.md` DEC-048、設定は [configuration.md](configuration.md)「稼働監視」）。
