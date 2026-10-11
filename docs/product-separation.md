@@ -168,7 +168,7 @@ CaseFileの `acceptance_criteria` に合否基準ファイルのパスを指定�
 | 3（**実施済み** 2026-10-11） | `link-mt5.ps1`・`compile-mql5.ps1`・`run-mql5-tests.ps1`・`release-gate.ps1` を製品submoduleに対応させる（5.2節） | 既定引数で従来どおり動くこと、別パス指定で同じ結果になること | revert |
 | 4（**実施済み** 2026-10-11、ユーザー承認済み） | `EA-Product` リポジトリを作成し、`mt5/Experts/ProductEA.mq5`・製品中核の `mt5/Include`・製品テストを `git filter-branch` で履歴付きで移す | 製品リポジトリ単独でコンパイル・テストが通ること | 製品リポジトリを破棄（本リポジトリは未変更） |
 | 5（**実施済み** 2026-10-11、ユーザー承認済み） | 本リポジトリへsubmodule `product/` を追加し、junction元を `product/mt5` へ切り替える。旧 `mt5/` の製品ファイルを削除する | 開発ゲート一式、代表CaseFile（例: Walk Forward）の再実行で成績・ex5ハッシュが段階4前と一致すること | submoduleの削除と旧ファイルの復元（revert） |
-| 6 | 製品リリースごとに、manifestの `provenance.product.commit`・`expert_ex5_sha256` と本番証跡を関連づける（本番証跡スキーマへの追加を検討） | `release-gate.ps1 -Mode Production` の回帰テスト | revert |
+| 6（**実施済み** 2026-10-12、DEC-049） | 製品リリースごとに、manifestの `provenance.product.commit`・`expert_ex5_sha256` と本番証跡を関連づける（本番証跡schema 2.0） | `release-gate.ps1 -Mode Production` の回帰テスト | revert |
 
 ### 3.1 リスク
 
@@ -278,5 +278,5 @@ VM実行モードでの新規項目の記録は未確認（NOT VERIFIED）。VM�
 
 * 製品リポジトリのブランチ保護（`main` への直接push禁止等）はGitHub上でユーザーが設定する。
 * VM実行モード、他の銘柄・期間での前後一致は未確認。
-* 本番証跡JSONとmanifest（製品commit・ex5 SHA-256）の関連づけは未実装。
+* 本番証跡JSONとmanifest（製品commit・ex5 SHA-256）の関連づけは2026-10-12に実装した（本番証跡schema 2.0、DEC-049）。
 * `HANDOFF.md`（Git管理外）は分離前の構成の記述のまま。

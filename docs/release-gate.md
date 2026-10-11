@@ -2,11 +2,19 @@
 
 ## 結論
 
-Phase 12完了は「ソフトウェア構造と開発検証手順が完成した」ことを意味し、実口座運用の承認を意味しない。現時点ではAWS未配備、実データMLモデル未配備、LLM実疎通未実施、MQL5 VPS秘密ファイル未検証、OOS・Walk Forward・デモ・小額実口座の証跡未作成である。したがってproductionゲートは不合格であり、`InpEnableTradeMutations`、`InpDecisionApiEnabled`、`InpTelemetryEnabled`、`InpHeartbeatEnabled` はfalseを維持する。
+Phase 12完了は「ソフトウェア構造と開発検証手順が完成した」ことを意味し、実口座運用の承認を意味しない。本番移行の対象は製品ビルド `ProductEA`（外部連携なし、DEC-046・DEC-047）であり、本番証跡はschema 2.0（DEC-049）で判定する。
+
+2026-10-12時点で、productionゲートは不合格である。次が未完了のため、本番証跡を作成できない。
+
+* 製品ビルドで、事前に固定した合否基準ファイルと `validation_layer` を指定したCaseFileによるWalk Forward・Final Holdoutの実行（Final Holdout期間 2025-01〜2026-08 は2026-09-17に消費済みで、新しい期間の確保方法は未決定。合否基準の数値も未決定）
+* ベンチマーク受入基準の判定
+* Demo口座・小額実口座での試験運用、MQL5 VPS上でのプッシュ通知の受信確認、Kill Switch・Rollbackの演習
+
+`InpEnableTradeMutations` はfalseを維持する。研究ビルドの外部連携入力（`InpDecisionApiEnabled`、`InpTelemetryEnabled`、`InpHeartbeatEnabled`）もfalseを維持する（研究ビルドのAWS連携は、AWS未配備・実データMLモデル未配備・LLM実疎通未実施のまま）。
 
 ## 開発ゲート
 
-次を実行すると、必須文書、製品submodule（`product/`）が開発基盤に記録したcommitと一致すること、安全なMQL5初期値（`InpHeartbeatEnabled=false`を含む。製品の `EAEntryPoint.mqh` を検査）、製品EAが研究ビルドのマクロを定義しないこと、既存ポジション監視が外部判断API・Risk Managerの新規注文評価より先に実行されHeartbeatが`OnTick`から分離されていることの静的検査、CaseFile・検証識別情報の単体テスト（`tools/test-validation-manifest.ps1`）、基本的な秘密情報混入、JSON契約、Python・Lambda・CDK全テスト、CDK synth、MetaEditor実コンパイル（製品・研究ビルドと両リポジトリのテスト）、MT5 script testを順に検証する。MT5端末は事前に閉じる。
+次を実行すると、必須文書、製品submodule（`product/`）が開発基盤に記録したcommitと一致すること、安全なMQL5初期値（`InpHeartbeatEnabled=false`を含む。製品の `EAEntryPoint.mqh` を検査）、製品EAが研究ビルドのマクロを定義しないこと、既存ポジション監視が外部判断API・Risk Managerの新規注文評価より先に実行されHeartbeatが`OnTick`から分離されていることの静的検査、CaseFile・検証識別情報の単体テスト（`tools/test-validation-manifest.ps1`）、本番証跡検証の回帰テスト（`tools/test-release-gate-evidence.ps1`）、基本的な秘密情報混入、JSON契約、Python・Lambda・CDK全テスト、CDK synth、MetaEditor実コンパイル（製品・研究ビルドと両リポジトリのテスト）、MT5 script testを順に検証する。MT5端末は事前に閉じる。
 
 ```powershell
 .\tools\release-gate.ps1 -Mode Development
@@ -16,7 +24,7 @@ Phase 12完了は「ソフトウェア構造と開発検証手順が完成した
 
 ## 本番ゲート
 
-productionでは、開発ゲートに加えて `production-release-evidence.schema.json` に従う証跡JSONと、同じディレクトリに置いたOOS、Walk Forward、デモ、小額実口座、ベンチマーク比較のレポートを要求する。
+productionでは、開発ゲートに加えて `production-release-evidence.schema.json`（schema 2.0、製品ビルド `ProductEA` 用、2026-10-12改訂、`DECISIONS.md` DEC-049）に従う証跡JSONと、同じディレクトリに置いたレポート・Strategy Testerの `manifest.json` を要求する。検証は `tools/lib/ReleaseEvidence.psm1` が行い、回帰テスト `tools/test-release-gate-evidence.ps1` は開発ゲートで毎回実行する。
 
 ```powershell
 .\tools\release-gate.ps1 `
@@ -24,22 +32,40 @@ productionでは、開発ゲートに加えて `production-release-evidence.sche
   -EvidenceFile release-evidence\production-release.json
 ```
 
-証跡には秘密値や口座番号を含めない。ML model versionとSHA-256、固定LLM provider/model、prompt version、AWS account・region、VPS秘密ファイル検証、SNS通知、予算通知、rollback drill、ベンチマーク受入基準の合否、承認UTC時刻だけを記録する。詳細レポートは暗号化したS3等へ保管し、ローカル `release-evidence/` はGit管理外とする。
+証跡に記録する項目（秘密値・口座番号は含めない。パスはすべて証跡JSONと同じディレクトリ配下の相対パス）:
+
+| 項目 | 内容 | ゲートの照合 |
+| --- | --- | --- |
+| `product` | `repository`（`ryknk/EA-Product`）、`commit`、`expert`（`EaTradingSystemProduct\ProductEA`）、`ea_version`、`ex5_sha256`（リリースするex5） | `commit` が開発基盤の製品submoduleのcommit（ゲートが静的検査・コンパイル・テストした対象）と一致すること |
+| `validation_manifests` | Strategy Testerの `manifest.json`（schema 1.1）の写し | 全件で製品commit一致・`dirty=false`、全ケースが `Succeeded`・製品ビルド・同じex5・`expert_ex5_older_than_source=false`・同じEAバージョン、`acceptance_criteria` が記録され基準ファイル（開発基盤のパス）のSHA-256が実行時から変わっていないこと。全体で `validation_layer` に `walk_forward` と `final_holdout` を含むこと |
+| `oos_report`・`walk_forward_report`・`final_holdout_report`・`demo_report`・`small_real_report`・`benchmark_comparison_report` | 各レポート | 実在すること |
+| `demo_ex5_sha256`・`small_real_ex5_sha256` | 試験運用で使ったex5のSHA-256 | `product.ex5_sha256` と一致すること |
+| `push_notification_verified` | MQL5 VPS上のEAから起動通知・日次稼働報告が届くことを確認した | `true` |
+| `kill_switch_drill_verified` | 緊急停止・戦略停止で新規注文が止まり、既存ポジション管理が継続することを実ポジション保有中に確認した | `true` |
+| `rollback_drill_verified` | 前の製品commitのex5へ戻す手順を演習した | `true` |
+| `risk_limits_reviewed` | 1取引0.5%・日次2%・最大DD10%・最大ポジション・証拠金余力の設定を確認した | `true` |
+| `benchmark_criteria_met` | 下記「ベンチマーク受入基準」を満たした | `true` |
+| `approver`・`approved_at` | 承認者、承認UTC時刻 | `approved_at` は `Z` または `+00:00` のUTC |
+
+ex5のSHA-256は大文字・小文字を区別しない（manifestは大文字で記録する）。詳細レポートは暗号化して保管し、ローカル `release-evidence/` はGit管理外とする。
+
+旧schema 1.0（ML model・LLM・AWS account・SNS・Budgets・VPS秘密ファイル）は研究ビルドのAWS連携を前提としていたため廃止した。研究ビルド `CoreEA` は本番運用の対象ではない（DEC-046・DEC-047）。
 
 ## 必須ゲート
 
-- Strategy Tester、OOS、Walk Forwardが事前固定した受入基準を満たす
-- DemoでAPI障害、ML・LLM障害、不正JSON、時刻ずれ、spread拡大、Risk lockを試験する
-- 小額実口座で十分な取引数と期間を確保し、バックテストとの差異をレビューする
+製品ビルド `ProductEA` の本番移行で満たすこと（証跡の各項目に対応する）:
+
+- Strategy Tester、OOS、Walk Forward、Final Holdoutを、リリースする製品commit・ex5で、事前に固定した合否基準（`acceptance_criteria`）のもとで実行し、基準を満たす
+- Demoで切断、spread拡大、Risk Lock、Kill Switchを試験する
+- 小額実口座で十分な取引数と期間を確保し、バックテストとの差異をレビューする（Demo・小額実口座は検証と同じex5で行う）
 - 1取引0.5%、日次2%、最大DD10%、最大position、証拠金余力を再確認する
 - ナンピン・マーチンゲール・ロット増加ロジックがないことをレビューする
-- AWS account・region・environment、PITR、RETAIN、ログ保持、SNS、Budgetsを確認する
-- MQL5 VPSで共有鍵ファイルが読めることを実機検証する。検証不能なら外部APIと発注を有効化しない
-- Decision/Telemetry/Heartbeat URLをWebRequest許可リストへ登録し、dev・demoでHMAC疎通する
-- Heartbeat欠損AlarmのALARM・OK通知到達と、Heartbeat障害中も既存ポジション管理が継続することを確認する
-- 緊急停止、手動決済、認証失効、モデル切戻し、CDK rollbackを演習する
+- MQL5 VPS上のEAから起動通知・日次稼働報告が届くことを確認する（`docs/operations.md`「稼働監視」）
+- 緊急停止、手動決済、前の製品commitのex5への切戻しを演習する
 - 変更内容、設定差分、テスト結果、承認者、承認時刻を保全する
 - 下記「ベンチマーク受入基準」を満たす
+
+研究ビルド `CoreEA` でAWS連携（Decision API・ML/LLM・Telemetry・Heartbeat）を本番運用する場合は、AWS account・region・PITR・RETAIN・ログ保持・SNS・Budgets、MQL5 VPSでの共有鍵ファイル読込、WebRequest許可リストとHMAC疎通、Heartbeat欠損Alarmの通知到達、認証失効・モデル切戻し・CDK rollbackの演習が別途必要になる。現在この運用は対象外であり、本番証跡schema 2.0も対応していない。
 
 ## ベンチマーク受入基準
 
@@ -84,13 +110,14 @@ Strategy Tester系の検証結果は、`tools/run-strategy-tester.ps1 -CaseFile`
 * 合否基準ファイルは、評価対象の結果を得る前にコミットする。結果を見た後に変更した場合は、変更後の基準でその期間を合否判定に使わない（ベンチマーク受入基準と同じ扱い）。
 * `provenance.product.dirty=true` の結果、`expert_ex5_older_than_source=true` の結果は本番証跡に使わない。
 * 性能（performance）と安全機能（safety）の合否は別々に判定する。Profit Factorだけで合否を決めない。
-* 数値基準そのものは未決定である（本書のベンチマーク受入基準を除く）。本番証跡JSON（`production-release-evidence.schema.json`）とmanifestの関連づけは未実装（`TASKS.md` 10章）。
+* 数値基準そのものは未決定である（本書のベンチマーク受入基準を除く）。
+* 本番証跡（schema 2.0）は、添付したmanifestについて上記の識別情報と合否基準の不変性をゲートで照合する（「本番ゲート」節）。
 
 ## フラグ有効化順序
 
 試験運用（Demo・小額実口座）は製品ビルド `ProductEA` で行う（2026-10-11、`DECISIONS.md` DEC-046）。`ProductEA` には `InpDecisionApiEnabled`・`InpTelemetryEnabled`・`InpHeartbeatEnabled` が存在しないため、製品の試験運用では `InpEnableTradeMutations=false` での観測 → 障害・Kill Switch試験 → 明示的な許可後の `InpEnableTradeMutations=true` の順とし、手順は `docs/operations.md`「製品ビルドによる試験運用」に従う。
 
-本番証跡（`production-release-evidence.schema.json`、`release-gate.ps1 -Mode Production`）は、ML model・LLM・AWS account等の外部連携を前提とした項目を必須にしており、外部連携を持たない製品ビルドの証跡とは整合していない。製品ビルド用の本番証跡項目は未決定である（`TASKS.md` 11章）。
+本番証跡は製品ビルド用のschema 2.0に改訂した（2026-10-12、DEC-049、「本番ゲート」節）。
 
 以下は研究ビルド `CoreEA` でAWS連携を検証する場合の順序である。
 

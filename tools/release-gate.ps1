@@ -17,40 +17,7 @@ function Assert-True([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 
-function Assert-ProductionEvidence([string]$Path) {
-    Assert-True (-not [string]::IsNullOrWhiteSpace($Path)) "Productionでは-EvidenceFileが必須です。"
-    $resolved = Resolve-Path -LiteralPath $Path -ErrorAction Stop
-    # PowerShell 7はISO 8601文字列をDateTimeへ自動変換しオフセット情報を失うため、
-    # -DateKind String（7.5以降）で元の文字列のまま読み込む。5.1は元々文字列のまま返す。
-    $convertOptions = @{}
-    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey("DateKind")) { $convertOptions.DateKind = "String" }
-    $evidence = Get-Content -LiteralPath $resolved -Raw -Encoding UTF8 | ConvertFrom-Json @convertOptions
-    Assert-True ($evidence.schema_version -eq "1.0" -and $evidence.environment -eq "production") "本番証跡のschema/environmentが不正です。"
-    Assert-True ($evidence.aws_account_id -match '^[0-9]{12}$') "AWS account IDが不正です。"
-    Assert-True ($evidence.aws_region -match '^[a-z]{2}-[a-z]+-[0-9]$') "AWS regionが不正です。"
-    Assert-True ($evidence.ml_model_sha256 -match '^[0-9a-f]{64}$') "ML checksumが不正です。"
-    foreach ($field in @("ml_model_version", "llm_provider", "llm_model", "prompt_version")) {
-        Assert-True ($evidence.$field -match '^[A-Za-z0-9._-]+$') "本番証跡の$fieldが不正です。"
-    }
-    foreach ($field in @("vps_secret_file_verified", "sns_notification_verified", "budgets_verified", "rollback_drill_verified", "benchmark_criteria_met")) {
-        Assert-True ($evidence.$field -eq $true) "本番ゲート未達: $field"
-    }
-    $evidenceRoot = Split-Path -Parent $resolved
-    foreach ($field in @("oos_report", "walk_forward_report", "demo_report", "small_real_report", "benchmark_comparison_report")) {
-        $relative = [string]$evidence.$field
-        Assert-True (-not [IO.Path]::IsPathRooted($relative) -and $relative -notmatch '(^|[\\/])\.\.([\\/]|$)') "証跡pathは同じdirectory配下の相対pathにしてください: $field"
-        $report = Join-Path $evidenceRoot $relative
-        Assert-True (Test-Path -LiteralPath $report -PathType Leaf) "証跡ファイルが見つかりません: $field"
-    }
-    # 文字列以外（-DateKind非対応の7.0〜7.4でDateTime化された値を含む）はUTCか判定できないため拒否する。
-    $approvedText = $evidence.approved_at
-    $approved = [DateTimeOffset]::MinValue
-    $isUtcTimestamp = $approvedText -is [string] -and
-        $approvedText -match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|\+00:00)$' -and
-        [DateTimeOffset]::TryParse($approvedText, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$approved) -and
-        $approved.Offset -eq [TimeSpan]::Zero
-    Assert-True $isUtcTimestamp "approved_atはUTCで指定してください。"
-}
+Import-Module (Join-Path $PSScriptRoot "lib\ReleaseEvidence.psm1") -Force
 
 Push-Location $root
 try {
@@ -117,8 +84,16 @@ try {
     & ".\tools\test-validation-manifest.ps1"
     Write-Host "PASS validation manifest"
 
-    if ($Mode -eq "Production") { Assert-ProductionEvidence $EvidenceFile }
-    if ($Mode -eq "Production") { Write-Host "PASS production evidence" }
+    # 本番証跡（schema 2.0、製品ビルド用）の検証の回帰テスト。MT5・Pythonは使わない。
+    & ".\tools\test-release-gate-evidence.ps1"
+    Write-Host "PASS release evidence validation"
+
+    if ($Mode -eq "Production") {
+        # 証跡の製品commitは、ゲートが静的検査・コンパイル・テストする製品submoduleのcommitと一致していなければならない。
+        $pinnedProductCommit = (@(& git -C (Join-Path $root "product") rev-parse HEAD) | Select-Object -Last 1)
+        Test-ProductionReleaseEvidence -Path $EvidenceFile -PlatformRoot $root -ExpectedProductCommit ([string]$pinnedProductCommit).Trim()
+        Write-Host "PASS production evidence"
+    }
 
     & ".\tools\test-phase12.ps1" -Python $Python
     if ($LASTEXITCODE -ne 0) { throw "Phase 12総合テストが失敗しました。" }
