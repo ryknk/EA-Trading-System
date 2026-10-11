@@ -1,7 +1,7 @@
 #property strict
 
 #include <EaTradingSystem/External/CryptoUtils.mqh>
-#include <EaTradingSystem/External/StrictJson.mqh>
+#include <EaTradingSystemResearch/External/StrictJson.mqh>
 
 int g_failures=0;
 

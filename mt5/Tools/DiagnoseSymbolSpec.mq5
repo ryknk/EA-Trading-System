@@ -12,7 +12,7 @@ input string InpOutputFile = "symbol-spec-diagnostics.tsv";
 input double InpProbePrice = 0.0;  // 0なら各Symbolの現在Bidを使用。OrderCalcProfit/Margin検証用の建値
 input double InpProbeStop  = 0.0;  // 0なら建値の1%を損切り幅として使用
 
-#include <EaTradingSystem\Diagnostics\SymbolSpecDump.mqh>
+#include <EaTradingSystemResearch\Diagnostics\SymbolSpecDump.mqh>
 
 void OnStart()
   {

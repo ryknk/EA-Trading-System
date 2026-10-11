@@ -4,7 +4,7 @@
 #include <EaTradingSystem/Core/Config.mqh>
 #include <EaTradingSystem/Signal/SignalResult.mqh>
 #include <EaTradingSystem/External/CryptoUtils.mqh>
-#include <EaTradingSystem/External/StrictJson.mqh>
+#include <EaTradingSystemResearch/External/StrictJson.mqh>
 #include <EaTradingSystem/External/IDecisionProvider.mqh>
 
 class CDecisionApiClient : public IDecisionProvider

@@ -83,7 +83,22 @@ Productionゲートには `contracts/production-release-evidence.schema.json` �
 
 有効化はDecision・Telemetryの観測だけを先に行い、取引変更を最後にする。最初から3フラグを同時にtrueにしない。production移行後も日次・週次レビューを続け、最大DD、Daily Loss、認証、モデル、アラーム、費用のいずれかに異常があれば前段環境へ戻す。
 
-## Demo Forward Test手順
+## 製品ビルドによる試験運用（2026-10-11追加、`DECISIONS.md` DEC-046）
+
+試験運用（Demo・小額実口座）は製品ビルド `ProductEA` で行う。`ProductEA` はDecision API・ML/LLM・Telemetry・Heartbeatを含まず、新規注文をローカルの戦略・フィルタ・Risk Manager・`OrderCheck` で判断する。AWS、WebRequest許可リスト、共有鍵ファイルは不要である。
+
+1. BrokerのDemo口座を作成し、MT5へログインする。口座番号・パスワードはリポジトリへ保存しない。
+2. `git submodule update --init` で製品submodule（`product/`、`ryknk/EA-Product`）を開発基盤に記録したcommitへ揃え、`tools/link-mt5.ps1`、`tools/compile-mql5.ps1`、`tools/run-mql5-tests.ps1`を順に実行する。試験運用に使う製品commitと `ProductEA` のex5 SHA-256を記録する。
+3. 対象チャートへ `ProductEA`（ナビゲーター上は `Experts\EaTradingSystemProduct`）を配置し、最初は `InpEnableTradeMutations=false`（既定）のまま、候補・Risk判断・`TRADE_MUTATIONS_DISABLED` による注文ブロックがローカル監査JSONLとExpertsログへ記録されることを確認する。
+4. `InpEmergencyStop=true` または `InpStrategyEnabled=false` で新規候補処理が止まり、既存ポジション監視が継続することをExpertsログで確認する。
+5. 証跡を保存し、ユーザーの明示的な許可を得てから小ロットで `InpEnableTradeMutations=true` とし、注文、SL、TP、約定差、Risk拒否を日次確認する。
+6. MQL5 VPS移行後、端末側EAを二重稼働させない。VPS Journal、EA Journal、ローカル監査JSONLを照合する。
+
+製品ビルドにはHeartbeatがないため、EA停止・ハングのAWS Alarmによる自動検知はない。代替の監視方法（VPS Journalの定期確認、MQL5のプッシュ通知等）は未決定である（`TASKS.md` 11章）。
+
+## Demo Forward Test手順（研究ビルド・AWS連携の検証用）
+
+以下は研究ビルド `CoreEA` でAWS連携（Decision API・Telemetry・Heartbeat）を検証する場合の手順であり、製品の試験運用には使わない。
 
 1. BrokerのDemo口座を作成し、MT5へログインする。口座番号・パスワードはリポジトリへ保存しない。
 2. `tools/link-mt5.ps1`、`tools/compile-mql5.ps1`、`tools/run-mql5-tests.ps1`を順に実行する。

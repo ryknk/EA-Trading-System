@@ -5,11 +5,17 @@
 - インストール先: `C:\Program Files\MetaTrader 5`
 - データフォルダ: `C:\Users\hunda\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075`
 
-次のディレクトリジャンクションにより、リポジトリのソースとMT5ナビゲーターツリーが同じファイルを参照する。
+次のディレクトリジャンクションにより、リポジトリのソースとMT5ナビゲーターツリーが同じファイルを参照する。製品EAの正本は製品リポジトリ `ryknk/EA-Product` で、本リポジトリの `product/` にsubmoduleとして取り込む（2026-10-11、`DECISIONS.md` DEC-047）。
 
-- `MQL5\Include\EaTradingSystem` → `repo\mt5\Include`
-- `MQL5\Experts\EaTradingSystem` → `repo\mt5\Experts`
-- `MQL5\Scripts\EaTradingSystemTests` → `repo\mt5\Tests`
+- `MQL5\Include\EaTradingSystem` → `repo\product\mt5\Include`（製品EA本体）
+- `MQL5\Include\EaTradingSystemResearch` → `repo\mt5\Include`（研究計測・外部連携・診断）
+- `MQL5\Experts\EaTradingSystem` → `repo\mt5\Experts`（研究ビルド `CoreEA`・診断EA）
+- `MQL5\Experts\EaTradingSystemProduct` → `repo\product\mt5\Experts`（製品ビルド `ProductEA`）
+- `MQL5\Scripts\EaTradingSystemTests` → `repo\mt5\Tests`（研究テスト）
+- `MQL5\Scripts\EaTradingSystemProductTests` → `repo\product\mt5\Tests`（製品テスト）
+- `MQL5\Scripts\EaTradingSystemTools` → `repo\mt5\Tools`
+
+分離前の構成（`Include\EaTradingSystem` が `repo\mt5\Include` を指す）から移行する場合は、`git submodule update --init` の後に `.\tools\link-mt5.ps1 -Relink` を実行する。`-Relink` は既存のジャンクションだけを張り替え、リンク先の内容や実体のフォルダは削除しない。
 
 これらのパスへファイルを上書きコピーしたり、標準の `MQL5\Include` ディレクトリを置き換えたりしてはならない。MT5を再インストールした後は、次のコマンドでリンクを再作成または検証する。
 
@@ -29,7 +35,9 @@
 .\tools\run-mql5-tests.ps1
 ```
 
-自動実行時は通常のMT5ターミナルを閉じておく必要がある。各テストは `AllowLiveTrading=0` と `ShutdownTerminal=1` を指定した読み取り専用の起動設定を使用する。コンパイラ出力は `build/metaeditor` に保存され、生成されたEX5ファイルはジャンクションを通じてソースと同じ場所へ配置される。どちらもGitの管理対象外である。
+自動実行時は通常のMT5ターミナルを閉じておく必要がある。各テストは `AllowLiveTrading=0` と `ShutdownTerminal=1` を指定した読み取り専用の起動設定を使用する。コンパイラ出力は `build/metaeditor` に保存され、生成されたEX5ファイルはジャンクションを通じてソースと同じ場所へ配置される。
+
+製品EA・製品テストのコンパイル対象は製品リポジトリの `product/tools/compile-mql5.ps1` が `mt5/Experts`・`mt5/Tests` を列挙して決め、`tools/compile-mql5.ps1` はそれを呼んだ後に研究ビルド `CoreEA` と研究テストをコンパイルする。`tools/run-mql5-tests.ps1` は `product/mt5/test-config` と `mt5/test-config` の `Test*.ini` を列挙して実行する。製品リポジトリではEX5をGit管理しない（開発基盤側の研究ビルド・研究テストのEX5は従来どおり管理対象）。VM実行モードは分離後の構成で未確認（NOT VERIFIED）であり、VM側にも製品submoduleと上記ジャンクションの設定が必要である。
 
 ## 2026年7月21日の検証結果
 
@@ -47,7 +55,7 @@ Phase 12時点でAWS実装は存在するが、AWS accountへのdeploy、実モ�
 
 ## MQL5 VPS移行
 
-1. ローカル端末でCoreEAをコンパイルし、`InpEnableTradeMutations=false`、`InpDecisionApiEnabled=false`、`InpTelemetryEnabled=false`、`InpHeartbeatEnabled=false` のままチャートへ適用する。
+1. ローカル端末でEAをコンパイルし、`InpEnableTradeMutations=false` のままチャートへ適用する。試験運用は製品ビルド `ProductEA` で行い、2〜4と7のAWS連携手順は不要である（`docs/operations.md`「製品ビルドによる試験運用」、`DECISIONS.md` DEC-046）。研究ビルド `CoreEA` でAWS連携を検証する場合は `InpDecisionApiEnabled=false`、`InpTelemetryEnabled=false`、`InpHeartbeatEnabled=false` から始める。
 2. chart symbol、timeframe、EA input、magic number、AutoTrading、アルゴリズム取引許可を確認する。
 3. Decision API、Telemetry API、Heartbeat APIのHTTPS URLをMT5のWebRequest許可リストへ登録する。URLのpath末尾（`/v1/trade-decisions`、`/v1/trade-events`、`/v1/heartbeats`）を取り違えない。
 4. `MQL5\Files\EaTradingSystem\decision-api-secret.txt` をローカルで読み込めることを確認し、秘密値や署名がJournalへ出ないことを確認する。

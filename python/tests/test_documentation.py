@@ -30,7 +30,9 @@ class DocumentationTests(unittest.TestCase):
                 self.assertIn(f"## {section}", text)
 
     def test_mql5_dangerous_capabilities_default_to_disabled(self) -> None:
-        source = (ROOT / "mt5" / "Experts" / "CoreEA.mq5").read_text(encoding="utf-8")
+        # 入力と初期値はCoreEA・ProductEA共通の入口ファイルにある（DECISIONS.md DEC-046）。
+        # 製品EAの正本はsubmodule product/（ryknk/EA-Product）にある（DECISIONS.md DEC-047）。
+        source = (ROOT / "product" / "mt5" / "Include" / "Core" / "EAEntryPoint.mqh").read_text(encoding="utf-8")
         for setting in ("InpEnableTradeMutations", "InpDecisionApiEnabled", "InpTelemetryEnabled"):
             with self.subTest(setting=setting):
                 self.assertRegex(source, rf"input bool\s+{setting}=false;")

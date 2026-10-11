@@ -15,22 +15,15 @@ $logDir = Join-Path $repoRoot "build\metaeditor"
 if (-not (Test-Path -LiteralPath $editor)) { throw "MetaEditor not found: $editor" }
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
-$targets = @(
-    @{ Name = "CoreEA"; Path = Join-Path $mql5 "Experts\EaTradingSystem\CoreEA.mq5" },
-    @{ Name = "TestTrendFollowingRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestTrendFollowingRules.mq5" },
-    @{ Name = "TestMarketRegimeClassifier"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestMarketRegimeClassifier.mq5" },
-    @{ Name = "TestPositionSizer"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestPositionSizer.mq5" },
-    @{ Name = "TestRiskGuards"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestRiskGuards.mq5" },
-    @{ Name = "TestTradingRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestTradingRules.mq5" },
-    @{ Name = "TestDecisionApiRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestDecisionApiRules.mq5" },
-    @{ Name = "TestAuditRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestAuditRules.mq5" },
-    @{ Name = "TestAuditPayloadBuilder"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestAuditPayloadBuilder.mq5" },
-    @{ Name = "TestProductionSafetyRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestProductionSafetyRules.mq5" },
-    @{ Name = "TestEntryTimingAnalyzer"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestEntryTimingAnalyzer.mq5" },
-    @{ Name = "TestBreakoutTimingAnalyzer"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestBreakoutTimingAnalyzer.mq5" },
-    @{ Name = "TestTradeAnalyticsTracker"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestTradeAnalyticsTracker.mq5" },
-    @{ Name = "TestHeartbeatRules"; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\TestHeartbeatRules.mq5" }
-)
+# 製品EA・製品テストは製品リポジトリ（submodule product/）のスクリプトでコンパイルする。対象の一覧は製品側だけで
+# 管理し、開発基盤では二重管理しない（DECISIONS.md DEC-047）。ログは従来どおり build/metaeditor へ出力する。
+& (Join-Path $repoRoot "product\tools\compile-mql5.ps1") -InstallPath $InstallPath -TerminalData $TerminalData -LogDirectory $logDir
+
+# 研究ビルドCoreEAと研究テスト（mt5/Tests配下を列挙）。
+$targets = @(@{ Name = "CoreEA"; Path = Join-Path $mql5 "Experts\EaTradingSystem\CoreEA.mq5" })
+foreach ($source in @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "mt5\Tests") -Filter "*.mq5" | Sort-Object Name)) {
+    $targets += @{ Name = $source.BaseName; Path = Join-Path $mql5 "Scripts\EaTradingSystemTests\$($source.Name)" }
+}
 
 foreach ($target in $targets) {
     if (-not (Test-Path -LiteralPath $target.Path)) { throw "Source not found: $($target.Path)" }

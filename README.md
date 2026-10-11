@@ -29,7 +29,8 @@ Phase 12（日本語文書統合・リリースゲート）まで実装済みで
 
 ## ディレクトリ
 
-- `mt5/`: EA、Strategy、Risk、Trading、External、Logging
+- `product/`: 製品EA（`ProductEA`）のソース。submodule（[ryknk/EA-Product](https://github.com/ryknk/EA-Product)、正本）。Strategy、Risk、Trading、Logging、製品テスト
+- `mt5/`: 研究ビルド `CoreEA`、研究計測・外部連携・診断（`EaTradingSystemResearch`）、研究テスト、MT5補助ツール、Strategy Tester設定・CaseFile
 - `services/decision_api/`: Lambdaアプリケーション（Phase 6以降）
 - `python/`: 特徴量、学習、推論、分析（Phase 7以降）
 - `infra/`: AWS CDK（Python、Phase 6以降）
@@ -52,13 +53,13 @@ Phase 11ではSNS Alert Topicを作成します。`-c alarm_email=<通知先>` �
 
 ## MQL5への配置 / VPS移行
 
-`mt5/Experts`、`mt5/Include`、`mt5/Tests` はdirectory junctionでローカルMT5と連携します。VPS移行前にWebRequest許可URL、EA設定、AutoTrading、シンボル仕様、UTC時刻、監査ログ、共有鍵ファイル読込を確認し、チャートとEAをMQL5 VPSへ同期します。PythonやWebサーバーはMQL5 VPSへ配置しません。詳細は [MT5ローカル開発・VPS移行](docs/mt5-development.md) を参照してください。
+製品EA（`ProductEA`）のソースの正本は製品リポジトリ [ryknk/EA-Product](https://github.com/ryknk/EA-Product) で、本リポジトリの `product/` にsubmoduleとして取り込み、検証する製品commitを固定します（`git clone --recurse-submodules`、`DECISIONS.md` DEC-047）。本リポジトリの `mt5/` には研究ビルド `CoreEA`、研究用Include、研究テスト、診断ツールだけを置きます。`product/mt5` と `mt5` はdirectory junctionでローカルMT5と連携します（`tools/link-mt5.ps1`）。VPS移行前にWebRequest許可URL、EA設定、AutoTrading、シンボル仕様、UTC時刻、監査ログ、共有鍵ファイル読込を確認し、チャートとEAをMQL5 VPSへ同期します。PythonやWebサーバーはMQL5 VPSへ配置しません。詳細は [MT5ローカル開発・VPS移行](docs/mt5-development.md) を参照してください。
 
 ## 設定の原則
 
 資金額、通貨ペア、時間足、指標期間、閾値、リスク率、損失上限、API URL、タイムアウトは外部設定化します。秘密情報をソース管理しません。初期値は1トレード0.5%、日次損失2%、最大ドローダウン10%です。
 
-`InpEnableTradeMutations` と `InpDecisionApiEnabled` の初期値はfalseです。新規注文には検証済み外部ALLOWと最新Risk承認の両方が必要です。ただし同じマジックナンバーの既存ポジションに保護SLがない場合、取引変更が有効かつ`InpCloseUnprotectedPositions=true`ではPosition Managerが外部APIに依存せず緊急決済を試行します。
+`InpEnableTradeMutations` と `InpDecisionApiEnabled` の初期値はfalseです。研究ビルド `CoreEA` では、新規注文に検証済み外部ALLOWと最新Risk承認の両方が必要です。製品ビルド `ProductEA`（販売・試験運用用）は外部連携を含まず、新規注文をローカルの戦略・Risk承認・`OrderCheck`で判断します（`DECISIONS.md` DEC-046）。ただし同じマジックナンバーの既存ポジションに保護SLがない場合、取引変更が有効かつ`InpCloseUnprotectedPositions=true`ではPosition Managerが外部APIに依存せず緊急決済を試行します。
 
 監査ファイルは既定で有効で、端末の `Common\Files\EaTradingSystem\Audit\audit-YYYYMMDD.jsonl`（`FILE_COMMON`、2026-09-07変更、旧: `MQL5\Files`配下）に追記します。Strategy Tester実行時は`InpAuditRunId`が実行単位の識別子へ設定され、ファイル名は`audit-<run_id>.jsonl`になります（詳細は`docs/configuration.md`・`docs/backtesting.md`参照）。`InpTelemetryEnabled` は既定でfalseです。有効化時はCDK出力のTelemetry API URLを `InpTelemetryApiUrl` とMT5のWebRequest許可リストへ設定します。テレメトリ障害は記録だけ行い、既存ポジション管理や売買判断を変更しません。
 

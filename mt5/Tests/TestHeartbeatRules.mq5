@@ -1,6 +1,6 @@
 #property strict
 
-#include <EaTradingSystem/External/HeartbeatApiClient.mqh>
+#include <EaTradingSystemResearch/External/HeartbeatApiClient.mqh>
 
 int g_failures=0;
 void AssertTrue(const bool condition,const string name)

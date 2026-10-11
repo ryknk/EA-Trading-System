@@ -101,3 +101,7 @@ EAは端末ログに加えて日別JSONLへ先に追記する。Telemetry API送
 サーバー側では、SSM取得失敗は401、DynamoDB障害・設定不正は500、ML障害は `VETO / ML_INFERENCE_ERROR`、LLM timeout・deadline不足・provider errorは `VETO / LLM_INFERENCE_ERROR` とし、いずれもEA側で新規注文拒否になる。これらの経路は `services/decision_api/tests/test_fault_injection.py`、`test_secret_cache.py`、`test_heartbeat_handler.py` で単体検証している（AWS実環境での障害注入は未検証）。
 
 外部サービス（Decision API、Telemetry、Heartbeat、ML、LLM）の障害は既存ポジション管理を停止させない。`OnTick`は外部通信の前に `PositionManager.Monitor`、各種Exit評価、Risk監視を実行し、Kill Switch・新規候補処理はその後に判定する。Heartbeatは `OnTimer` だけから送信する。この順序とHeartbeatの分離は `tools/release-gate.ps1` の静的検査で確認する（端末上の障害注入による実証は未実施）。
+
+## 開発基盤と製品EAの境界（2026-10-10追加）
+
+本リポジトリは研究・検証・分析の開発基盤であり、販売EA（製品ビルド `ProductEA`）のソースの正本は製品リポジトリ `ryknk/EA-Product` へ分離した（2026-10-11、`DECISIONS.md` DEC-047）。開発基盤は `product/` にsubmoduleとして製品の特定commitを取り込み、ビルド・検証する。依存関係、責務境界、連携方式、移行の経緯は [product-separation.md](product-separation.md) を正本とする。

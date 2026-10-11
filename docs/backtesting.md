@@ -34,10 +34,39 @@ CaseFileはJSON配列（または`cases`キーを持つオブジェクト）で�
 
 結果は `results/backtests/<run-id>-cases/` 配下へ保存する。
 
-* `manifest.json`: Run ID、InstallPath/TerminalData/TimeoutSeconds、CaseFileパスとSHA-256、ケースごとのSymbol/期間/Template/Template SHA-256/Expert/Deposit/実行結果（Succeeded/Failed）・失敗理由・監査ログ格納先・分析結果パスを記録する（再現用の識別情報）。
+* `manifest.json`: Run ID、InstallPath/TerminalData/TimeoutSeconds、CaseFileパスとSHA-256、ケースごとのSymbol/期間/Template/Template SHA-256/Expert/Deposit/実行結果（Succeeded/Failed）・失敗理由・監査ログ格納先・分析結果パスを記録する（再現用の識別情報）。schema 1.1（2026-10-10）で検証対象の識別情報を追加した（下記「検証メタデータ」）。
 * 各ケースの結果は `<CaseName>-<Symbol>-<FromDateCompact>_<ToDateCompact>/` の専用フォルダへ保存し、ケース間の結果混同を防ぐ（監査JSONLの混入防止処理は既存どおりケースごとに実行する）。
 * 全ケース終了後、監査JSONLが取得できたケースは既存の`python.analysis.reports`を再利用してケース単位の`performance-summary.json`等を生成し、`summary.csv`・`summary.md`へCaseName・Symbol・FromDate・ToDate・Net Profit・CAGR・Max Drawdown・Profit Factor・Sharpe Ratio・Win Rate・Average Win/Loss・Expectancy・Max Consecutive Losses・Trades・Status・ResultPathを集計する。
 * 1ケースが失敗（Terminal未検出、Timeout、レポート未生成等）しても後続ケースは継続し、失敗理由は`manifest.json`と`summary.csv`/`summary.md`へ記録される。
+
+**検証メタデータ（2026-10-10追加、`DECISIONS.md` DEC-044、`docs/product-separation.md`）。** CaseFileへ次の任意項目を指定できる。いずれも未指定なら従来どおり動作する（既存CaseFile 76件は変更不要）。不正値・存在しないファイルはMT5を起動する前にエラーにする。
+
+| 項目 | 指定位置 | 内容 |
+| --- | --- | --- |
+| `validation_layer` | CaseFile全体、またはケース単位（ケース単位が優先） | `strategy_test`・`in_sample`・`out_of_sample`・`walk_forward`・`final_holdout`・`multi_symbol`・`cost_stress`・`operational_fault`・`forward_test`。manifestへ合否区分 `gate_category`（`operational_fault`はsafety、それ以外はperformance）を導出して記録する |
+| `acceptance_criteria` | CaseFile全体 | 事前に固定した合否基準ファイルのパス（リポジトリ相対）。パスとSHA-256を記録する |
+| `data_manifest` | ケース単位 | tickデータセットのmanifest（`tick/pipeline/<dataset_id>/dataset.json`等）のパス。パスとSHA-256を記録する |
+
+```json
+{
+  "description": "...",
+  "validation_layer": "walk_forward",
+  "acceptance_criteria": "mt5/test-config/criteria/<基準ファイル>.json",
+  "cases": [
+    { "case_name": "USDJPY-WF-2021", "symbol": "USDJPY_HIST", "from_date": "2021.01.01", "to_date": "2021.12.31",
+      "template": "mt5\\test-config\\StrategyTester-Generic-H1.ini", "data_manifest": "tick/pipeline/<dataset_id>/dataset.json" }
+  ]
+}
+```
+
+manifest.json 1.1では、上記に加えて次を自動記録する。取得に失敗しても実行は止めず `null` とする（Strategy Testerの成否判定へ影響させない）。
+
+* `provenance.product`: 製品EAソース（`-ProductSourceRoot`、既定 `product/mt5`＝製品リポジトリのsubmodule、DEC-047）のGit commit・branch・remote URL（資格情報を除去）・未コミット変更の有無（`dirty`）・ソースハッシュ（`Experts`・`Include`配下の`.mq5`/`.mqh`の内容ハッシュ。作業ツリー上のバイト列で計算するため、改行コード（`core.autocrlf`）が異なる環境間では同じcommitでも値が変わる）。`compile-mql5.ps1` はGit管理下のex5を再生成するため、ソースが未変更でもコンパイル後は `dirty=true` になり得る（ソースの同一性は `source_tree_sha256` で確認する）
+* `provenance.platform`: 検証基盤（本リポジトリ）のcommit・branch・`dirty`
+* `provenance.mt5.terminal_file_version`: `terminal64.exe` のファイルバージョン（Host実行時のみ）
+* ケースごとの `ea_version`（`#property version`）、`expert_ex5_sha256`（実行したex5、Host実行時のみ）、`expert_ex5_older_than_source`（ex5が製品ソースより古い場合true。更新時刻比較による参考値）、`tester_ini_sha256`（Symbol・期間・Run ID置換後の実効設定）
+
+`provenance.product.dirty` がtrueの結果は、特定commitの再現とはみなさない（実行時に `STRATEGY_TESTER_PRODUCT_SOURCE_DIRTY` を出力する）。CaseFile読込・識別情報取得の単体テストは `.\tools\test-validation-manifest.ps1`（MT5不要、開発ゲートに含む）。
 
 **進捗ログ（2026-09-13追加）。** 複数ケース実行中はターミナルへ次の進捗ログを出力する（`manifest.json`等の実行結果ファイルには記録しない、ログ専用の概算値）。
 
@@ -156,13 +185,13 @@ python -m python.analysis.overfitting `
 
 **Exit（決済）側の分析（2026-08-17実装）。** `TRADE_CLOSED`ペイロードへMT5の`DEAL_REASON`（決済を発生させたトリガー）を`close_reason`として追加記録した（`SL`/`TP`/`SO`/`EXPERT`/`CLIENT`等。`EXPERT`はEA発注によるEmergency Close等）。現時点のEAにはトレーリングストップや時間切れ決済のロジックはなく、決済は事実上SL到達・TP到達・保護SLなしのEmergency closeの3種類のみである。あわせて、決済時刻（Exit）基準の曜日・Session（`close_weekday`・`close_session`、Entry基準の既存`weekday`・`session`とは別集計）と、一度到達した含み益（MFE）に対して決済までにどれだけ手放したかを示すGiveback比率（`giveback_ratio`=`(mfe-net_pnl)/mfe`、MFE<=0のトレードは対象外）を追加した。レポートの`giveback_from_peak_profit`セクションは、勝敗を問わず含み益到達後の平均・中央値Giveback比率と、損益ゼロ以下まで完全反転した割合（`giveback_ratio>=1.0`）を要約する。これらはエントリー条件ではなく、決済ロジック（SL/TP幅、保有時間、決済タイミング）の改善余地を判断する材料である。
 
-**市場レジーム判定（2026-08-17実装）。** EA側`CMarketRegimeClassifier`（`mt5/Include/Filter/MarketRegimeClassifier.mqh`）が、既存のADX/ATR/H1 EMA(Fast) Indicatorハンドルを再利用し、確定足データのみでEntry候補ごとにTrend（`TrendUp`/`TrendDown`/`Range`）とVolatility（`HighVolatility`/`NormalVolatility`/`LowVolatility`）を判定する。判定に必要なデータが不足する場合（バックテスト開始直後のバッファ不足等）は`Unknown`とする。閾値は固定値ではなくEA input（`InpRegimeTrendAdxMin`・`InpRegimeAtrBaselinePeriod`・`InpRegimeHighVolatilityRatio`・`InpRegimeLowVolatilityRatio`・`InpRegimeMaSlopeLookback`、詳細は`docs/configuration.md`）で設定する。判定結果は`CANDIDATE`イベントpayloadの`market_regime_trend`・`market_regime_volatility`へ記録されるのみで、Entry判定・売買制御には一切使用しない（判定と売買制御の分離）。現時点ではレジームによるEntry禁止・売買ロジック変更は行っていない。
+**市場レジーム判定（2026-08-17実装）。** EA側`CMarketRegimeClassifier`（`product/mt5/Include/Filter/MarketRegimeClassifier.mqh`）が、既存のADX/ATR/H1 EMA(Fast) Indicatorハンドルを再利用し、確定足データのみでEntry候補ごとにTrend（`TrendUp`/`TrendDown`/`Range`）とVolatility（`HighVolatility`/`NormalVolatility`/`LowVolatility`）を判定する。判定に必要なデータが不足する場合（バックテスト開始直後のバッファ不足等）は`Unknown`とする。閾値は固定値ではなくEA input（`InpRegimeTrendAdxMin`・`InpRegimeAtrBaselinePeriod`・`InpRegimeHighVolatilityRatio`・`InpRegimeLowVolatilityRatio`・`InpRegimeMaSlopeLookback`、詳細は`docs/configuration.md`）で設定する。判定結果は`CANDIDATE`イベントpayloadの`market_regime_trend`・`market_regime_volatility`へ記録されるのみで、Entry判定・売買制御には一切使用しない（判定と売買制御の分離）。現時点ではレジームによるEntry禁止・売買ロジック変更は行っていない。
 
 **段階的Entry判定パイプライン（2026-08-22実装）。** 市場レジーム判定は当初分析専用（Entry判定に不使用）だったが、`InpEntryUseStagedPipeline`（既定値`false`）を`true`にすると、`CTrendFollowingStrategy::Evaluate()`をMarket Regime→HTF Bias（D1/H4トレンド一致）→Setup（押し目/戻り成立）→Entry Trigger（再加速/レンジ突破）→Entryという4段階として明示的に評価し、Market RegimeがRange/Unknownの確定足を追加で棄却できるようになった（`InpEntryRequireMarketRegimeTrend`、既定値`true`）。`InpEntryUseStagedPipeline=false`では判定式・発注挙動とも既存方式と完全に同一である（Strategy Tester再実行による実証は`DECISIONS.md` DEC-027参照）。`InpEntryUseStagedPipeline=true`の場合のみ、毎確定足の評価結果（成立・否決を問わず）を新規イベント`ENTRY_PIPELINE`（`stage_market_regime`・`stage_htf_bias`・`stage_breakout_setup_passed`・`stage_breakout_trigger_passed`・`stage_pullback_setup_passed`・`stage_pullback_trigger_passed`・`final_status`・`reason_code`）へ記録する。`python.analysis.trade_breakdown.entry_pipeline_funnel_summary()`がこのログから、各段階（`market_regime`・`htf_bias`・`trend_strength_or_momentum_filter`・`setup_or_trigger`）でどれだけ棄却されたかを集計し、`write_report(..., input_paths=...)`経由でレポートJSON（`entry_pipeline_funnel`キー、任意項目）・Markdownへ出力する。詳細な設定項目は`docs/configuration.md`「段階的Entry判定パイプライン」を参照。
 
 `InpAuditFileEnabled=true`（既定値）でStrategy Testerを実行すると、`Terminal\Common\Files\EaTradingSystem\Audit\audit-<run-id>.jsonl`（`FILE_COMMON`、2026-09-07変更、旧: `MQL5\Files`配下の`audit-YYYYMMDD.jsonl`）にCANDIDATE（エントリー時ATR・ADX・Spread・時刻を含む）、RISK_DECISION（承認リスク額）、TRADE_CLOSED、TRADE_ANALYTICS（MFE・MAE、`mfe_time`・`post_peak_mae`）が記録される。`tools/run-strategy-tester.ps1` はStrategy Tester実行のたびに`InpAuditRunId`へReport名と同一の値を設定するため、run-idはReport名（例: `ets-20200101-000000-USDJPY-H1`）と一致する。実行後にこの`audit-<run-id>.jsonl`を検出できた場合、自動的に `results/backtests/<run-id>-USDJPY-H1/audit/` へ複製する（見つからない場合はベストエフォートで警告を出すのみで、Strategy Tester自体の成功判定には影響しない）。`FILE_COMMON`はStrategy Tester Agentのサンドボックスの外に保存されるため、VM実行でMT5終了後にサンドボックスがcleanupされても監査JSONLは消失しない（詳細はDECISIONS.md DEC-030を参照）。
 
-**Peak到達時刻・Peak後の最大逆行の追跡（2026-09-06追加）。** 従来のTRADE_ANALYTICSはMFE/MAEの最終値のみを記録し、いつPeakに到達したか・Peak後どこまで逆行したかは分からなかった（`POSITION_SNAPSHOT`は日次1回のみで再構成不可）。`CTradeAnalyticsTracker`（`mt5/Include/Logging/TradeAnalyticsTracker.mqh`）へ`mfe_time`（MFEが最後に更新された時刻＝Peak到達時刻）と`post_peak_mae`（Peak確定後に観測された含み損益の最小値、新高値更新のたびに現在値へリセット）の追跡を追加し、`TRADE_ANALYTICS`のPayloadへ含めた。更新ロジックは純粋関数`CTradeAnalyticsRules::UpdateExtreme`へ分離し、`TestTradeAnalyticsTracker.mq5`で単体テストする。`python.analysis.trade_breakdown.build_trade_context()`はこれらから`time_to_peak_hours`（Entry→Peak）・`peak_to_close_hours`（Peak→Close）・`post_peak_mae_r`（Peak確定後の最大逆行、R換算）・`reached_tp_equivalent_r`（MFE_RがそのトレードのTP相当R（CANDIDATE.risk_reward_ratio）以上に達したかの近似指標）を算出する。2026-09-06以前の監査ログ（新フィールド無し）は該当列がNaN/NaTになるのみで後方互換。
+**Peak到達時刻・Peak後の最大逆行の追跡（2026-09-06追加）。** 従来のTRADE_ANALYTICSはMFE/MAEの最終値のみを記録し、いつPeakに到達したか・Peak後どこまで逆行したかは分からなかった（`POSITION_SNAPSHOT`は日次1回のみで再構成不可）。`CTradeAnalyticsTracker`（`product/mt5/Include/Logging/TradeAnalyticsTracker.mqh`）へ`mfe_time`（MFEが最後に更新された時刻＝Peak到達時刻）と`post_peak_mae`（Peak確定後に観測された含み損益の最小値、新高値更新のたびに現在値へリセット）の追跡を追加し、`TRADE_ANALYTICS`のPayloadへ含めた。更新ロジックは純粋関数`CTradeAnalyticsRules::UpdateExtreme`へ分離し、`TestTradeAnalyticsTracker.mq5`で単体テストする。`python.analysis.trade_breakdown.build_trade_context()`はこれらから`time_to_peak_hours`（Entry→Peak）・`peak_to_close_hours`（Peak→Close）・`post_peak_mae_r`（Peak確定後の最大逆行、R換算）・`reached_tp_equivalent_r`（MFE_RがそのトレードのTP相当R（CANDIDATE.risk_reward_ratio）以上に達したかの近似指標）を算出する。2026-09-06以前の監査ログ（新フィールド無し）は該当列がNaN/NaTになるのみで後方互換。
 
 ```powershell
 $env:PYTHONPATH='.'
@@ -225,6 +254,8 @@ python -m python.analysis.trade_breakdown --input results/backtests/<on-run-id>-
 
 ## Entry Timing比較分析（2026-08-22実装）
 
+研究ビルド専用（2026-10-10、`DECISIONS.md` DEC-045）: 本分析は `EA_TRADING_SYSTEM_RESEARCH_BUILD` を定義したEA（現行の `CoreEA.mq5`）だけで動作し、`mt5/Include/Research/TimingAnalysisHook.mqh` 経由で監査ログへ記録する。製品ビルドで有効化すると初期化を拒否する。
+
 `InpEnableEntryTimingAnalysis`（既定値`false`）を`true`にすると、EA側`CEntryTimingAnalyzer`（`mt5/Include/Logging/EntryTimingAnalyzer.mqh`）が、同一のプルバックSetupについて次の4方式を**実注文なしのShadow Trade**として並行シミュレートする。
 
 ```text
@@ -252,6 +283,8 @@ python -m python.analysis.entry_timing `
 出力は `entry-timing-report.json`（JSON契約は `contracts/entry-timing-report.schema.json` を正とする）、`entry-timing-report.md`、`entry-timing-setups.csv`、`entry-timing-trades.csv`である。レポートの`variants`はVariant別（IMMEDIATE/WAIT_1_BAR/WAIT_2_BARS/WAIT_TRIGGER）にTrades・Win Rate・Profit Factor・Expectancy・Net Profit・Max Drawdown（すべてR倍数）・平均MFE/MAE・価格推移チェックポイント平均を集計する。Max Drawdownは基準値100R（アカウント資金とは無関係な相対指標）からの累積R下落幅であり、Variant間の相対比較専用。`pre_entry_excursion`はSetup成立からEntryまでの逆行・順行の平均・中央値とTrigger成立率を要約する。`InpEnableEntryTimingAnalysis=false`のバックテストでは対象イベントが存在せず、`setups_observed=0`・全Variant`trades=0`として返る。
 
 ## Breakout Timing比較分析（2026-09-05実装）
+
+研究ビルド専用（2026-10-10、`DECISIONS.md` DEC-045）: 本分析は `EA_TRADING_SYSTEM_RESEARCH_BUILD` を定義したEA（現行の `CoreEA.mq5`）だけで動作し、`mt5/Include/Research/TimingAnalysisHook.mqh` 経由で監査ログへ記録する。製品ビルドで有効化すると初期化を拒否する。
 
 Entry Timing比較分析はプルバックパターンのみを対象とし、ブレイクアウトパターンは「SetupとTriggerが同一の価格事象（レンジ突破）であり、両者の間に待機できる中間状態が存在しない」ため対象外としていた。しかし実トレードの大半（Fold1〜5・4銘柄の実績で85.6%）はブレイクアウトが占めており、ブレイクアウト成立直後の反転（ダマシ）による損失がタイミングの問題か、Setup/Trigger条件自体の精度の問題かを切り分けるため、ブレイクアウト専用の比較分析を別途実装した。
 
@@ -286,7 +319,7 @@ python -m python.analysis.breakout_timing `
 **記録するコスト項目とEA側の実装。**
 
 - Entry Spread: 既存の`CANDIDATE`イベント`spread_points`（Entry候補生成Tick時点のSpread、Point単位。Phase 9から実装済み）
-- Exit Spread: `TRADE_CLOSED`イベントへ新規追加した`exit_spread_points`（Point単位）。決済自体はブローカー側SL/TP等で発生し、EA側は`OnTradeTransaction`が決済デタッチ（`DEAL_ENTRY_OUT`）を検知した直後のTickでベストエフォートに記録する（約定Tickそのものの値ではない近似値、`mt5/Include/Core/EAController.mqh`の`OnTradeTransaction`）
+- Exit Spread: `TRADE_CLOSED`イベントへ新規追加した`exit_spread_points`（Point単位）。決済自体はブローカー側SL/TP等で発生し、EA側は`OnTradeTransaction`が決済デタッチ（`DEAL_ENTRY_OUT`）を検知した直後のTickでベストエフォートに記録する（約定Tickそのものの値ではない近似値、`product/mt5/Include/Core/EAController.mqh`の`OnTradeTransaction`）
 - Entry Slippage: 既存の`ORDER_SUBMISSION`イベント`slippage_points`（要求価格`requested_price`と約定価格`confirmed_price`の差、Point単位。Phase 9から実装済み）
 - Exit Slippage: **未対応。** 決済の大半はブローカー側SL/TP自動決済であり、Entry側の`COrderManager::Submit`のような「要求価格」を安全に取得する手段が現アーキテクチャにはないため、Entry側のみ記録する（既知の制約。EXPERT/CLIENT close_reasonの決済もEA発注だが未計測）
 - Commission・Swap: 既存の`TRADE_CLOSED`イベント`commission`・`swap`（Phase 9から実装済み、net_pnlへ既に加算済み）

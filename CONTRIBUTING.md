@@ -8,7 +8,7 @@
 
 # 2. 基本原則
 
-* `master` を安定Branchとして扱う。
+* `main` を安定Branch、`dev` を統合Branchとして扱う。`main` へは `dev` からPull Requestでマージする（製品リポジトリ `ryknk/EA-Product` も同じ運用）。リモートに残る `master` は旧Branchであり使用しない。
 * 作業は原則として専用Branchで行う。
 * 1つのBranchへ無関係な変更を混在させない。
 * ユーザーの未コミット変更を上書きしない。
@@ -40,11 +40,12 @@ git log --oneline --decorate -10
 
 # 4.1 Branch作成
 
-原則として最新の`master`からBranchを作成する。
+原則として最新の`dev`からBranchを作成し、作業後は`dev`へマージする。`dev`の内容は検証後にPull Requestで`main`へマージする。
 
 ```powershell
-git switch master
+git switch dev
 git pull --ff-only
+git submodule update --init
 git switch -c <branch-name>
 ```
 
@@ -344,9 +345,9 @@ Merge方式はRepository設定と運用状況に合わせて統一する。
 
 ---
 
-# 10. `master`への直接変更
+# 10. `main`への直接変更
 
-原則として、重要な実装変更を`master`へ直接Commitしない。
+原則として、重要な実装変更を`main`へ直接Commitしない（`dev`からPull Requestでマージする）。
 
 次のような軽微な変更では、ユーザー判断により直接変更を許容できる。
 
@@ -451,7 +452,26 @@ Secret混入が判明した場合、単に最新Commitから削除するだけ�
 
 ---
 
-# 14. 文書管理
+# 14. 製品リポジトリ（submodule）の運用
+
+製品EAのソースの正本は `ryknk/EA-Product` であり、本リポジトリの `product/` にsubmoduleとして取り込む（`DECISIONS.md` DEC-047）。
+
+```powershell
+# 新規clone
+git clone --recurse-submodules https://github.com/ryknk/EA-Trading-System.git
+# 既存cloneでの初期化・記録commitへの同期
+git submodule update --init
+```
+
+* 製品EAの変更は製品リポジトリで行い、製品側の `dev` から `main` へPull Requestでマージする。開発基盤の `product/` 内で直接コミットしない。
+* 開発基盤で新しい製品commitを検証する場合は、`git -C product fetch` と `git -C product checkout <commit>` の後、開発基盤で `git add product` してsubmodule参照の更新をコミットする。コミットメッセージに製品commitと検証内容を記載する。
+* Strategy Testerの `manifest.json` には製品commit・未コミット変更の有無・ソースハッシュ・実行したex5のSHA-256が記録される。`provenance.product.dirty=true` の結果は証跡に使わない。
+* `tools/release-gate.ps1` は、製品submoduleが開発基盤に記録したcommitと一致しない場合に失敗する。
+* 製品EAのex5は製品リポジトリでGit管理しない。
+
+---
+
+# 15. 文書管理
 
 変更内容に応じて次を更新する。
 

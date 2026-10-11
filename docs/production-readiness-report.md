@@ -2,6 +2,7 @@
 
 評価日: 2026-07-21（2026-09-17、Final Holdout結果を反映し6/7/13/14節を更新。2026-09-22、tick欠落修正後の再検証結果を7.5節に追記）  
 対象: CoreEA 1.13 / Phase 13  
+2026-10-11追記: 販売・試験運用の対象は製品ビルド `ProductEA`（製品リポジトリ `ryknk/EA-Product`、本リポジトリの `product/` submodule）へ変更した。`ProductEA` は外部連携（Decision API・ML/LLM・Telemetry・Heartbeat）を含まず、新規注文をローカルの戦略・Risk Manager・`OrderCheck`で判断する。本レポートの検証結果は研究ビルド `CoreEA`（Tester判断Mock常時許可）で取得したものであり、`ProductEA` と成績・監査イベントが一致することを2銘柄・2021年で確認している（`DECISIONS.md` DEC-045〜DEC-047、`docs/product-separation.md`）。判定はNO-GOのまま変わらない。  
 判定: **NO-GO**
 
 ## 1. エグゼクティブサマリー

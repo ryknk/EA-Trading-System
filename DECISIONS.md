@@ -1298,3 +1298,109 @@ TASKS.md 3.1節「データ利用条件とライセンスを確認する」の�
 * EA: 入力 `InpHeartbeatEnabled=false`（既定）、`InpHeartbeatApiUrl`、`InpHeartbeatIntervalSeconds=60`、`InpHeartbeatTimeoutMs=1500` を追加。既定では挙動は変わらない。有効時はWebRequestが最大timeout分EAスレッドを占有する。
 * 未検証: AWS deploy、実通信、Alarm発報・SNS到達、実LLM latency、SSM取得回数削減の実測、Demo・MQL5 VPS上のHeartbeat継続。
 * Rollback: 本変更のコミットをrevertし、deploy済みの場合は直前のcommitで `cdk diff` を確認して再deployする。EAは `InpHeartbeatEnabled=false` で即時無効化できる。
+
+# DEC-044: 本リポジトリを開発基盤とし、検証対象の識別情報をCaseFile・manifestで管理する（製品EAは将来別リポジトリへ分離）
+
+**状態:** 採用（2026-10-10）。Phase B（検証メタデータ・回帰テスト）はImplemented / Unit Tested / Locally Tested（Host実行1ケース）。製品リポジトリ分離（Phase C）は計画のみで未実施。
+
+## 背景
+
+販売EAを将来別リポジトリ（仮称 `EA-Product`）で管理し、本リポジトリを研究・検証・分析の開発基盤とする方針になった。現状調査（`docs/product-separation.md` 1章）で次を確認した。
+
+1. 複数ケース実行のmanifest.json（1.0）はCaseFile・TemplateのSHA-256を記録するが、検証したEAのcommit・ソース・ex5、MT5端末バージョン、データセットを記録しておらず、結果と検証対象を事後に対応づけられなかった。
+2. 検証レイヤー（IS/OOS/Walk Forward等）や合否基準はCaseFileの `description` の自由記述だけで、機械的に区別・追跡できなかった。
+3. 分析CLI（`python.analysis.reports`）の指標は単体テストがあるが、Runnerが使う「監査JSONL→CLI→performance-summary.json→summary.csv」の経路全体と、Runnerが参照するキー名の契約はテストされていなかった。
+4. `EAController.mqh` が製品中核・外部連携・研究計測を静的に結合しており、製品の単独ビルドにはinclude構造の変更が必要。
+
+## 決定
+
+* 新しい形式は導入せず、既存CaseFileへ任意項目（`validation_layer`、`acceptance_criteria`、`data_manifest`）を追加し、manifest.jsonを1.1へ加算的に拡張する。既存CaseFile 76件は変更不要とする。
+* CaseFileの読込・検証と識別情報の取得は `tools/lib/ValidationManifest.psm1` に分離し、MT5なしで単体テストできるようにする（`tools/test-validation-manifest.ps1`、開発ゲートに追加）。
+* 識別情報の取得失敗はStrategy Testerの成否判定へ影響させない（`null` で記録）。一方、CaseFileで指定した合否基準・データmanifestが存在しない場合は、記録が欠けた結果を作らないためMT5起動前にエラーとする。
+* 検証レイヤーは9種類とし、`operational_fault` だけを安全機能（safety）、他を性能（performance）の合否区分とする。区分は導出値とし、CaseFileで別途指定させない（指定の矛盾を避けるため）。
+* Runnerは `-ProductSourceRoot`（既定 `mt5/`）で製品ソースを受け取る。製品分離後は製品checkoutを指定するだけでRunner本体を変更しない。
+* 製品リポジトリとの連携は、検証対象commitを開発基盤の履歴へ固定できるGit submoduleを推奨とする（`docs/product-separation.md` 2.2節）。ゲート証跡は製品ビルド（販売するex5と同一）でだけ取得し、研究計測を含むビルドの結果を性能証跡に使わない。
+* 数値の合否基準は本決定では定めない。合否基準ファイルの事前コミットとSHA-256記録により、結果を見た後の変更を検出できる構造だけを用意する。
+
+## 影響
+
+* Runnerの既存の実行方式・Timeout・監査ログ回収・成果物配置・単一/複数ケース実行は変更しない。manifestのフィールド追加のみ（`schema_version` 1.0→1.1）。単体実行モードはmanifestを出力しない（従来どおり）。
+* VM実行時は、ex5がVM側にあるため `expert_ex5_sha256` とMT5端末バージョンを記録しない。VM実行での動作は未確認（NOT VERIFIED）。
+* `expert_ex5_older_than_source` は更新時刻の比較であり、checkout直後等は誤検出し得る参考値である。
+* 未実施: 製品中核と研究計測のinclude分離、外部連携を製品へ含めるかの決定、製品リポジトリ作成・submodule化、本番証跡JSONとmanifestの関連づけ（`TASKS.md` 11章）。
+* Rollback: 本変更のコミットをrevertする。manifest 1.1の追加フィールドは既存の読み手（summary生成）から参照されていないため、revert後も既存結果の解釈に影響しない。
+
+# DEC-045: 研究計測（Entry/Breakout Timing比較）をコンパイル時マクロで製品中核から切り離す
+
+**状態:** 採用（2026-10-10）。Implemented / Unit Tested / Locally Tested。`docs/product-separation.md` 3章の段階1。
+
+## 背景
+
+`EAController.mqh` と `AuditPayloadBuilder.mqh` が研究計測（`EntryTimingAnalyzer`・`BreakoutTimingAnalyzer`）を直接includeしており、製品中核を研究計測なしでビルドできなかった（DEC-044）。一方、既存のStrategy Testerテンプレート（`StrategyTester-Generic-EntryTiming-H1.ini` 等）とCaseFileは `CoreEA` の研究計測入力を使っている。
+
+## 決定
+
+* 研究計測の初期化・Tick処理・監査記録とPayload生成を `mt5/Include/Research/TimingAnalysisHook.mqh` へ集約する。Payload生成は `AuditPayloadBuilder.mqh` から本文を変えずに移設し、JSONフィールド・値・型・イベント順序を変えない。
+* EAControllerは `EA_TRADING_SYSTEM_RESEARCH_BUILD` 定義時だけ研究フックをincludeする。製品リポジトリへ研究計測のファイルを持ち込まずに済むよう、既定（未定義）を製品ビルドとした。
+* 製品ビルドで研究計測の入力が有効な場合は、黙って無視せず初期化を拒否する（分析が行われたと誤認させないため）。
+* 現行の `CoreEA.mq5` はマクロを定義する研究ビルドのままとし、既存のテンプレート・CaseFile・入力を変更しない。研究計測の入力を製品EAから外すのは製品リポジトリ作成時とする。
+* 研究フックの差し替えに仮想関数のインターフェースや別EAは導入しない（現時点で研究計測は1種類の組で、抽象化の必要がないため）。
+
+## 影響
+
+* `CoreEA` の挙動は不変。USDJPY_HIST 2021年の3ケース（既定・Entry Timing有効・Breakout Timing有効）で、変更前後の成績指標と監査イベント（`event_id` 除く）が完全一致した（`docs/product-separation.md` 4.1節）。他の銘柄・期間は未確認。
+* ex5は再コンパイルにより変わる。EAバージョン（1.13）は挙動不変のため変更していない。
+* 新規テスト `TestProductBuildWithoutResearch`（コンパイル・実行テストへ追加）。研究計測のincludeを一時的に製品側へ戻すと失敗することを確認済み。
+* 本番ゲートの証跡は、製品リポジトリ作成後の製品ビルドで取得する（現行CoreEAは研究ビルドである）。
+* Rollback: 本変更のコミットをrevertし、`compile-mql5.ps1` で再コンパイルする。
+
+# DEC-046: 製品EAは外部連携を含めずMQL5内で新規注文まで判断し、試験運用は製品ビルドで行う
+
+**状態:** 採用（2026-10-11、ユーザー決定）。Implemented / Locally Tested。`docs/product-separation.md` 3章の段階2。
+
+## 背景
+
+現行EAは、Decision API無効時（既定）に全候補を `DECISION_API_DISABLED` で拒否するため、AWSなしでは新規注文しない。一方、Strategy Testerテンプレート82件中81件は `InpTesterDecisionMode=1`（`TESTER_DECISION_ALWAYS_ALLOW`）であり、IS・OOS・Walk Forward・Final Holdoutの成績は外部フィルタなしのルールベース戦略の成績だった。本番候補MLモデルはなく、LLMは実通信していない。販売製品が販売者のAWSへ依存すると、顧客ごとの鍵管理・費用・障害対応・顧客データ送信が必要になり、販売者サーバーが取引ごとの判断を返す形態の規制上の位置づけは未確認である。
+
+## 決定
+
+* 製品EA（販売・試験運用）は、Decision API・ML/LLM、Telemetry、Heartbeat、Tester判断Mockを含めない。新規注文はローカルの戦略・フィルタ・Risk Manager（最終権限）・`InpEnableTradeMutations`・`OrderCheck` で判断する。
+* 外部判断の工程は、実行時の設定で飛ばすのではなく、製品ビルドではコンパイルされない（`EA_TRADING_SYSTEM_RESEARCH_BUILD` 未定義）。外部の失敗・timeout・不正応答を許可へ変換する経路は作らない。研究ビルドは従来どおり外部判断の無効・障害時に新規注文を拒否する。
+* `OrderManager.Submit` の外部許可引数とその検証規則は変更しない。製品ビルドはEAControllerで外部判断工程がないことを表す定数を渡す（研究ビルドと発注層の規則を共有し、変更範囲を最小化するため）。
+* 入力・設定組み立て・イベント処理を `mt5/Include/Core/EAEntryPoint.mqh` に共通化し、`ProductEA.mq5`（製品）と `CoreEA.mq5`（研究）が共有する。入力定義を二重管理しない。`CoreEA` と既存テンプレート・CaseFileは変更しない。
+* 試験運用（Demo・小額実口座）とゲート証跡は製品ビルドで取得する（ユーザー決定）。
+* ML・LLMは研究ビルドで研究を続ける。製品へ入れる場合は、OOS・Walk Forwardで改善を示した後、AWS経由ではなくEA内推論（MQL5のONNX等、実現性未確認）を別途検討する。
+
+## 影響
+
+* 研究ビルドの挙動は不変（段階1の3ケースと成績・監査イベントが完全一致）。製品ビルドは研究ビルドの常時許可Mockと、USDJPY・EURUSD 2021年で成績指標と監査イベント（`EXTERNAL_DECISION` と外部判断由来の `request_id` を除く）が完全一致した。
+* 製品ビルドにはHeartbeatがないため、EA停止のAWS Alarmによる自動検知はない（代替手段は未決定）。
+* 本番証跡のスキーマと `release-gate.ps1 -Mode Production` はML・LLM・AWSの項目を必須にしており、製品ビルドの証跡と整合しない（見直しは未実施）。
+* Release Gateの安全初期値検査の対象を `EAEntryPoint.mqh` に変更し、製品EAが研究マクロを定義しないこと、既存ポジション監視がRisk Managerの新規注文評価より先であることの静的検査を追加した。
+* 製品ビルドでも `InpEnableTradeMutations=false` が既定であり、取引変更の有効化にはユーザーの明示的な許可が必要という運用は変わらない。
+* Rollback: 本変更のコミットをrevertし、`compile-mql5.ps1` で再コンパイルする。
+
+# DEC-047: 製品EAのソースを ryknk/EA-Product へ分離し、開発基盤はsubmoduleで特定commitを検証する
+
+**状態:** 採用・実施（2026-10-11、ユーザー承認）。Implemented / Locally Tested / Pushed（製品リポジトリ）。`docs/product-separation.md` 5章。
+
+## 背景
+
+DEC-044〜DEC-046で、製品ビルド `ProductEA` が研究計測・外部連携なしで完結し、研究ビルドと成績が一致することを確認した。製品コードを両リポジトリで二重管理せず、研究用の変更が販売版へ自動的に混入しない構成にするため、製品EAのソースを独立したリポジトリへ移す。
+
+## 決定
+
+* 製品EAのソースの唯一の正本を `ryknk/EA-Product`（private、`main`・`dev`）とする。対象は製品ビルドと製品テストのinclude閉包から機械的に求めた62件（`ProductEA.mq5` 1件、Include 41件（`.mqh` 33件と `.gitkeep` 8件）、製品テスト10件と起動設定10件）。
+* 履歴は `git filter-branch --index-filter` で製品ファイルの履歴だけを抽出して保持する。パスを変えないことでファイルごとの履歴を残し、各コミットに `Source-Commit:` で元commitを記録する。追加ツール（git-filter-repo）は導入しない。元リポジトリの履歴は変更しない。
+* 開発基盤は `product/` にsubmoduleとして取り込み、検証する製品commitを開発基盤の履歴で固定する。`release-gate.ps1` はsubmoduleが記録commitと一致しない場合に失敗する。Strategy Testerのmanifestは製品commit・未コミット変更の有無・実行したex5のSHA-256を記録する（DEC-044）。
+* MT5上の参照名は、製品を `Include\EaTradingSystem`・`Experts\EaTradingSystemProduct`・`Scripts\EaTradingSystemProductTests`、研究を `Include\EaTradingSystemResearch`・`Experts\EaTradingSystem`・`Scripts\EaTradingSystemTests` とする。研究ビルドのStrategy Testerテンプレート（`StrategyTester-*.ini` 83件中81件が `Expert=EaTradingSystem\CoreEA`）を変更しないため、研究側の既存名を維持した。
+* 製品テストのうち研究用Mock・研究計測を検査していた部分は、開発基盤の研究テスト（`TestMockDecisionProvider`・`TestTimingAnalysisPayload`）へ分けた。製品の対象一覧（コンパイル・テスト）は製品リポジトリだけが持ち、開発基盤は製品側のスクリプトとiniを列挙して使う。
+* 製品リポジトリではex5をGit管理しない。製品は単独利用時のリンク・コンパイル・テストスクリプトを持つ。
+* 製品の `EAController.mqh`・`AuditEventPublisher.mqh` に研究ビルド用の `#ifdef` ブロックを残す（研究ビルドが製品中核をそのまま使うため）。製品ビルドではコンパイルされず、製品単独のcloneでも研究ファイルなしでコンパイルできることを確認した。
+
+## 影響
+
+* 分離前（run `20261011-004835`）と分離後（run `20261011-005814`）で、製品ビルド2ケース・研究ビルド3ケースの成績指標と監査イベントが完全一致した。GitHubからcloneした製品リポジトリだけで、製品EAと製品テスト計11件が0 errors・0 warningsでコンパイルできた。
+* 既存環境では `git submodule update --init` と `tools/link-mt5.ps1 -Relink` によるジャンクション張り替えが必要（`-Relink` はジャンクションだけを張り替え、リンク先の内容は削除しない）。
+* VM実行モード、製品リポジトリのブランチ保護、本番証跡とmanifestの関連づけは未対応。
+* Rollback: 開発基盤で分離コミットをrevertし、`git submodule deinit product` の後に `tools/link-mt5.ps1 -Relink` と再コンパイルを行う。製品リポジトリはGitHub上に残る。

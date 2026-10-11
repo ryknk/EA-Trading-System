@@ -9,7 +9,7 @@ input string InpOutputFile = "symbol-spec-diagnostics-tester.tsv";
 input double InpProbePrice = 0.0;
 input double InpProbeStop  = 0.0;
 
-#include <EaTradingSystem\Diagnostics\SymbolSpecDump.mqh>
+#include <EaTradingSystemResearch\Diagnostics\SymbolSpecDump.mqh>
 
 bool g_dumped=false;
 

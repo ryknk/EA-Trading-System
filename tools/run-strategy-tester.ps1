@@ -28,12 +28,19 @@ param(
     # ExecutionMode=Host専用。既定trueで画面表示・フォーカス奪取を避ける非表示デスクトップ方式
     # （CreateDesktopEx、DEC-031）を使う。管理者権限は不要。falseにすると従来の
     # -WindowStyle Hidden方式へフォールバックする。
-    [bool]$HostUseIsolatedSession = $true
+    [bool]$HostUseIsolatedSession = $true,
+    # 検証対象の製品EAソース（Experts・Include配下）。manifest.jsonへcommit・ソースハッシュ・EAバージョンを
+    # 記録するためだけに使う。製品リポジトリ分離後は製品側のmt5ディレクトリを指定する（docs/product-separation.md）。
+    [string]$ProductSourceRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Import-Module (Join-Path $PSScriptRoot "lib\Mt5ExecutionBackend.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "lib\ValidationManifest.psm1") -Force
+# 製品EAの正本はsubmodule product/（ryknk/EA-Product）にある（DEC-047）。研究ビルドCoreEAは開発基盤のmt5を使う。
+if ([string]::IsNullOrEmpty($ProductSourceRoot)) { $ProductSourceRoot = Join-Path $root "product\mt5" }
+$platformMt5Root = Join-Path $root "mt5"
 
 function Read-IniValue {
     param([string]$Path, [string]$Key)
@@ -148,6 +155,7 @@ function Invoke-StrategyTesterCase {
     # 実行間・ケース間でのログ混入を防ぐ（重複するID生成基盤は追加しない）。
     $content = Set-IniTesterInput -Content $content -Key "InpAuditRunId" -Value $ReportName
     Set-Content -LiteralPath $config -Value $content -Encoding Unicode
+    $testerIniSha256 = (Get-FileHash -LiteralPath $config -Algorithm SHA256).Hash
 
     $expert = Read-IniValue $config "Expert"
     $depositRaw = Read-IniValue $config "Deposit"
@@ -260,6 +268,7 @@ function Invoke-StrategyTesterCase {
         Deposit        = $deposit
         TemplatePath   = $templatePath
         TemplateSha256 = $templateSha256
+        TesterIniSha256 = $testerIniSha256
         AuditDir       = $auditDir
         AuditFiles     = $auditFileNames
     }
@@ -289,41 +298,42 @@ if ([string]::IsNullOrEmpty($CaseFile)) {
 
 # ---- 複数ケース実行モード（CaseFileから複数テストケースを読み込み、同じ1ケース実行処理を順番に実行） ----
 $caseFilePath = if ([System.IO.Path]::IsPathRooted($CaseFile)) { $CaseFile } else { Join-Path $root $CaseFile }
-if (-not (Test-Path -LiteralPath $caseFilePath)) { throw "CaseFile not found: $caseFilePath" }
-$caseFileRaw = Get-Content -LiteralPath $caseFilePath -Raw -Encoding UTF8
-$parsed = $caseFileRaw | ConvertFrom-Json
-# ConvertFrom-Jsonは要素数1のJSON配列をスカラーへ展開してしまうため、@()で強制的に配列化する。
-# casesキーを持つオブジェクト形式でなければ、配列（要素数1でスカラー化されている場合を含む）とみなす。
-$cases = if ($parsed.PSObject.Properties.Name -contains 'cases') { @($parsed.cases) } else { @($parsed) }
-if (-not $cases -or $cases.Count -eq 0) { throw "CaseFileにケースが1件もありません。" }
-
-$requiredFields = @("case_name", "symbol", "from_date", "to_date", "template")
-$seenNames = @{}
-foreach ($case in $cases) {
-    foreach ($field in $requiredFields) {
-        if (-not ($case.PSObject.Properties.Name -contains $field) -or [string]::IsNullOrWhiteSpace([string]$case.$field)) {
-            throw "CaseFileの各ケースには $field が必須です（case_name=$($case.case_name)）。"
-        }
-    }
-    if ($seenNames.ContainsKey($case.case_name)) { throw "case_nameが重複しています: $($case.case_name)" }
-    $seenNames[$case.case_name] = $true
-}
+# 必須項目・case_name重複・任意メタデータ（validation_layer等）の検証はMT5起動前に行う（tools/lib/ValidationManifest.psm1）。
+$caseDefinition = Read-ValidationCaseFile -Path $caseFilePath -Root $root
+$cases = $caseDefinition.Cases
 
 $runId = Get-Date -Format "yyyyMMdd-HHmmss"
 $batchDir = Join-Path $root "results\backtests\$runId-cases"
 New-Item -ItemType Directory -Path $batchDir -Force | Out-Null
 $caseFileHash = (Get-FileHash -LiteralPath $caseFilePath -Algorithm SHA256).Hash
 
+# 検証対象（製品ソースのcommit・ソースハッシュ、検証基盤のcommit、MT5端末バージョン）の識別情報。
+# 取得失敗はStrategy Tester自体の成否判定へ影響させない。
+$provenance = $null
+try {
+    $provenance = Get-ValidationProvenance -PlatformRoot $root -ProductSourceRoot $ProductSourceRoot `
+        -InstallPath $(if ($ExecutionMode -eq "Host") { $InstallPath } else { "" })
+    if ($provenance.product.dirty -eq $true) {
+        Write-Host "STRATEGY_TESTER_PRODUCT_SOURCE_DIRTY note=製品ソースに未コミット変更があります。結果は特定commitの再現とみなさないでください path=$ProductSourceRoot"
+    }
+} catch {
+    Write-Host "STRATEGY_TESTER_PROVENANCE_FAILED error=$($_.Exception.Message)"
+}
+
 $manifest = [ordered]@{
-    schema_version   = "1.0"
-    run_id           = $runId
-    created_at_utc   = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-    install_path     = $InstallPath
-    terminal_data    = $TerminalData
-    timeout_seconds  = $TimeoutSeconds
-    case_file        = $caseFilePath
-    case_file_sha256 = $caseFileHash
-    cases            = @()
+    schema_version      = "1.1"
+    run_id              = $runId
+    created_at_utc      = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    install_path        = $InstallPath
+    terminal_data       = $TerminalData
+    execution_mode      = $ExecutionMode
+    timeout_seconds     = $TimeoutSeconds
+    case_file           = $caseFilePath
+    case_file_sha256    = $caseFileHash
+    validation_layer    = $caseDefinition.ValidationLayer
+    acceptance_criteria = $caseDefinition.AcceptanceCriteria
+    provenance          = $provenance
+    cases               = @()
 }
 $manifestPath = Join-Path $batchDir "manifest.json"
 $summaryRows = @()
@@ -357,14 +367,22 @@ foreach ($case in $cases) {
         from_date           = $fromDate
         to_date             = $toDate
         template            = $template
+        validation_layer    = $case.validation_layer
+        gate_category       = $case.gate_category
+        data_manifest       = $case.data_manifest
+        data_manifest_sha256 = $case.data_manifest_sha256
         result_dir          = $caseResultDir
         report_name         = $reportName
         status              = "Failed"
         error               = $null
         exit_code           = $null
         expert              = $null
+        ea_version          = $null
+        expert_ex5_sha256   = $null
+        expert_ex5_older_than_source = $null
         deposit             = $null
         template_sha256     = $null
+        tester_ini_sha256   = $null
         audit_dir           = $null
         performance_summary = $null
     }
@@ -382,11 +400,29 @@ foreach ($case in $cases) {
         $caseRecord.expert = $execResult.Expert
         $caseRecord.deposit = $execResult.Deposit
         $caseRecord.template_sha256 = $execResult.TemplateSha256
+        $caseRecord.tester_ini_sha256 = $execResult.TesterIniSha256
         $caseRecord.audit_dir = $execResult.AuditDir
     } catch {
         $caseRecord.status = "Failed"
         $caseRecord.error = $_.Exception.Message
         Write-Host "STRATEGY_TESTER_CASE_FAILED case=$caseName index=$caseIndex/$totalCases error=$($_.Exception.Message)"
+    }
+
+    # 実行したEAの識別情報（ソース上のバージョン、ex5のSHA-256）。VM実行時のex5はVM側にあるため記録しない。
+    # 取得失敗はStrategy Tester自体の成否判定へ影響させない。
+    if ($caseRecord.expert) {
+        try {
+            $expertIdentity = Get-ExpertIdentity -Expert $caseRecord.expert -ProductSourceRoot $ProductSourceRoot `
+                -TerminalData $(if ($ExecutionMode -eq "Host") { $TerminalData } else { "" }) -AdditionalSourceRoots @($platformMt5Root)
+            $caseRecord.ea_version = $expertIdentity.ea_version
+            $caseRecord.expert_ex5_sha256 = $expertIdentity.expert_ex5_sha256
+            $caseRecord.expert_ex5_older_than_source = $expertIdentity.expert_ex5_older_than_source
+            if ($expertIdentity.expert_ex5_older_than_source -eq $true) {
+                Write-Host "STRATEGY_TESTER_EX5_OLDER_THAN_SOURCE case=$caseName note=ex5が製品ソースより古いため未コンパイルの変更がある可能性があります。compile-mql5.ps1を確認してください"
+            }
+        } catch {
+            Write-Host "STRATEGY_TESTER_EXPERT_IDENTITY_FAILED case=$caseName error=$($_.Exception.Message)"
+        }
     }
 
     # 分析（python.analysis.reports）の失敗は、Strategy Tester自体の成功/失敗判定に影響させない
@@ -499,6 +535,6 @@ foreach ($row in $summaryRows) {
 }
 Set-Content -LiteralPath $summaryMdPath -Value ($mdLines -join "`n") -Encoding UTF8
 
-$succeeded = ($manifest.cases | Where-Object { $_.status -eq "Succeeded" }).Count
-$failed = ($manifest.cases | Where-Object { $_.status -eq "Failed" }).Count
+$succeeded = Get-CaseStatusCount -Cases $manifest.cases -Status "Succeeded"
+$failed = Get-CaseStatusCount -Cases $manifest.cases -Status "Failed"
 Write-Host "STRATEGY_TESTER_BATCH_COMPLETED total=$($cases.Count) succeeded=$succeeded failed=$failed manifest=$manifestPath summary=$summaryCsvPath"

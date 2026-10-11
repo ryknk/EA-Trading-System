@@ -2207,3 +2207,37 @@ Strategy Tester・MQL5単体テスト実行中にホストの対話デスクト�
 * [ ] Production Evidence JSONを作成する
 * [ ] Production Release Gateを実行する
 * [ ] 承認者と承認時刻を記録する
+
+---
+
+# 11. 開発基盤と製品EAの分離（2026-10-10追加、`DECISIONS.md` DEC-044、`docs/product-separation.md`）
+
+## 11.1 実施済み（Phase B）
+
+* [x] 現状の構成・依存関係・結合箇所を `docs/product-separation.md` へ文書化する
+* [x] CaseFileへ `validation_layer`・`acceptance_criteria`・`data_manifest` を追加し、manifest.json 1.1へ検証対象の識別情報を記録する
+* [x] CaseFile・識別情報取得の単体テスト（`tools/test-validation-manifest.ps1`）を開発ゲートへ追加する
+* [x] 監査JSONL→分析CLIの回帰テストとRunnerキー契約テスト（`python/tests/test_validation_regression.py`）を追加する
+
+## 11.2 未実施
+
+* [ ] VM実行モードでmanifest 1.1が出力されることを確認する
+* [ ] 合否基準（数値）を検証実績から決定し、基準ファイルとしてコミットする（結果を見る前に固定する）
+* [ ] 主要CaseFile（Walk Forward等）へ `validation_layer` を付与する（既存CaseFileの変更のため、付与方針を決めてから行う）
+* [x] 外部連携（Decision API・Telemetry・Heartbeat）を製品EAへ含めるかを決定する（2026-10-11、含めない。DEC-046。製品ビルド `ProductEA` を追加し、研究ビルドとの成績一致を2銘柄で確認）
+* [ ] 製品ビルドの試験運用でのEA停止・ハング検知方法を決める（Heartbeatがないため。VPS Journal確認、MQL5プッシュ通知等）
+* [ ] 本番証跡（`production-release-evidence.schema.json`・`release-gate.ps1 -Mode Production`）を製品ビルド用に見直す（現在はML・LLM・AWSの項目を必須にしている）
+* [ ] 製品ビルドの成績一致を他の銘柄・期間（Walk Forward全Fold等）でも確認する
+* [x] Kill Switch規則（`External/IDecisionProvider.mqh`）と `External/CryptoUtils.mqh` の配置を製品リポジトリ作成時に見直す（2026-10-11、通信を伴わない規則・型のため製品リポジトリに置いた。通信を伴う外部連携は開発基盤の `EaTradingSystemResearch` ルートに残した。DEC-047）
+* [x] 研究計測（Entry/Breakout Timing）を製品中核のincludeから分離する（2026-10-10、DEC-045。USDJPY_HIST 2021年の3ケースで変更前後の成績・監査イベントの完全一致を確認）
+* [x] 研究計測の入力（`InpEnableEntryTimingAnalysis`等）を製品EAから外す（`EAEntryPoint.mqh` の `#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD` 内にあり、製品ビルドの入力には存在しない。DEC-046）
+* [x] `link-mt5.ps1`・`compile-mql5.ps1`・`run-mql5-tests.ps1`・`release-gate.ps1` を製品submodule（`product/`）に対応させる（2026-10-11、DEC-047）
+* [x] `EA-Product` リポジトリ作成・履歴付き移行・submodule化（2026-10-11、ユーザー承認済み。`ryknk/EA-Product` private、DEC-047）
+* [ ] 製品リポジトリ `ryknk/EA-Product` のブランチ保護（`main` への直接push禁止等）をGitHub上で設定する（ユーザー操作）
+* [ ] VM実行モード（`-ExecutionMode VM`）を分離後の構成で確認する（VM側の製品submodule・ジャンクション設定が必要）
+* [ ] 分離前後の一致を他の銘柄・期間（Walk Forward全Fold等）でも確認する
+* [ ] 本番証跡JSONへ検証manifest（製品commit・ex5 SHA-256）を関連づける
+* [x] `CONTRIBUTING.md` の安定Branch記載（`master`）を実運用（`main` 安定・`dev` 統合、dev→mainはPull Request）へ修正する（2026-10-11）
+* [ ] `HANDOFF.md`（Git管理外）の安定Branch記載（`master`）と分離前の構成の記述を更新する（ユーザー管理の文書）
+* [x] `STRATEGY_TESTER_BATCH_COMPLETED` ログで件数1件時に `succeeded=`/`failed=` が空欄になる問題（Windows PowerShell 5.1）を修正する（2026-10-10、`Get-CaseStatusCount`へ集計を移し`@()`で配列化、回帰テスト追加）
+* [x] `test_convert_is_reused_until_inputs_change_and_force_rebuilds` の断続的失敗を修正する（2026-10-10、ファイル時刻の粒度に依存しない判定へ変更。修正前30回中7回失敗、修正後50回中0回）
