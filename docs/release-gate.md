@@ -6,7 +6,7 @@ Phase 12完了は「ソフトウェア構造と開発検証手順が完成した
 
 ## 開発ゲート
 
-次を実行すると、必須文書、安全なMQL5初期値（`InpHeartbeatEnabled=false`を含む）、既存ポジション監視が外部判断APIより先に実行されHeartbeatが`OnTick`から分離されていることの静的検査、基本的な秘密情報混入、JSON契約、Python・Lambda・CDK全テスト、CDK synth、MetaEditor実コンパイル、MT5 script testを順に検証する。MT5端末は事前に閉じる。
+次を実行すると、必須文書、製品submodule（`product/`）が開発基盤に記録したcommitと一致すること、安全なMQL5初期値（`InpHeartbeatEnabled=false`を含む。製品の `EAEntryPoint.mqh` を検査）、製品EAが研究ビルドのマクロを定義しないこと、既存ポジション監視が外部判断API・Risk Managerの新規注文評価より先に実行されHeartbeatが`OnTick`から分離されていることの静的検査、CaseFile・検証識別情報の単体テスト（`tools/test-validation-manifest.ps1`）、基本的な秘密情報混入、JSON契約、Python・Lambda・CDK全テスト、CDK synth、MetaEditor実コンパイル（製品・研究ビルドと両リポジトリのテスト）、MT5 script testを順に検証する。MT5端末は事前に閉じる。
 
 ```powershell
 .\tools\release-gate.ps1 -Mode Development

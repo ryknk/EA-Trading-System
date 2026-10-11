@@ -8,7 +8,7 @@
 
 # 2. 基本原則
 
-* `master` を安定Branchとして扱う。
+* `main` を安定Branch、`dev` を統合Branchとして扱う。`main` へは `dev` からPull Requestでマージする（製品リポジトリ `ryknk/EA-Product` も同じ運用）。リモートに残る `master` は旧Branchであり使用しない。
 * 作業は原則として専用Branchで行う。
 * 1つのBranchへ無関係な変更を混在させない。
 * ユーザーの未コミット変更を上書きしない。
@@ -40,11 +40,12 @@ git log --oneline --decorate -10
 
 # 4.1 Branch作成
 
-原則として最新の`master`からBranchを作成する。
+原則として最新の`dev`からBranchを作成し、作業後は`dev`へマージする。`dev`の内容は検証後にPull Requestで`main`へマージする。
 
 ```powershell
-git switch master
+git switch dev
 git pull --ff-only
+git submodule update --init
 git switch -c <branch-name>
 ```
 
@@ -344,9 +345,9 @@ Merge方式はRepository設定と運用状況に合わせて統一する。
 
 ---
 
-# 10. `master`への直接変更
+# 10. `main`への直接変更
 
-原則として、重要な実装変更を`master`へ直接Commitしない。
+原則として、重要な実装変更を`main`へ直接Commitしない（`dev`からPull Requestでマージする）。
 
 次のような軽微な変更では、ユーザー判断により直接変更を許容できる。
 

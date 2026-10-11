@@ -82,7 +82,7 @@ Python・AWS・CDKはMQL5ソースへ依存しない。両者の接点は次の2
 * Strategy Testerテンプレート95件の多くは `StrategyTester-Generic-H1.ini` と1〜2入力だけが異なる複製で、既定値変更時に全件の追随が必要になる。
 * `tools/test-phase6.ps1`〜`test-phase13.ps1` はPhase単位の歴史的な入口で、内容が重複している。
 * 単体実行モード（`-CaseFile` なし）はmanifestを出力しない。正式な検証はCaseFile経由で行う。
-* `HANDOFF.md`・`CONTRIBUTING.md` は安定Branchを `master` と記載しているが、実運用は `main` / `dev` である（文書と運用の不一致）。
+* `HANDOFF.md`・`CONTRIBUTING.md` は安定Branchを `master` と記載しているが、実運用は `main` / `dev` である（文書と運用の不一致）。`CONTRIBUTING.md` は2026-10-11に修正した。`HANDOFF.md` はGit管理外のため未修正。
 * `compile-mql5.ps1`（開発ゲートに含む）はGit管理下の `mt5/**/*.ex5` と `build/metaeditor/*.log` を再生成するため、ソースを変えなくても作業ツリーに差分が出る。
 * `python/tests/test_tickdata_pipeline.py` の `test_convert_is_reused_until_inputs_change_and_force_rebuilds` は、Windowsのファイル時刻がシステムクロックの刻み（約15.6ms）で更新されるため、同じ刻み内の再生成で更新時刻が変わらず断続的に失敗していた（修正前30回中7回）。2026-10-10、更新時刻を既知の過去値へ戻してから判定する方式へ修正した（変換処理本体は更新時刻を使っておらず影響なし）。
 * 複数ケース実行の完了ログ `STRATEGY_TESTER_BATCH_COMPLETED` で、件数が1件のときWindows PowerShell 5.1では `succeeded=`/`failed=` が空欄になっていた（`Where-Object` が単一の `PSCustomObject` を返し `.Count` が `$null` になるため。ログのみでmanifest・summaryは正しい）。2026-10-10修正済み。
@@ -122,12 +122,12 @@ Python・AWS・CDKはMQL5ソースへ依存しない。両者の接点は次の2
 段階1（2026-10-10、DEC-045）で、研究計測の取り込みを `#ifdef EA_TRADING_SYSTEM_RESEARCH_BUILD` で切り替える構造にした。
 
 * `mt5/Include/Research/TimingAnalysisHook.mqh`: Entry/Breakout Timing分析器の初期化・Tick処理・監査記録と、そのPayload生成（`CTimingAnalysisPayloadBuilder`）。EAControllerから研究計測への入口はこれだけである。
-* マクロ未定義（製品ビルド）: EA中核は研究計測なしでコンパイルされる。`InpEnableEntryTimingAnalysis` または `InpEnableBreakoutTimingAnalysis` をtrueにすると、黙って無視せず初期化を拒否する（`RESEARCH_BUILD_REQUIRED`）。`mt5/Tests/TestProductBuildWithoutResearch.mq5` がinclude経路に研究計測が含まれないことを検査する。
+* マクロ未定義（製品ビルド）: EA中核は研究計測なしでコンパイルされる。`InpEnableEntryTimingAnalysis` または `InpEnableBreakoutTimingAnalysis` をtrueにすると、黙って無視せず初期化を拒否する（`RESEARCH_BUILD_REQUIRED`）。`TestProductBuildWithoutResearch.mq5`（分離後は `product/mt5/Tests/`）がinclude経路に研究計測が含まれないことを検査する。
 * 現行の `CoreEA.mq5` はマクロを定義する研究ビルドのままである（既存テンプレート・CaseFileの挙動を変えないため）。研究計測の入力（`InpEnableEntryTimingAnalysis` 等）も `CoreEA.mq5` と `Config.mqh` に残っている。製品EAから外すのは製品リポジトリ作成時（段階4）とする。
 
 段階2（2026-10-11、DEC-046）で、外部連携（Decision API・ML/LLM、Telemetry、Heartbeat、Tester判断Mock）を製品へ**含めない**ことを決定し、同じマクロで研究ビルドだけに含める構造にした。
 
-* 製品ビルド `mt5/Experts/ProductEA.mq5` を追加した。入力・設定組み立て・イベント処理は `mt5/Include/Core/EAEntryPoint.mqh` に移し、`CoreEA.mq5`（研究ビルド）と共有する（研究専用の入力は `#ifdef` 内）。
+* 製品ビルド `ProductEA.mq5` を追加した（段階2時点は `mt5/Experts/`、分離後は `product/mt5/Experts/`）。入力・設定組み立て・イベント処理は `EAEntryPoint.mqh`（分離後は `product/mt5/Include/Core/`）に移し、`CoreEA.mq5`（研究ビルド）と共有する（研究専用の入力は `#ifdef` 内）。
 * 製品ビルドは外部判断の工程を持たず、候補はローカル検査の後、Risk Manager（最終権限）・`InpEnableTradeMutations`・`OrderCheck` で判断される。外部の失敗を許可へ変換するのではなく、工程がコンパイルされない。研究ビルドは従来どおりDecision API無効・障害時に新規注文を拒否する。
 * 製品ビルドは監査JSONLをローカルへ記録するだけで、Telemetry送信・Heartbeatを行わない。
 * **試験運用（Demo・小額実口座）は製品ビルドで行う**（ユーザー決定、2026-10-11）。ゲート証跡も製品ビルドで取得する。製品ビルドのStrategy Testerテンプレートは `mt5/test-config/StrategyTester-Product-H1.ini`。
@@ -245,7 +245,7 @@ VM実行モードでの新規項目の記録は未確認（NOT VERIFIED）。VM�
 ### 5.2 実施内容
 
 * 製品リポジトリ: [ryknk/EA-Product](https://github.com/ryknk/EA-Product)（private、`main`・`dev`）。
-* 履歴: `git filter-branch --index-filter` で製品ファイル62件（`ProductEA.mq5`、Include 41件、製品テスト10件とその起動設定）の履歴だけを抽出した。パスを変えていないため、ファイルごとの履歴が残る（元の78コミット中、製品ファイルを変更した38コミット）。各コミットに `Source-Commit: ryknk/EA-Trading-System@<sha>` を追記した。抽出後のファイルは元リポジトリ `4b9d01c` と全件同一blobであることを確認した。元リポジトリの履歴は変更していない。
+* 履歴: `git filter-branch --index-filter` で製品ファイル62件（`ProductEA.mq5` 1件、Include 41件（`.mqh` 33件と各ディレクトリの `.gitkeep` 8件）、製品テスト10件とその起動設定10件）の履歴だけを抽出した。パスを変えていないため、ファイルごとの履歴が残る（元の78コミット中、製品ファイルを変更した38コミット）。各コミットに `Source-Commit: ryknk/EA-Trading-System@<sha>` を追記した。抽出後のファイルは元リポジトリ `4b9d01c` と全件同一blobであることを確認した。元リポジトリの履歴は変更していない。
 * 製品リポジトリに追加: README・CLAUDE.md・`.gitignore`（ex5・ビルドログを管理対象外）、単独利用時の `tools/link-mt5.ps1`・`compile-mql5.ps1`・`run-mql5-tests.ps1`。
 * 開発基盤: 製品ファイル62件と対応するex5を削除し、`product/` にsubmodule（`branch = main`）を追加した。`mt5/` には研究ビルド `CoreEA`、研究用Include（`EaTradingSystemResearch` ルート）、研究テスト、診断ツールが残る。
 * 研究用ファイルの参照は分離前に `EaTradingSystemResearch` ルートへ変更した（`4b9d01c`）。製品の `EAController.mqh`・`AuditEventPublisher.mqh` には研究ビルド用の `#ifdef` ブロックが残るが、製品ビルドではコンパイルされない。

@@ -83,7 +83,7 @@ OOS分析（`python.analysis.trade_breakdown`の`reversal_from_profit`/`giveback
 5. Exit: 市場成行で決済する（初期SL/TP自体は変更しない）。
 ```
 
-Long/Short対称に実装されている（`CTrendReversalExitRules`、`mt5/Include/Trading/PositionManager.mqh`）。当初SL（`initial_stop_loss`）はATRトレーリング等によるSL変更の影響を受けないよう、初回検知時にCTimeStopTrackerと同じ考え方で固定する（`CTrendReversalTracker`、CTimeStopTrackerとは目的が異なる別系統として独立管理し、`InpEnableTimeStop`の有効・無効に関わらず動作する）。
+Long/Short対称に実装されている（`CTrendReversalExitRules`、`product/mt5/Include/Trading/PositionManager.mqh`）。当初SL（`initial_stop_loss`）はATRトレーリング等によるSL変更の影響を受けないよう、初回検知時にCTimeStopTrackerと同じ考え方で固定する（`CTrendReversalTracker`、CTimeStopTrackerとは目的が異なる別系統として独立管理し、`InpEnableTimeStop`の有効・無効に関わらず動作する）。
 
 決済時、監査ログへ`TREND_REVERSAL_EXIT`イベント（`reason_code`固定値`TrendReversalConfirmed`、`trend_direction`、`peak_price`、`peak_mfe_r_multiple`、`retracement_r_multiple`、`confirmation_count`）が記録される（ローカル監査のみ、TIME_STOP_EXIT/RANGE_EXITと同じく既存TRADE_CLOSEDの契約は変更しない）。`python.analysis.trade_breakdown.trend_reversal_exit_summary()`でBaseline（`InpEnableTrendReversalExit=false`）とON（true）のバックテスト結果を比較できる。詳細は`docs/backtesting.md`「トレンド継続反転Exit比較分析」を参照。
 
@@ -103,7 +103,7 @@ Long/Short対称に実装されている（`CTrendReversalExitRules`、`mt5/Incl
 3. Exit: 市場成行で決済する（初期SL/TP自体は変更しない）。
 ```
 
-Long/Short対称に実装されている（`CEarlyAdverseExitRules`、`mt5/Include/Trading/PositionManager.mqh`）。当初SL（`initial_stop_loss`）はATRトレーリング等によるSL変更の影響を受けないよう、初回検知時に固定する（`CEarlyAdverseExitTracker`、CTrendReversalTrackerと異なり含み益ピークを扱わない別系統として独立管理する）。継続確認（`HasConfirmedReversal`）の判定ロジックは`CTrendReversalExitRules`と完全に同一のため、そのまま再利用している。
+Long/Short対称に実装されている（`CEarlyAdverseExitRules`、`product/mt5/Include/Trading/PositionManager.mqh`）。当初SL（`initial_stop_loss`）はATRトレーリング等によるSL変更の影響を受けないよう、初回検知時に固定する（`CEarlyAdverseExitTracker`、CTrendReversalTrackerと異なり含み益ピークを扱わない別系統として独立管理する）。継続確認（`HasConfirmedReversal`）の判定ロジックは`CTrendReversalExitRules`と完全に同一のため、そのまま再利用している。
 
 決済時、監査ログへ`EARLY_ADVERSE_EXIT`イベント（`reason_code`固定値`EarlyAdverseConfirmed`、`adverse_r_multiple`、`confirmation_count`）が記録される（ローカル監査のみ、既存TRADE_CLOSEDの契約は変更しない）。`python.analysis.trade_breakdown.early_adverse_exit_summary()`でBaseline（`InpEnableEarlyAdverseExit=false`）とON（true）のバックテスト結果を比較できる。トレンド継続反転Exitと同時に有効化した場合、含み益ピークからの反転がトリガー到達より先に確定するトレードでは、トレンド継続反転Exit側が先に決済する（評価順序は`CEAController::OnTick`参照）。
 
@@ -137,7 +137,7 @@ Long/Short対称に実装されている（`CEarlyAdverseExitRules`、`mt5/Inclu
 | `InpCloseUnprotectedPositions` | true | 保護SLなしの所有positionを緊急決済対象にする |
 | `InpEnableBreakevenStop` | true | 建値ストップ移動の有効化（2026-08-17追加、詳細はTASKS.md参照） |
 | `InpBreakevenTriggerR` | 1.0 | 含み益が「建値〜当初SL距離（初期リスク）」の何倍に達したら建値へSLを引き上げるか（2026-08-17追加）。`InpEnableTradeMutations=false`では発動しない。単一銘柄IS期間での0.5/0.75/1.25/1.5/2.0スイープ比較で1.0が純損益・PF・Sharpe・期待利得・最大連敗のすべてで最良またはタイの結果を確認済み（詳細はTASKS.md 2.1参照）。部分利確（1R/1.5Rトリガー）は建値ストップ単体を上回らなかったため撤回済み。ATRトレーリングストップは2026-08-17に単一銘柄IS期間の1点（1.0Rトリガー・2.0×ATR幅）でのみ検証し撤回したが、2026-09-05に4銘柄OOS・2次元グリッドで再検証した結果は建値ストップ単体と拮抗〜やや上回る結果となった（詳細はTASKS.md 2.1.3参照、Final Holdout未確認のため採用は保留） |
-| `InpEnableAtrTrailingStop` | false | ATRトレーリングストップの有効化（`mt5/Include/Trading/PositionManager.mqh`の`CAtrTrailingStopRules`、2026-09-05再実装）。トリガーR×ATR倍率の2次元グリッド検証結果はTASKS.md 2.1.3参照。建値ストップと同時に有効化すると、建値到達後も`ShouldTrail`の当初SL基準判定により建値ストップと独立して動作し続ける（両立可能だが評価は分離して実施） |
+| `InpEnableAtrTrailingStop` | false | ATRトレーリングストップの有効化（`product/mt5/Include/Trading/PositionManager.mqh`の`CAtrTrailingStopRules`、2026-09-05再実装）。トリガーR×ATR倍率の2次元グリッド検証結果はTASKS.md 2.1.3参照。建値ストップと同時に有効化すると、建値到達後も`ShouldTrail`の当初SL基準判定により建値ストップと独立して動作し続ける（両立可能だが評価は分離して実施） |
 | `InpAtrTrailingTriggerR` | 1.0 | 含み益が「建値〜当初SL距離（初期リスク）」の何倍に達したらATRトレーリングを開始するか。開始判定は当初SL（エントリー時点の固定値）を基準にするため、建値ストップ等による現在SLの変更に影響されない |
 | `InpAtrTrailingAtrMultiple` | 2.0 | トレーリング開始後、現在Bid/AskからATRの何倍離れた位置へSLを追従させるか。保護方向にのみ動かし緩めない |
 | `InpEnableSignalInvalidationExit` | true | シグナル失効による早期Exitの有効化（2026-08-17追加、詳細はTASKS.md参照）。エントリー根拠（D1/H4トレンド一致・H1/H4 ADX）が保有中に消失したら決済する。RSI・エントリーパターンは再チェックしない。`InpEnableTradeMutations=false`では発動しない |
@@ -216,7 +216,7 @@ IS/OOS/Walk Forwardの個別検証時は、同一の`.set`/`.ini`から`InpStrat
 
 ## 製品ビルドと研究ビルドの入力（2026-10-11追加、`DECISIONS.md` DEC-045・DEC-046）
 
-入力は `mt5/Include/Core/EAEntryPoint.mqh` に一元化し、`ProductEA.mq5`（製品ビルド）と `CoreEA.mq5`（研究ビルド）が共有する。次の入力は研究ビルドだけに存在し、製品ビルドにはない。
+入力は製品リポジトリの `product/mt5/Include/Core/EAEntryPoint.mqh` に一元化し、`ProductEA.mq5`（製品ビルド）と `CoreEA.mq5`（研究ビルド）が共有する。次の入力は研究ビルドだけに存在し、製品ビルドにはない。
 
 * Entry/Breakout Timing分析: `InpEnableEntryTimingAnalysis`、`InpEntryTimingMaxWaitBars`、`InpEntryTimingMaxHoldingBars`、`InpEnableBreakoutTimingAnalysis`、`InpBreakoutTimingMaxHoldingBars`
 * Decision API・ML: `InpDecisionApi*`、`InpDecisionMaxClockSkewSeconds`、`InpDecisionMaxTtlSeconds`、`InpMlMinWinProbability`、`InpMlMinExpectedReturn`

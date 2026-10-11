@@ -29,7 +29,8 @@ Phase 12（日本語文書統合・リリースゲート）まで実装済みで
 
 ## ディレクトリ
 
-- `mt5/`: EA、Strategy、Risk、Trading、External、Logging
+- `product/`: 製品EA（`ProductEA`）のソース。submodule（[ryknk/EA-Product](https://github.com/ryknk/EA-Product)、正本）。Strategy、Risk、Trading、Logging、製品テスト
+- `mt5/`: 研究ビルド `CoreEA`、研究計測・外部連携・診断（`EaTradingSystemResearch`）、研究テスト、MT5補助ツール、Strategy Tester設定・CaseFile
 - `services/decision_api/`: Lambdaアプリケーション（Phase 6以降）
 - `python/`: 特徴量、学習、推論、分析（Phase 7以降）
 - `infra/`: AWS CDK（Python、Phase 6以降）

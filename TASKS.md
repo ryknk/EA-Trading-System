@@ -2237,6 +2237,7 @@ Strategy Tester・MQL5単体テスト実行中にホストの対話デスクト�
 * [ ] VM実行モード（`-ExecutionMode VM`）を分離後の構成で確認する（VM側の製品submodule・ジャンクション設定が必要）
 * [ ] 分離前後の一致を他の銘柄・期間（Walk Forward全Fold等）でも確認する
 * [ ] 本番証跡JSONへ検証manifest（製品commit・ex5 SHA-256）を関連づける
-* [ ] `HANDOFF.md`・`CONTRIBUTING.md` の安定Branch記載（`master`）と実運用（`main`/`dev`）の不一致を解消する
+* [x] `CONTRIBUTING.md` の安定Branch記載（`master`）を実運用（`main` 安定・`dev` 統合、dev→mainはPull Request）へ修正する（2026-10-11）
+* [ ] `HANDOFF.md`（Git管理外）の安定Branch記載（`master`）と分離前の構成の記述を更新する（ユーザー管理の文書）
 * [x] `STRATEGY_TESTER_BATCH_COMPLETED` ログで件数1件時に `succeeded=`/`failed=` が空欄になる問題（Windows PowerShell 5.1）を修正する（2026-10-10、`Get-CaseStatusCount`へ集計を移し`@()`で配列化、回帰テスト追加）
 * [x] `test_convert_is_reused_until_inputs_change_and_force_rebuilds` の断続的失敗を修正する（2026-10-10、ファイル時刻の粒度に依存しない判定へ変更。修正前30回中7回失敗、修正後50回中0回）

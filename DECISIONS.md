@@ -1390,7 +1390,7 @@ DEC-044〜DEC-046で、製品ビルド `ProductEA` が研究計測・外部連�
 
 ## 決定
 
-* 製品EAのソースの唯一の正本を `ryknk/EA-Product`（private、`main`・`dev`）とする。対象は製品ビルドと製品テストのinclude閉包から機械的に求めた62件（`ProductEA.mq5`、Include 41件、製品テスト10件と起動設定）。
+* 製品EAのソースの唯一の正本を `ryknk/EA-Product`（private、`main`・`dev`）とする。対象は製品ビルドと製品テストのinclude閉包から機械的に求めた62件（`ProductEA.mq5` 1件、Include 41件（`.mqh` 33件と `.gitkeep` 8件）、製品テスト10件と起動設定10件）。
 * 履歴は `git filter-branch --index-filter` で製品ファイルの履歴だけを抽出して保持する。パスを変えないことでファイルごとの履歴を残し、各コミットに `Source-Commit:` で元commitを記録する。追加ツール（git-filter-repo）は導入しない。元リポジトリの履歴は変更しない。
 * 開発基盤は `product/` にsubmoduleとして取り込み、検証する製品commitを開発基盤の履歴で固定する。`release-gate.ps1` はsubmoduleが記録commitと一致しない場合に失敗する。Strategy Testerのmanifestは製品commit・未コミット変更の有無・実行したex5のSHA-256を記録する（DEC-044）。
 * MT5上の参照名は、製品を `Include\EaTradingSystem`・`Experts\EaTradingSystemProduct`・`Scripts\EaTradingSystemProductTests`、研究を `Include\EaTradingSystemResearch`・`Experts\EaTradingSystem`・`Scripts\EaTradingSystemTests` とする。研究ビルドのStrategy Testerテンプレート（`StrategyTester-*.ini` 83件中81件が `Expert=EaTradingSystem\CoreEA`）を変更しないため、研究側の既存名を維持した。
