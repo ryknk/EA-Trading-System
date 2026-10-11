@@ -109,6 +109,24 @@ Productionゲートには `contracts/production-release-evidence.schema.json`（
    * `POSITION_MONITOR_ERROR`・`RISK_STATE_UNAVAILABLE`・`ORDER_ERROR`: 新規注文が止まる、または発注に失敗した。同じ種類の再通知は60分間抑制される。
 5. EAのハング（`OnTick` が戻らない状態）は通知されない。日次稼働報告が届かない、または端末のGlobalVariable `ETS.ALIVE.<MagicNumber>.TIMER` が5分以上更新されていない場合（更新間隔は60秒）に疑う。`MONITOR_TIMER_FAILED` を受けた場合は生存信号・検知・日次稼働報告が動かないため、EAを再起動する。
 
+### 取引開始前の通知確認（2026-10-12追加）
+
+通知は注文と独立しているため、取引を始める前に確認できる。`InpEnableTradeMutations=false`（既定）のまま、MT5のAutoTradingも無効にして行う（EAは起動・監視・通知を行うが、注文は出ない）。Demo口座を使う。Strategy Testerでは稼働監視が動かないため、通常の端末で行う。
+
+1. 通知経路: ツール→オプション→通知でMetaQuotes IDを設定し、「テスト」でスマートフォンに届くことを確認する。
+2. 起動通知: 対象チャートへ `ProductEA`（ナビゲーター上は `Experts\EaTradingSystemProduct`）を `InpPushNotificationsEnabled=true` で配置する。Expertsログに `OPERATIONAL_MONITOR_STATE push=enabled` が出て `PUSH_NOTIFICATION_NOT_CONFIGURED` が出ないこと、起動通知（`STARTED trade_mutations=off`）が届くことを確認する。
+3. 日次稼働報告: `InpDailyReportHourUtc` を現在のUTC時刻より後の時（例: 現在が03:20 UTCなら4）に変更し、その時刻を過ぎてから約1分以内に `REPORT DAILY_ALIVE` が届くことを確認する。現在の時以前を指定すると、その日の報告は起動通知で代えられて届かない。入力の変更でEAが再初期化されるため、停止通知（`STOPPED reason=PARAMETERS_CHANGED`）と起動通知も届く。確認後は22へ戻す。
+4. 切断・復帰: 端末のネットワークを5分以上切ってから戻し、復帰通知（`RECONNECTED after=<分>min`）が届くことを確認する。回線ごと切れている間は切断通知（`DISCONNECTED`）を送れないため、Expertsログに `OPERATIONAL_ALERT ... DISCONNECTED` と `PUSH_NOTIFICATION_FAILED` が記録され、通知自体は届かない（再送もしない）。切断通知がスマートフォンに届くのは、インターネットは使えるがBrokerとの接続だけが切れた場合である。
+5. 停止通知: チャートからEAを外し、`STOPPED reason=REMOVED` が届くことを確認する。
+6. 確認日時、受信した通知、Expertsログの該当行を記録し、試験運用の証跡として保管する。
+
+取引開始前に確認しにくい項目:
+
+* Tick停止の通知（`TICK_STALL`）: 取引セッション中にTickを止める手段がない。判定規則は単体テスト（`TestOperationalMonitorRules`）で確認済み。
+* Risk Lock・エラーの通知: 意図的に発生させにくい。端末ログへの出力までは結合テストで確認済み。
+* 日次稼働報告が毎日届くこと: 日数を要するため、取引変更を有効にする前の観測期間（「製品ビルドによる試験運用」の手順3）で兼ねて確認する。
+* MQL5 VPS上での通知: VPSの契約が必要。取引変更を無効にしたままチャートをVPSへ移行し、起動通知と日次稼働報告の受信で確認できる。
+
 ## Demo Forward Test手順（研究ビルド・AWS連携の検証用）
 
 以下は研究ビルド `CoreEA` でAWS連携（Decision API・Telemetry・Heartbeat）を検証する場合の手順であり、製品の試験運用には使わない。
