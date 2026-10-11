@@ -1431,3 +1431,27 @@ DEC-044〜DEC-046で、製品ビルド `ProductEA` が研究計測・外部連�
 * EAのハングと端末・VPS停止の自動検知は未実装（日次稼働報告の不着とGlobalVariableで人が判断する）。
 * 未確認: プッシュ通知の実配信、MQL5 VPS上での `SendNotification`、送信頻度制限の実値。
 * Rollback: 製品リポジトリで本変更のcommitをrevertし、開発基盤のsubmodule参照を戻す。運用中は `InpPushNotificationsEnabled=false` で通知を止められる（生存信号のGlobalVariable書込みは継続する）。
+
+# DEC-049: 本番証跡を製品ビルド用（schema 2.0）に改訂し、検証結果・試験運用・リリース対象を同じ製品commitとex5で照合する
+
+**状態:** 採用（2026-10-12）。Implemented / Unit Tested（`tools/test-release-gate-evidence.ps1`、開発ゲートで実行）。実際の本番証跡の作成・`release-gate.ps1 -Mode Production` の実行は未実施（前提となる検証・試験運用が未完了）。
+
+## 背景
+
+本番証跡schema 1.0は、研究ビルドのAWS連携（ML model・LLM・AWS account・SNS・Budgets・VPS秘密ファイル）を前提としていた。本番移行の対象は外部連携を持たない製品ビルド `ProductEA` になり（DEC-046・DEC-047）、これらの項目は意味を持たない。一方、検証したStrategy Testerの結果・試験運用で使ったex5・リリースするex5が同じ製品commitのものであることは照合されていなかった（DEC-044で記録した識別情報が本番ゲートで使われていなかった）。
+
+## 決定
+
+* schema 2.0（製品ビルド用）へ改訂し、ML・LLM・AWSの項目を削除する。研究ビルドのAWS連携を本番運用する場合の証跡は、現在対象外として定義しない。
+* `product`（repository・commit・expert・ea_version・ex5_sha256）を必須とし、`commit` はゲートが静的検査・コンパイル・テストする製品submoduleのcommitと一致させる。
+* `validation_manifests`（Strategy Testerのmanifest.json 1.1）を必須とし、全件について製品commit一致・未コミット変更なし、全ケースの成功・製品ビルド・同じex5・ex5がソースより新しいこと・同じEAバージョンを照合する。合否基準（`acceptance_criteria`）の記録を必須とし、基準ファイルのSHA-256が実行時から変わっていないことをゲート時に再計算して確認する（結果を見た後に基準を変えていないことの機械的な確認）。全体で `walk_forward` と `final_holdout` の検証レイヤーを含むことを求める（ベンチマーク受入基準の判定期間に対応）。
+* 試験運用（Demo・小額実口座）で使ったex5のSHA-256を記録し、リリース対象と一致させる。
+* 確認項目を製品ビルドに合わせる: プッシュ通知の受信（DEC-048）、Kill Switch演習、Rollback演習、リスク上限の確認、ベンチマーク受入基準。承認者を必須にする。
+* 検証処理は `tools/lib/ReleaseEvidence.psm1` に分離し、回帰テストを開発ゲートで毎回実行する。
+
+## 影響
+
+* 本番証跡の前提として、製品ビルドで合否基準ファイルと `validation_layer` を指定したCaseFileによるWalk Forward・Final Holdoutの実行が必要になる。既存の検証結果（研究ビルド、合否基準なし、manifest 1.0を含む）は本番証跡に使えない。
+* Final Holdout期間（2025-01〜2026-08）は2026-09-17に消費済みであり、新しいFinal Holdout期間の確保方法は未決定である（`TASKS.md` 11章）。
+* 旧schema 1.0の証跡は受け付けない。
+* Rollback: 本変更のコミットをrevertする（schema 1.0とゲートの旧検証処理に戻る）。

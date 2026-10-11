@@ -2192,19 +2192,17 @@ Strategy Tester・MQL5単体テスト実行中にホストの対話デスクト�
 
 # 10. Production Gate
 
-* [ ] OOS Reportを保管する
-* [ ] Walk Forward Reportを保管する
-* [ ] Demo Reportを保管する
-* [ ] Small Real Reportを保管する
-* [ ] ML Model Versionを記録する
-* [ ] ML Model SHA-256を記録する
-* [ ] LLM Provider・Model・Prompt Versionを記録する
-* [ ] AWS AccountとRegionを記録する
-* [ ] VPS Secret File確認を記録する
-* [ ] SNS通知確認を記録する
-* [ ] Budgets確認を記録する
-* [ ] Rollback Drill結果を記録する
-* [ ] Production Evidence JSONを作成する
+2026-10-12、本番証跡を製品ビルド `ProductEA` 用のschema 2.0へ改訂した（`DECISIONS.md` DEC-049、`docs/release-gate.md`「本番ゲート」）。旧項目（ML Model Version・SHA-256、LLM Provider・Model・Prompt Version、AWS Account・Region、VPS Secret File、SNS通知、Budgets）は研究ビルドのAWS連携の項目であり、製品ビルドの本番判定では使わない。
+
+* [ ] リリースする製品commit・EAバージョン・ex5のSHA-256を記録する
+* [ ] 合否基準ファイルを結果を見る前にコミットし、製品ビルドでWalk Forward・Final Holdoutを実行してmanifest.json（schema 1.1）を保管する
+* [ ] OOS・Walk Forward・Final Holdout Reportを保管する
+* [ ] Demo Report・Small Real Reportと、試験運用で使ったex5のSHA-256を保管する
+* [ ] MQL5 VPS上でプッシュ通知（起動通知・日次稼働報告）の受信を確認する
+* [ ] Kill Switch Drill・Rollback Drill結果を記録する
+* [ ] リスク上限（1取引0.5%・日次2%・最大DD10%・最大ポジション・証拠金余力）を確認する
+* [ ] ベンチマーク比較Reportを保管し、受入基準の合否を記録する
+* [ ] Production Evidence JSON（schema 2.0）を作成する
 * [ ] Production Release Gateを実行する
 * [ ] 承認者と承認時刻を記録する
 
@@ -2229,7 +2227,8 @@ Strategy Tester・MQL5単体テスト実行中にホストの対話デスクト�
 * [ ] MQL5 VPS上で `SendNotification` が届くこと、日次稼働報告が毎日届くことを試験運用で確認する（未確認）
 * [ ] 必要になった場合、EAのハングを自動検知する監視EA（同じ端末の別チャートで生存信号を監視して通知）を開発基盤に追加する
 * [ ] 必要になった場合、端末・VPS停止の自動検知（AWS Heartbeat、外部の死活監視サービス）を検討する
-* [ ] 本番証跡（`production-release-evidence.schema.json`・`release-gate.ps1 -Mode Production`）を製品ビルド用に見直す（現在はML・LLM・AWSの項目を必須にしている）
+* [x] 本番証跡（`production-release-evidence.schema.json`・`release-gate.ps1 -Mode Production`）を製品ビルド用に見直す（2026-10-12、schema 2.0、DEC-049）
+* [ ] 製品ビルドのWalk Forward・Final Holdoutを、合否基準ファイルと `validation_layer` を指定したCaseFileで実行する（本番証跡の前提。Final Holdout期間（2025-01〜2026-08）は2026-09-17に消費済みのため、新しいFinal Holdout期間の確保方法を決める必要がある）
 * [ ] 製品ビルドの成績一致を他の銘柄・期間（Walk Forward全Fold等）でも確認する
 * [x] Kill Switch規則（`External/IDecisionProvider.mqh`）と `External/CryptoUtils.mqh` の配置を製品リポジトリ作成時に見直す（2026-10-11、通信を伴わない規則・型のため製品リポジトリに置いた。通信を伴う外部連携は開発基盤の `EaTradingSystemResearch` ルートに残した。DEC-047）
 * [x] 研究計測（Entry/Breakout Timing）を製品中核のincludeから分離する（2026-10-10、DEC-045。USDJPY_HIST 2021年の3ケースで変更前後の成績・監査イベントの完全一致を確認）
@@ -2239,7 +2238,7 @@ Strategy Tester・MQL5単体テスト実行中にホストの対話デスクト�
 * [ ] 製品リポジトリ `ryknk/EA-Product` のブランチ保護（`main` への直接push禁止等）をGitHub上で設定する（ユーザー操作）
 * [ ] VM実行モード（`-ExecutionMode VM`）を分離後の構成で確認する（VM側の製品submodule・ジャンクション設定が必要）
 * [ ] 分離前後の一致を他の銘柄・期間（Walk Forward全Fold等）でも確認する
-* [ ] 本番証跡JSONへ検証manifest（製品commit・ex5 SHA-256）を関連づける
+* [x] 本番証跡JSONへ検証manifest（製品commit・ex5 SHA-256）を関連づける（2026-10-12、DEC-049）
 * [x] `CONTRIBUTING.md` の安定Branch記載（`master`）を実運用（`main` 安定・`dev` 統合、dev→mainはPull Request）へ修正する（2026-10-11）
 * [ ] `HANDOFF.md`（Git管理外）の安定Branch記載（`master`）と分離前の構成の記述を更新する（ユーザー管理の文書）
 * [x] `STRATEGY_TESTER_BATCH_COMPLETED` ログで件数1件時に `succeeded=`/`failed=` が空欄になる問題（Windows PowerShell 5.1）を修正する（2026-10-10、`Get-CaseStatusCount`へ集計を移し`@()`で配列化、回帰テスト追加）
