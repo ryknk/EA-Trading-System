@@ -237,9 +237,9 @@ IS/OOS/Walk Forwardの個別検証時は、同一の`.set`/`.ini`から`InpStrat
 | `InpDailyReportHourUtc` | 22 | 日次稼働報告の時刻（UTC。22時=日本時間07:00、NYクローズ後） |
 | `InpNotifyRepeatCooldownMinutes` | 60 | ポジション監視・Risk状態取得・発注処理のエラー通知を、同じ種類で繰り返さない間隔（5〜1440） |
 
-固定値: Timer間隔60秒（研究ビルドでHeartbeat有効時はその間隔）、通知の最小送信間隔10秒（MT5のプッシュ通知の頻度制限を超えないため。間隔内の状態変化通知は次回Timer・Tickで再送する）。
+固定値: Timer間隔60秒（研究ビルドでHeartbeat有効時はその間隔）、通知の最小送信間隔10秒（MT5のプッシュ通知の頻度制限を超えないため）。間隔内に重なった通知は `PUSH_NOTIFICATION_DEFERRED` をログに出し、切断・復帰、Tick停止・再開、Risk Lock、日次稼働報告は次回のTimer・Tickで、エラー通知は次に同じエラーが発生した時点で再送する。停止通知（`STOPPED`）は再送されない（`INIT_FAILED` は間隔の制限を受けない）。
 
-通知する事象: 起動（`STARTED`）・停止（`STOPPED reason=...`）・初期化失敗（`INIT_FAILED`）、切断継続（`DISCONNECTED`）と復帰（`RECONNECTED`）、Tick停止（`TICK_STALL`）と再開（`TICK_RESUMED`）、Risk Lockの発動（`RISK_LOCK`）と解除（`RISK_LOCK_CLEARED`）、`POSITION_MONITOR_ERROR`・`RISK_STATE_UNAVAILABLE`・`ORDER_ERROR`、日次稼働報告（`REPORT DAILY_ALIVE`: 残高、有効証拠金、自EAのポジション数、最終Tickからの経過分、接続、取引変更・新規注文・Risk Lockの状態）。口座番号は含めない。
+通知する事象: 起動（`STARTED`）・停止（`STOPPED reason=...`）・初期化失敗（`INIT_FAILED`）、切断継続（`DISCONNECTED`）と復帰（`RECONNECTED`）、Tick停止（`TICK_STALL`）と再開（`TICK_RESUMED`）、Risk Lockの発動（`RISK_LOCK`）と解除（`RISK_LOCK_CLEARED`）、`POSITION_MONITOR_ERROR`・`RISK_STATE_UNAVAILABLE`・`ORDER_ERROR`、Timer設定失敗（`MONITOR_TIMER_FAILED`、生存信号・切断/Tick停止検知・日次稼働報告が動かない）、日次稼働報告（`REPORT DAILY_ALIVE`: 残高、有効証拠金、自EAのポジション数、最終Tickからの経過分、接続、取引変更・新規注文・Risk Lockの状態）。口座番号は含めない。日次稼働報告は週末・休場日も送る（Timerは市場の開閉に関係なく動く）。報告時刻以降にEAを起動・再起動した日は、その日の報告を送らず起動通知（`STARTED`）で代える（翌日から通常どおり送る）。
 
 生存信号: 端末のGlobalVariable `ETS.ALIVE.<MagicNumber>.TICK`（EAが最後にTickを処理したUTC）、`.TIMER`（最後のTimer UTC）、`.CONNECTED`（1=接続）。
 
