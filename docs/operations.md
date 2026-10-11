@@ -94,7 +94,20 @@ Productionゲートには `contracts/production-release-evidence.schema.json` �
 5. 証跡を保存し、ユーザーの明示的な許可を得てから小ロットで `InpEnableTradeMutations=true` とし、注文、SL、TP、約定差、Risk拒否を日次確認する。
 6. MQL5 VPS移行後、端末側EAを二重稼働させない。VPS Journal、EA Journal、ローカル監査JSONLを照合する。
 
-製品ビルドにはHeartbeatがないため、EA停止・ハングのAWS Alarmによる自動検知はない。代替の監視方法（VPS Journalの定期確認、MQL5のプッシュ通知等）は未決定である（`TASKS.md` 11章）。
+### 稼働監視（2026-10-12追加、`DECISIONS.md` DEC-048）
+
+製品ビルドにはHeartbeatがないため、EAのプッシュ通知と日次稼働報告で稼働を監視する（設定は `docs/configuration.md`「稼働監視」）。
+
+1. スマートフォンへMetaTrader 5アプリを入れ、MetaQuotes IDを確認する。MT5端末のツール→オプション→通知でMetaQuotes IDを設定し、「テスト」で受信を確認する（MQL5 VPSへ移行する場合も、VPSへ同期する端末側で設定する）。
+2. `ProductEA` の `InpPushNotificationsEnabled=true` とし、起動通知（`STARTED`）が届くことを確認する。`PUSH_NOTIFICATION_NOT_CONFIGURED` がExpertsログに出た場合は1を見直す。
+3. 毎日、日本時間07:00（22:00 UTC）以降に日次稼働報告（`REPORT DAILY_ALIVE`）が届いていることを確認する。**届いていない場合は、端末・VPS・EAの停止を疑い、VPS JournalとEA Journalを確認する**（端末やVPSごと停止した場合、EAは通知できない）。報告の `positions`・`last_tick_age`・`connected`・`new_orders`・`risk_lock` も確認する。
+4. 次の通知を受けた場合は、Expertsログと監査JSONLで原因を確認する。
+   * `STOPPED`・`INIT_FAILED`: EAが停止・起動失敗した。意図しない停止であれば再起動前に原因を記録する。
+   * `DISCONNECTED`（5分以上の切断）: 新規注文は不可。復帰（`RECONNECTED`）しなければ端末・VPS・Brokerの状態を確認する。
+   * `TICK_STALL`（取引セッション中10分以上Tickなし）: 祝日・臨時休場か、Broker・接続の異常かを確認する。
+   * `RISK_LOCK`: 日次損失・最大DD等で新規注文が停止した（既存ポジション管理は継続）。解除は `RISK_LOCK_CLEARED` で通知される。
+   * `POSITION_MONITOR_ERROR`・`RISK_STATE_UNAVAILABLE`・`ORDER_ERROR`: 新規注文が止まる、または発注に失敗した。同じ種類の再通知は60分間抑制される。
+5. EAのハング（`OnTick` が戻らない状態）は通知されない。日次稼働報告が届かない、または端末のGlobalVariable `ETS.ALIVE.<MagicNumber>.TIMER` が60秒以上更新されていない場合に疑う。
 
 ## Demo Forward Test手順（研究ビルド・AWS連携の検証用）
 
