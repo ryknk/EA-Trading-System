@@ -2,8 +2,9 @@
 
 ## 現在のインストール環境
 
-- インストール先: `C:\Program Files\MetaTrader 5`
-- データフォルダ: `C:\Users\hunda\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075`
+- インストール先: `C:\Program Files\OANDA MetaTrader 5`（OANDA証券MT5、2026-08-16以降の検証・運用Broker、`DECISIONS.md` DEC-023）
+- データフォルダ: `C:\Users\hunda\AppData\Roaming\MetaQuotes\Terminal\EE0304F13905552AE0B5EAEFB04866EB`
+- 参考: XMTrading-MT5（`C:\Program Files\MetaTrader 5`、データフォルダ `...\Terminal\D0E8209F77C8CF37AD8BF550E51FF075`）も残っている。対象にする場合は各スクリプトへ `-InstallPath`・`-TerminalData` を指定する。
 
 次のディレクトリジャンクションにより、リポジトリのソースとMT5ナビゲーターツリーが同じファイルを参照する。製品EAの正本は製品リポジトリ `ryknk/EA-Product` で、本リポジトリの `product/` にsubmoduleとして取り込む（2026-10-11、`DECISIONS.md` DEC-047）。
 
