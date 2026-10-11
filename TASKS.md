@@ -2226,6 +2226,8 @@ Strategy Tester・MQL5単体テスト実行中にホストの対話デスクト�
 * [x] 製品ビルドの試験運用でのEA停止・ハング検知方法を決める（2026-10-12、DEC-048。製品EAへプッシュ通知と生存信号を追加。端末・VPS停止は日次稼働報告の不着を人が確認）
 * [ ] MQL5 VPS上で `SendNotification` が届くこと、日次稼働報告が毎日届くことを試験運用で確認する（未確認）
 * [ ] 必要になった場合、EAのハングを自動検知する監視EA（同じ端末の別チャートで生存信号を監視して通知）を開発基盤に追加する
+* [ ] 取引開始前の通知確認（`docs/operations.md`「取引開始前の通知確認」）をローカル端末で実施し、結果を記録する
+* [ ] 必要になった場合、回線ごと切れた間に送れなかった切断通知（`DISCONNECTED`）を回線復帰後に再送するか検討する（現在は復帰通知だけが届く）
 * [ ] 必要になった場合、端末・VPS停止の自動検知（AWS Heartbeat、外部の死活監視サービス）を検討する
 * [x] 本番証跡（`production-release-evidence.schema.json`・`release-gate.ps1 -Mode Production`）を製品ビルド用に見直す（2026-10-12、schema 2.0、DEC-049）
 * [ ] 製品ビルドのWalk Forward・Final Holdoutを、合否基準ファイルと `validation_layer` を指定したCaseFileで実行する（本番証跡の前提。Final Holdout期間（2025-01〜2026-08）は2026-09-17に消費済みのため、新しいFinal Holdout期間の確保方法を決める必要がある）
